@@ -8,6 +8,11 @@ default_classifiers_names = [
     "lgbm",
     "logistic_regression",
 ]
+default_multimodal_names = [
+    "early",
+    "intermediate_fusion",
+    "late",
+]
 default_regressors_names = [
     "random_forest_regressor",
     "xgboost_regressor",
