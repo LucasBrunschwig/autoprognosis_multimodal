@@ -11,9 +11,9 @@ import pandas as pd
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.classifiers_combos import EnsembleSeeker
 from autoprognosis.explorers.core.defaults import (
-    default_multimodal_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_multimodal_names,
 )
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
@@ -37,8 +37,8 @@ class MultimodalStudy(Study):
     The output is an optimal model architecture, selected by the AutoML logic.
     Args:
         dataset: DataFrame.
-            The multimodal dataset to analyze. Currently, support clinical data + image
-        images: str.
+            The multimodal dataset to analyze. Currently, support clinical data with images.
+        image: str.
             The images column in the dataset
         target: str.
             The target column in the dataset.
@@ -234,9 +234,13 @@ class MultimodalStudy(Study):
             self.search_Y = self.Y.copy()
             self.search_group_ids = self.group_ids
 
-        dataset['hash_img'] = np.array([image.sum() for image in dataset.images.to_numpy()])
-        self.internal_name = dataframe_hash(dataset[dataset.columns.difference(['images'])])
-        dataset.drop('hash_img', axis=1)
+        dataset["hash_img"] = np.array(
+            [image.sum() for image in dataset[image].to_numpy()]
+        )
+        self.internal_name = dataframe_hash(
+            dataset[dataset.columns.difference(["images"])]
+        )
+        dataset.drop("hash_img", axis=1)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
