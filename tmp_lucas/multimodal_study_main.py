@@ -7,14 +7,15 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 Last Modification: 18.04.2023
 """
 
-from sklearn.datasets import load_breast_cancer
-from src.autoprognosis.studies.multimodal import MultimodalStudy  # I have to use relative path instead of the package path
+# third party
 from loader import DataLoader
-from autoprognosis.utils.serialization import load_model_from_file
-from autoprognosis.utils.tester import evaluate_estimator
 
+# autoprognosis absolute
+from autoprognosis.studies.multimodal import MultimodalStudy
 
-DL = DataLoader(path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20", data_src_="PAD-UFES")
+DL = DataLoader(
+    path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20", data_src_="PAD-UFES"
+)
 
 
 ids, X_images, X_clinic, Y = DL.load_dataset()
@@ -22,11 +23,12 @@ ids, X_images, X_clinic, Y = DL.load_dataset()
 df = X_images.join((X_clinic, Y))
 
 study_name = "first test"
-study = MultimodalStudy(study_name=study_name,
-                        dataset=df,  # pandas DataFrame
-                        target="label",  # the label column in the dataset
-                        image="images"
-                        )
+study = MultimodalStudy(
+    study_name=study_name,
+    dataset=df,  # pandas DataFrame
+    target="label",  # the label column in the dataset
+    image="images",
+)
 
 model = study.fit()
 
