@@ -11,7 +11,7 @@ Last Modification: 18.04.2023
 from loader import DataLoader
 
 # autoprognosis absolute
-from autoprognosis.studies.multimodal import MultimodalStudy
+from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 
 DL = DataLoader(
     path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20", data_src_="PAD-UFES"
