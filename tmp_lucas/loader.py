@@ -10,6 +10,7 @@ import zipfile
 from PIL import Image
 import numpy as np
 import pandas as pd
+from torchvision import transforms
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s - %(message)s",
@@ -18,11 +19,14 @@ logging.basicConfig(
 )
 
 
-def read_zip(filename: Union[Path, str]) -> dict:
+def read_zip(filename: Union[Path, str], img_format: str = "PIL") -> dict:
     """Read zipped images where the filename corresponds to the id.
 
     Args:
         filename: name of the file (.zip)
+        img_format: which format would you like to work with (
+                    "PIL": PIL.Image.Image, "OpenCV": OpenCV,
+                    "Numpy": NumPy.ndarray, "Tensor": PyTorch.Tensor)
 
     Returns:
         images: dictionary  {id : image}
@@ -36,7 +40,14 @@ def read_zip(filename: Union[Path, str]) -> dict:
                 if img_name.endswith(".png"):
                     try:
                         img_ = Image.open(file.open(img_name))
-                        images.update({os.path.basename(img_name): np.asarray(img_)})
+                        img_ = img_.convert("RGB")
+                        if img_format.upper() == "NUMPY":
+                            img_ = np.asarray(img_)
+                        elif img_format.upper() == "TENSOR":
+                            img_ = transforms.PILToTensor()(img_)
+                        elif img_format.upper() == "OPENCV":
+                            raise NotImplementedError("Future implementations")
+                        images.update({os.path.basename(img_name): img_})
                     except ValueError:
                         logging.info("empty images")
     except zipfile.BadZipFile:
@@ -46,11 +57,12 @@ def read_zip(filename: Union[Path, str]) -> dict:
 
 
 class DataLoader:
-    def __init__(self, path_: str, data_src_: str):
+    def __init__(self, path_: str, data_src_: str, format_: str):
 
         # Data Location
         self.PATH = Path(path_)
         self.SOURCE = data_src_
+        self.format = format_
 
         # Data variables
         self.ids = None
@@ -65,9 +77,9 @@ class DataLoader:
         if self.SOURCE == "PAD-UFES":
             self._load_pad_ufes_dataset()
 
-        return [self.ids, self.images, self.metadata, self.labels]
+        return [self.images, self.metadata, self.labels]
 
-    def _load_pad_ufes_dataset(self, split_images: bool = False) -> list:
+    def _load_pad_ufes_dataset(self, split_images: bool = False):
         """This loader will load the zipped images and metadata and returns 3 lists
 
         Args:
@@ -87,9 +99,9 @@ class DataLoader:
         metadata_df = pd.read_csv(self.PATH / "metadata.csv")
 
         # Load Images as DataFrame
-        images_part1 = read_zip(self.PATH / "imgs_part_1.zip")
-        images_part2 = read_zip(self.PATH / "imgs_part_2.zip")
-        images_part3 = read_zip(self.PATH / "imgs_part_3.zip")
+        images_part1 = read_zip(self.PATH / "imgs_part_1.zip", self.format)
+        images_part2 = read_zip(self.PATH / "imgs_part_2.zip", self.format)
+        images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
         images = {**images_part1, **images_part2, **images_part3}
         images_df = pd.DataFrame.from_dict(images, orient="index", columns=["images"])
         images_df.reset_index(inplace=True)
