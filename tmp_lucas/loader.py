@@ -3,6 +3,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+import random
 from typing import Union
 import zipfile
 
@@ -160,8 +161,22 @@ class DataLoader:
     def get_training_validation_test_dataset(self):
         pass
 
-    def sample_dataset(self):
-        pass
+    def sample_dataset(self, n):
+        """Returns a sample of the dataset
+
+        Args:
+            n: int, the number of data points returned
+        """
+        if self.images is None:
+            self.load_dataset()
+
+        indices = random.sample(range(0, len(self.images)), n)
+
+        return (
+            self.images.iloc[indices, :],
+            self.metadata.iloc[indices, :],
+            self.labels.iloc[indices, :],
+        )
 
 
 if __name__ == "__main__":
