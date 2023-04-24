@@ -13,6 +13,15 @@ default_multimodal_names = [
     "intermediate_fusion",
     "late",
 ]
+default_conv_models = [
+    "AlexNet",
+    "ResNet",
+    "InceptionNet",
+    "ZfNet",
+    "VGG",
+    "MobileNet",
+]
+
 default_regressors_names = [
     "random_forest_regressor",
     "xgboost_regressor",
