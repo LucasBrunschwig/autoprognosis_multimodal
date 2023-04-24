@@ -25,6 +25,15 @@ for retry in range(2):
         depends = ["torch"]
         install(depends)
 
+for retry in range(2):
+    try:
+        # third party
+        import torchvision.models as models
+
+        break
+    except ImportError:
+        depends = ["torchvision"]
+        install(depends)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -38,7 +47,51 @@ NONLIN = {
 }
 
 
-class BasicNet(nn.Module):
+class ConvNet(nn.Module):
+    def __init__(
+        self,
+        model_name: str,
+        n_features_out: int,
+        use_pretrained: bool,
+        feature_extract: bool,
+        fine_tune: bool,
+    ):
+
+        super(ConvNet, self).__init__()
+
+        # Lucas: Inception can not be used during fine-tuning due to the auxiliary outputs
+        if model_name.lower() == "inception":
+            model_ft = models.inception_v3(pretrained=use_pretrained)
+
+            # Handle the auxilary net
+            num_ftrs = model_ft.AuxLogits.fc.in_features
+            model_ft.AuxLogits.fc = nn.Linear(num_ftrs, n_features_out)
+
+            # Handle the primary net
+            num_ftrs = model_ft.fc.in_features
+            model_ft.fc = nn.Linear(num_ftrs, n_features_out)
+
+        elif model_name.lower() == "resnet":
+            """Resnet18"""
+            self.model = models.resnet18(pretrained=use_pretrained)
+            self.set_parameter_requires_grad(self.model, feature_extract)
+
+            # Not sure, we want to fine tune this
+            if fine_tune:
+                n_features_in = self.model.fc.in_features
+                self.model.fc = nn.Linear(n_features_in, n_features_out)
+
+    @classmethod
+    def set_parameter_requires_grad(cls, model, feature_extracting):
+        if feature_extracting:
+            for param in model.parameters():
+                param.requires_grad = False
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class EarlyFusionNet(nn.Module):
     """
     Basic neural net.
 
@@ -92,10 +145,13 @@ class BasicNet(nn.Module):
         batch_norm: bool = False,
         early_stopping: bool = True,
     ) -> None:
-        super(BasicNet, self).__init__()
+        super(EarlyFusionNet, self).__init__()
 
         if nonlin not in list(NONLIN.keys()):
             raise ValueError("Unknown nonlinearity")
+
+        # Load the pre-defined convolutional neural networks
+        self.conv_model = ConvNet()
 
         NL = NONLIN[nonlin]
 
@@ -155,7 +211,7 @@ class BasicNet(nn.Module):
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         return self.model(X)
 
-    def train(self, X: torch.Tensor, y: torch.Tensor) -> "BasicNet":
+    def train(self, X: torch.Tensor, y: torch.Tensor) -> "EarlyFusionNet":
         X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
@@ -228,15 +284,15 @@ class BasicNet(nn.Module):
             return torch.from_numpy(np.asarray(X)).to(DEVICE)
 
 
-class NeuralNetsPlugin(base.ClassifierPlugin):
-    """Classification plugin based on Neural networks.
+class EarlyFusionPlugin(base.ClassifierPlugin):
+    """Classification plugin based early fusion for multimodal data.
 
     Parameters
     ----------
     n_layers_hidden: int
-        Number of hypothesis layers (n_layers_hidden x n_units_hidden + 1 x Linear layer)
+        Number of hypothesis layers for the classifier module (n_layers_hidden x n_units_hidden + 1 x Linear layer)
     n_units_hidden: int
-        Number of hidden units in each hypothesis layer
+        Number of hidden units in each hypothesis layer for the classifier module
     nonlin: string, default 'elu'
         Nonlinearity to use in NN. Can be 'elu', 'relu', 'selu' or 'leaky_relu'.
     lr: float
@@ -263,7 +319,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
 
     Example:
         >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="classifiers").get("neural_nets", n_layers_hidden = 2)
+        >>> plugin = Predictions(category="classifiers").get("intermediate_fusion", n_layers_hidden = 2)
         >>> from sklearn.datasets import load_iris
         >>> X, y = load_iris(return_X_y=True)
         >>> plugin.fit_predict(X, y) # returns the probabilities for each class
@@ -271,6 +327,10 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
+        # LUCAS: Convolutional Neural Network
+        conv_net: str = "ResNet",
+        pre_trained: bool = True,
+        # LUCAS: Classifier Parameters
         n_layers_hidden: int = 1,
         n_units_hidden: int = 100,
         nonlin: str = "relu",
@@ -318,6 +378,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
+            params.Categorical("pretrained_models", ["ResNet", "Inception"]),
             params.Integer("n_layers_hidden", 1, 2),
             params.Integer("n_units_hidden", 10, 100),
             params.Categorical("lr", [1e-3, 1e-4]),
@@ -326,7 +387,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
             params.Categorical("clipping_value", [0, 1]),
         ]
 
-    def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "NeuralNetsPlugin":
+    def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "EarlyFusionPlugin":
         if len(*args) == 0:
             raise RuntimeError("Please provide the labels for training")
 
@@ -335,7 +396,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
         X = torch.from_numpy(np.asarray(X))
         y = torch.from_numpy(np.asarray(y))
 
-        self.model = BasicNet(
+        self.model = EarlyFusionNet(
             X.shape[1],
             categories_cnt=len(y.unique()),
             n_layers_hidden=self.n_layers_hidden,
@@ -373,8 +434,8 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
         return save_model(self)
 
     @classmethod
-    def load(cls, buff: bytes) -> "NeuralNetsPlugin":
+    def load(cls, buff: bytes) -> "EarlyFusionPlugin":
         return load_model(buff)
 
 
-plugin = NeuralNetsPlugin
+plugin = EarlyFusionPlugin
