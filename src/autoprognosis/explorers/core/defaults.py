@@ -9,9 +9,7 @@ default_classifiers_names = [
     "logistic_regression",
 ]
 default_multimodal_names = [
-    "early",
-    "intermediate_fusion",
-    "late",
+    "early_fusion",
 ]
 default_conv_models = [
     "AlexNet",
