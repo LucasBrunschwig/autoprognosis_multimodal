@@ -104,7 +104,9 @@ class DataLoader:
         images_part2 = read_zip(self.PATH / "imgs_part_2.zip", self.format)
         images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
         images = {**images_part1, **images_part2, **images_part3}
-        images_df = pd.DataFrame.from_dict(images, orient="index", columns=["images"])
+        images_df = pd.DataFrame.from_dict(
+            images, orient="index", columns=["images"], dtype=object
+        )
         images_df.reset_index(inplace=True)
 
         # Merge Metadata and Images
