@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 # third party
 import numpy as np
 import pandas as pd
+import torchvision
 
 # autoprognosis absolute
 import autoprognosis.logger as log
@@ -46,48 +47,90 @@ NONLIN = {
     "selu": nn.SELU,
 }
 
+WEIGHTS = {
+    "alexnet": "AlexNet_Weights.DEFAULT",
+    "resnet": "resnet18.DEFAULT",
+}
+
+SHAPE = {
+    "alexnet": (0, 0, 0),
+    "resnet": (3, 250, 250),
+}
+
 
 class ConvNet(nn.Module):
+    """Convolutional Neural Network model for early fusion models.
+
+    Parameters
+    ----------
+    model_name (str):
+        model name of one of the default Deep CNN architectures.
+    use_pretrained (bool):
+        instantiate the model with the latest PyTorch weights of the model.
+    fine_tune (bool):
+        if false all parameters are set to no grad
+    n_features_out (int, optional):
+        the number of output features for the ConvNet, if not specified the last layer is replaced by an identity layer.
+    preprocess (,optional):
+        custom preprocessing for images
+
+
+    TODO:
+    - allow user to use their own weight for a given model.
+
+    """
+
     def __init__(
         self,
         model_name: str,
-        n_features_out: int,
         use_pretrained: bool,
-        feature_extract: bool,
+        n_features_out: Optional[int],
         fine_tune: bool,
+        preprocess: torchvision.transforms.transforms.Compose = None,
     ):
 
         super(ConvNet, self).__init__()
 
-        # Lucas: Inception can not be used during fine-tuning due to the auxiliary outputs
-        if model_name.lower() == "inception":
-            model_ft = models.inception_v3(pretrained=use_pretrained)
+        self.model_name = model_name
+        self.use_pretrained = use_pretrained
+        self.n_features_out = n_features_out
+        self.fine_tune = fine_tune
 
-            # Handle the auxilary net
-            num_ftrs = model_ft.AuxLogits.fc.in_features
-            model_ft.AuxLogits.fc = nn.Linear(num_ftrs, n_features_out)
+        if not self.use_pretrained:
+            WEIGHTS[self.model_name] = None
 
-            # Handle the primary net
-            num_ftrs = model_ft.fc.in_features
-            model_ft.fc = nn.Linear(num_ftrs, n_features_out)
+        self.model = models.get_model("alexnet", weights=WEIGHTS[self.model_name]).to(
+            DEVICE
+        )
 
-        elif model_name.lower() == "resnet":
-            """Resnet18"""
-            self.model = models.resnet18(pretrained=use_pretrained)
-            self.set_parameter_requires_grad(self.model, feature_extract)
+        if use_pretrained:
+            weights = models.get_weight(WEIGHTS["alexnet"])
+            self.preprocess = weights.transforms
 
-            # Not sure, we want to fine tune this
-            if fine_tune:
-                n_features_in = self.model.fc.in_features
-                self.model.fc = nn.Linear(n_features_in, n_features_out)
+        elif preprocess is not None:
+            self.preprocess = preprocess
 
-    @classmethod
-    def set_parameter_requires_grad(cls, model, feature_extracting):
-        if feature_extracting:
-            for param in model.parameters():
+        self.set_parameter_requires_grad()
+
+        if n_features_out is not None:
+            # Replace the output layer by the given number of features
+            n_features_in = self.model.fc.in_features
+            self.model.fc = nn.Linear(n_features_in, n_features_out)
+        else:
+            # Replace the fc layer by an identity
+            self.model.fc = nn.Identity()
+
+    def preprocess_images(self, img_: torch.Tensor) -> torchvision.transforms.Compose:
+        return self.preprocess(img_)
+
+    def set_parameter_requires_grad(
+        self,
+    ):
+        if not self.fine_tune:
+            for param in self.model.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
 
@@ -124,11 +167,18 @@ class EarlyFusionNet(nn.Module):
         Minimum number of iterations to go through before starting early stopping
     clipping_value: int, default 1
         Gradients clipping value
+
+    TODO: possibility to add any classifier on top if no fine tuning
+
     """
 
     def __init__(
         self,
-        n_unit_in: int,
+        conv_model_name: str,
+        use_pretrained: bool,
+        fine_tune: bool,
+        n_features_out: int,
+        n_tabular: int,
         categories_cnt: int,
         n_layers_hidden: int = 2,
         n_units_hidden: int = 100,
@@ -144,14 +194,26 @@ class EarlyFusionNet(nn.Module):
         clipping_value: int = 1,
         batch_norm: bool = False,
         early_stopping: bool = True,
+        preprocess: torchvision.transforms.Compose = None,
     ) -> None:
         super(EarlyFusionNet, self).__init__()
 
         if nonlin not in list(NONLIN.keys()):
             raise ValueError("Unknown nonlinearity")
 
-        # Load the pre-defined convolutional neural networks
-        self.conv_model = ConvNet()
+        # Define the convolutional neural network
+        self.conv_model = ConvNet(
+            model_name=conv_model_name,
+            use_pretrained=use_pretrained,
+            n_features_out=n_features_out,
+            fine_tune=fine_tune,
+            preprocess=preprocess,
+        )
+
+        # number of concatenated features
+        n_unit_in = (
+            self.conv_model(torch.randn(SHAPE[conv_model_name])).shape[1] + n_tabular
+        )
 
         NL = NONLIN[nonlin]
 
@@ -208,8 +270,17 @@ class EarlyFusionNet(nn.Module):
             self.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        return self.model(X)
+    def forward(self, x_img: torch.Tensor, x_tab: torch.Tensor) -> torch.Tensor:
+        # Pass the input image through the Inception model
+        X_conv = self.conv_model(x_img)
+
+        # Concatenate the output of the CNN with tabular data
+        x = torch.cat((X_conv, x_tab), dim=1)
+
+        # Pass the concatenated tensor through the new classifier
+        out = self.model(x)
+
+        return out
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "EarlyFusionNet":
         X = self._check_tensor(X).float()
@@ -239,7 +310,9 @@ class EarlyFusionNet(nn.Module):
 
                 X_next, y_next = sample
 
-                preds = self.forward(X_next).squeeze()
+                preds = self.forward(
+                    X_next,
+                ).squeeze()
 
                 batch_loss = loss(preds, y_next)
 
@@ -257,7 +330,9 @@ class EarlyFusionNet(nn.Module):
                 with torch.no_grad():
                     X_val, y_val = test_dataset.dataset.tensors
 
-                    preds = self.forward(X_val).squeeze()
+                    preds = self.forward(
+                        X_val,
+                    ).squeeze()
                     val_loss = loss(preds, y_val)
 
                     if self.early_stopping:
@@ -373,7 +448,7 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
 
     @staticmethod
     def name() -> str:
-        return "neural_nets"
+        return "early_fusion"
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
