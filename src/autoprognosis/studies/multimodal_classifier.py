@@ -235,7 +235,7 @@ class MultimodalStudy(Study):
             self.search_group_ids = self.group_ids
 
         dataset["hash_img"] = np.array(
-            [image.sum() for image in dataset[image].to_numpy()]
+            [np.asarray(image).sum() for image in dataset[image].to_numpy()]
         )
         self.internal_name = dataframe_hash(
             dataset[dataset.columns.difference(["images"])]
