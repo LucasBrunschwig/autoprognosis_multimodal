@@ -47,8 +47,14 @@ class PredictionPlugin(plugin.Plugin):
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
 
-        log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
-        X = self._preprocess_inference_data(X)
+        if not isinstance(X, list):
+            X = self._preprocess_inference_data(X)
+            log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
+
+        else:
+            X[0] = self._preprocess_inference_data(X[0])
+            log.debug(f"Predicting using {self.fqdn()}, input shape = {X[0].shape}")
+
         result = pd.DataFrame(self._predict_proba(X, *args, **kwargs))
 
         return result

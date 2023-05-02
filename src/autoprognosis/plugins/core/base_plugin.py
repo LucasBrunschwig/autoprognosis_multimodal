@@ -195,11 +195,13 @@ class Plugin(metaclass=ABCMeta):
         Args:
             X: pd.DataFrame
         """
-        X = self._preprocess_training_data(X)
+        if not isinstance(X, list):
+            X = [X]
 
-        log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")
-        self._fit(X, *args, **kwargs)
-        log.debug(f"Done Training {self.fqdn()}, input shape = {X.shape}")
+        X[0] = self._preprocess_training_data(X[0])
+        log.debug(f"Training {self.fqdn()}, input shape = {X[0].shape}")
+        self._fit(X[0], *args, **kwargs)
+        log.debug(f"Done Training {self.fqdn()}, input shape = {X[0].shape}")
 
         self._fitted = True
 

@@ -34,17 +34,24 @@ class ClassifierPlugin(prediction_base.PredictionPlugin):
         return "classifier"
 
     def fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> plugin.Plugin:
-        X = self._preprocess_training_data(X)
 
-        log.debug(f"Training using {self.fqdn()}, input shape = {X.shape}")
+        if not isinstance(X, list):
+            X = [X]
+
+        X[0] = self._preprocess_training_data(X[0])
+        log.debug(f"Training using {self.fqdn()}, input shape = {X[0].shape}")
+
         if len(args) == 0:
             raise RuntimeError("Training requires X, y")
         Y = cast.to_dataframe(args[0]).values.ravel()
 
-        self._fit(X, Y, **kwargs)
+        if len(X) == 1:
+            self._fit(X[0], Y, **kwargs)
+        else:
+            self._fit(X, Y, **kwargs)
 
         self._fitted = True
-        log.debug(f"Done training using {self.fqdn()}, input shape = {X.shape}")
+        log.debug(f"Done training using {self.fqdn()}, input shape = {X[0].shape}")
 
         return self
 

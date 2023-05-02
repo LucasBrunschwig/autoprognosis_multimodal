@@ -182,6 +182,7 @@ def evaluate_estimator(
     seed: int = 0,
     pretrained: bool = False,
     group_ids: Optional[pd.Series] = None,
+    images: str = None,
     *args: Any,
     **kwargs: Any,
 ) -> Dict:
@@ -248,11 +249,15 @@ def evaluate_estimator(
 
     # group_ids is always ignored for StratifiedKFold so safe to pass None
     for train_index, test_index in skf.split(X, Y, groups=group_ids):
-
         X_train = X.loc[X.index[train_index]]
         Y_train = Y.loc[Y.index[train_index]]
         X_test = X.loc[X.index[test_index]]
         Y_test = Y.loc[Y.index[test_index]]
+
+        # Implementations proposition
+        if images is not None:
+            X_train = [X_train[X_train.columns.difference([images])], X_train[images]]
+            X_test = [X_test[X_test.columns.difference([images])], X_test[images]]
 
         if pretrained:
             model = estimator[indx]
@@ -361,6 +366,118 @@ def evaluate_estimator_multiple_seeds(
         results["str"][metric] = print_score(output_clf)
 
     return results
+
+
+@validate_arguments(config=dict(arbitrary_types_allowed=True))
+def evaluate_multimodal_estimator(
+    estimator: Any,
+    X: Union[pd.DataFrame, np.ndarray],
+    Y: Union[pd.Series, np.ndarray, List],
+    n_folds: int = 3,
+    seed: int = 0,
+    pretrained: bool = False,
+    group_ids: Optional[pd.Series] = None,
+    images: str = None,
+    *args: Any,
+    **kwargs: Any,
+) -> Dict:
+    """Helper for evaluating classifiers.
+
+    Args:
+        estimator:
+            Baseline model to evaluate. if pretrained == False, it must not be fitted.
+        X: pd.DataFrame or np.ndarray:
+            The covariates
+        Y: pd.Series or np.ndarray or list:
+            The labels
+        n_folds: int
+            cross-validation folds
+        seed: int
+            Random seed
+        pretrained: bool
+            If the estimator was already trained or not.
+        group_ids: pd.Series
+            The group_ids to use for stratified cross-validation
+
+    Returns:
+        Dict containing "raw" and "str" nodes. The "str" node contains prettified metrics, while the raw metrics includes tuples of form (`mean`, `std`) for each metric.
+        Both "raw" and "str" nodes contain the following metrics:
+            - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
+            - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
+            - "accuracy" : Accuracy classification score.
+            - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
+            - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
+            - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
+            - "kappa":  computes Cohen’s kappa, a score that expresses the level of agreement between two annotators on a classification problem.
+            - "precision_micro": Precision is defined as the number of true positives over the number of true positives plus the number of false positives. This version(micro) calculates metrics globally by counting the total true positives.
+            - "precision_macro": Precision is defined as the number of true positives over the number of true positives plus the number of false positives. This version(macro) calculates metrics for each label, and finds their unweighted mean.
+            - "precision_weighted": Precision is defined as the number of true positives over the number of true positives plus the number of false positives. This version(weighted) calculates metrics for each label, and find their average weighted by support.
+            - "recall_micro": Recall is defined as the number of true positives over the number of true positives plus the number of false negatives. This version(micro) calculates metrics globally by counting the total true positives.
+            - "recall_macro": Recall is defined as the number of true positives over the number of true positives plus the number of false negatives. This version(macro) calculates metrics for each label, and finds their unweighted mean.
+            - "recall_weighted": Recall is defined as the number of true positives over the number of true positives plus the number of false negatives. This version(weighted) calculates metrics for each label, and find their average weighted by support.
+            - "mcc": The Matthews correlation coefficient is used in machine learning as a measure of the quality of binary and multiclass classifications. It takes into account true and false positives and negatives and is generally regarded as a balanced measure which can be used even if the classes are of very different sizes.
+
+    """
+    if n_folds < 2:
+        raise ValueError("n_folds must be >= 2")
+    enable_reproducible_results(seed)
+
+    X = pd.DataFrame(X).reset_index(drop=True)
+    Y = LabelEncoder().fit_transform(Y)
+    Y = pd.Series(Y).reset_index(drop=True)
+    if group_ids is not None:
+        group_ids = pd.Series(group_ids).reset_index(drop=True)
+
+    log.debug(f"evaluate_estimator shape x:{X.shape} y:{Y.shape}")
+
+    results = {}
+
+    evaluator = classifier_metrics()
+    for metric in clf_supported_metrics:
+        results[metric] = np.zeros(n_folds)
+
+    indx = 0
+    if group_ids is not None:
+        skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    else:
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+
+    # group_ids is always ignored for StratifiedKFold so safe to pass None
+    for train_index, test_index in skf.split(X, Y, groups=group_ids):
+        X_train = X.loc[X.index[train_index]]
+        Y_train = Y.loc[Y.index[train_index]]
+        X_test = X.loc[X.index[test_index]]
+        Y_test = Y.loc[Y.index[test_index]]
+
+        X_train = [X_train[X_train.columns.difference([images])], X_train[images]]
+        X_test = [X_test[X_test.columns.difference([images])], X_test[images]]
+
+        if pretrained:
+            model = estimator[indx]
+        else:
+            model = copy.deepcopy(estimator)
+            model.fit(X_train, Y_train)
+
+        preds = model.predict_proba(X_test)
+
+        scores = evaluator.score_proba(Y_test, preds)
+        for metric in scores:
+            results[metric][indx] = scores[metric]
+
+        indx += 1
+
+    output_clf = {}
+    output_clf_str = {}
+
+    for key in results:
+        key_out = generate_score(results[key])
+        output_clf[key] = key_out
+        output_clf_str[key] = print_score(key_out)
+
+    return {
+        "raw": output_clf,
+        "str": output_clf_str,
+    }
 
 
 @validate_arguments(config=dict(arbitrary_types_allowed=True))

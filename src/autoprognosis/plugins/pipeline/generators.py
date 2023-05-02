@@ -116,10 +116,18 @@ def _generate_get_args() -> Callable:
 
 def _generate_fit() -> Callable:
     def fit_impl(self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any) -> Any:
-        local_X = X.copy()
+
+        if isinstance(X, list):
+            local_X = X[0].copy()
+        else:
+            local_X = X.copy()
+
         for stage in self.stages[:-1]:
             local_X = pd.DataFrame(local_X)
             local_X = stage.fit_transform(local_X)
+
+        if isinstance(X, list):
+            local_X = [local_X, X[1]]
 
         self.stages[-1].fit(local_X, *args, **kwargs)
 
@@ -140,9 +148,17 @@ def _generate_predict() -> Callable:
     def predict_impl(
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
-        local_X = X.copy()
+
+        if isinstance(X, list):
+            local_X = X[0].copy()
+        else:
+            local_X = X.copy()
+
         for stage in self.stages[:-1]:
             local_X = stage.transform(local_X)
+
+        if isinstance(X, list):
+            local_X = [local_X, X[1]]
 
         result = self.stages[-1].predict(local_X, *args, **kwargs)
 
@@ -156,9 +172,17 @@ def _generate_predict_proba() -> Callable:
     def predict_proba_impl(
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
-        local_X = X.copy()
+
+        if isinstance(X, list):
+            local_X = X[0].copy()
+        else:
+            local_X = X.copy()
+
         for stage in self.stages[:-1]:
             local_X = stage.transform(local_X, *args, **kwargs)
+
+        if isinstance(X, list):
+            local_X = [local_X, X[1]]
 
         result = self.stages[-1].predict_proba(local_X)
 
@@ -176,9 +200,16 @@ def _generate_predict_proba() -> Callable:
 def _generate_score() -> Callable:
     @decorators.benchmark
     def predict_score(self: Any, X: pd.DataFrame, y: pd.DataFrame) -> float:
-        local_X = X.copy()
+        if isinstance(X, list):
+            local_X = X[0].copy()
+        else:
+            local_X = X.copy()
+
         for stage in self.stages[:-1]:
             local_X = stage.transform(local_X)
+
+        if isinstance(X, list):
+            local_X = [local_X, X[1]]
 
         return self.stages[-1].score(local_X, y)
 

@@ -25,7 +25,6 @@ for retry in range(2):
     except ImportError:
         depends = ["torch"]
         install(depends)
-
 for retry in range(2):
     try:
         # third party
@@ -47,14 +46,20 @@ NONLIN = {
     "selu": nn.SELU,
 }
 
-WEIGHTS = {
-    "alexnet": "AlexNet_Weights.DEFAULT",
-    "resnet": "resnet18.DEFAULT",
+CNN = {
+    "resnet": "resnet18",
+    "alexnet": "alexnet",
 }
 
+WEIGHTS = {
+    "alexnet": "AlexNet_Weights.DEFAULT",
+    "resnet": "ResNet18_Weights.DEFAULT",
+}
+
+# TODO: make sure it satisfies the preprocess
 SHAPE = {
-    "alexnet": (0, 0, 0),
-    "resnet": (3, 250, 250),
+    "alexnet": (1, 3, 224, 224),
+    "resnet": (1, 3, 224, 224),
 }
 
 
@@ -91,7 +96,7 @@ class ConvNet(nn.Module):
 
         super(ConvNet, self).__init__()
 
-        self.model_name = model_name
+        self.model_name = model_name.lower()
         self.use_pretrained = use_pretrained
         self.n_features_out = n_features_out
         self.fine_tune = fine_tune
@@ -99,16 +104,16 @@ class ConvNet(nn.Module):
         if not self.use_pretrained:
             WEIGHTS[self.model_name] = None
 
-        self.model = models.get_model("alexnet", weights=WEIGHTS[self.model_name]).to(
-            DEVICE
-        )
+        self.model = models.get_model(
+            CNN[self.model_name], weights=WEIGHTS[self.model_name]
+        ).to(DEVICE)
 
         if use_pretrained:
-            weights = models.get_weight(WEIGHTS["alexnet"])
+            weights = models.get_weight(WEIGHTS[self.model_name])
             self.preprocess = weights.transforms
 
         elif preprocess is not None:
-            self.preprocess = preprocess
+            self.preprocess = preprocess()
 
         self.set_parameter_requires_grad()
 
@@ -120,8 +125,8 @@ class ConvNet(nn.Module):
             # Replace the fc layer by an identity
             self.model.fc = nn.Identity()
 
-    def preprocess_images(self, img_: torch.Tensor) -> torchvision.transforms.Compose:
-        return self.preprocess(img_)
+    def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
+        return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def set_parameter_requires_grad(
         self,
@@ -174,22 +179,22 @@ class EarlyFusionNet(nn.Module):
 
     def __init__(
         self,
-        conv_model_name: str,
-        use_pretrained: bool,
-        fine_tune: bool,
-        n_features_out: int,
-        n_tabular: int,
         categories_cnt: int,
+        conv_model_name: str,
+        n_tabular: str,
+        use_pretrained: bool = True,
+        fine_tune: bool = False,
+        n_features_out: int = None,
         n_layers_hidden: int = 2,
         n_units_hidden: int = 100,
         nonlin: str = "relu",
         lr: float = 1e-3,
         weight_decay: float = 1e-3,
-        n_iter: int = 1000,
-        batch_size: int = 100,
-        n_iter_print: int = 10,
+        n_iter: int = 10,
+        batch_size: int = 50,
+        n_iter_print: int = 1,
         patience: int = 10,
-        n_iter_min: int = 100,
+        n_iter_min: int = 20,
         dropout: float = 0.1,
         clipping_value: int = 1,
         batch_norm: bool = False,
@@ -212,7 +217,9 @@ class EarlyFusionNet(nn.Module):
 
         # number of concatenated features
         n_unit_in = (
-            self.conv_model(torch.randn(SHAPE[conv_model_name])).shape[1] + n_tabular
+            self.conv_model(torch.randn(SHAPE[conv_model_name.lower()])).shape[0]
+            * self.conv_model(torch.randn(SHAPE[conv_model_name.lower()])).shape[1]
+            + n_tabular
         )
 
         NL = NONLIN[nonlin]
@@ -270,23 +277,26 @@ class EarlyFusionNet(nn.Module):
             self.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-    def forward(self, x_img: torch.Tensor, x_tab: torch.Tensor) -> torch.Tensor:
+    def forward(self, X_tabular: torch.Tensor, X_images: torch.Tensor) -> torch.Tensor:
         # Pass the input image through the Inception model
-        X_conv = self.conv_model(x_img)
+        X_conv = self.conv_model(X_images)
 
         # Concatenate the output of the CNN with tabular data
-        x = torch.cat((X_conv, x_tab), dim=1)
+        x = torch.cat((X_conv, X_tabular), dim=1)
 
         # Pass the concatenated tensor through the new classifier
         out = self.model(x)
 
         return out
 
-    def train(self, X: torch.Tensor, y: torch.Tensor) -> "EarlyFusionNet":
-        X = self._check_tensor(X).float()
+    def train(
+        self, X_tabular: torch.Tensor, X_images: torch.tensor, y: torch.Tensor
+    ) -> "EarlyFusionNet":
+
+        X_tabular = self._check_tensor(X_tabular).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TensorDataset(X, y)
+        dataset = TensorDataset(X_tabular, X_images, y)
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -302,17 +312,17 @@ class EarlyFusionNet(nn.Module):
 
         loss = nn.CrossEntropyLoss()
 
+        log.debug("Training Start")
         for i in range(self.n_iter):
+            log.debug(f"iteration   [{i}/{self.n_iter}]")
             train_loss = []
 
             for batch_ndx, sample in enumerate(loader):
                 self.optimizer.zero_grad()
 
-                X_next, y_next = sample
+                X_tabular_next, X_images_next, y_next = sample
 
-                preds = self.forward(
-                    X_next,
-                ).squeeze()
+                preds = self.forward(X_tabular_next, X_images_next).squeeze()
 
                 batch_loss = loss(preds, y_next)
 
@@ -328,11 +338,9 @@ class EarlyFusionNet(nn.Module):
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
-                    X_val, y_val = test_dataset.dataset.tensors
+                    X_val_tab, X_val_img, y_val = test_dataset.dataset.tensors
 
-                    preds = self.forward(
-                        X_val,
-                    ).squeeze()
+                    preds = self.forward(X_val_tab, X_val_img).squeeze()
                     val_loss = loss(preds, y_val)
 
                     if self.early_stopping:
@@ -352,6 +360,9 @@ class EarlyFusionNet(nn.Module):
 
         return self
 
+    def preprocess_images(self, images: pd.DataFrame) -> torch.Tensor:
+        return self.conv_model.preprocess_images(images)
+
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
             return X.to(DEVICE)
@@ -360,7 +371,7 @@ class EarlyFusionNet(nn.Module):
 
 
 class EarlyFusionPlugin(base.ClassifierPlugin):
-    """Classification plugin based early fusion for multimodal data.
+    """Classification plugin based on early fusion for multimodal data.
 
     Parameters
     ----------
@@ -404,8 +415,10 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         self,
         # LUCAS: Convolutional Neural Network
         conv_net: str = "ResNet",
+        use_pretrained: bool = True,
+        fine_tune: bool = False,
+        n_features_out: Optional[int] = None,
         pre_trained: bool = True,
-        # LUCAS: Classifier Parameters
         n_layers_hidden: int = 1,
         n_units_hidden: int = 100,
         nonlin: str = "relu",
@@ -415,7 +428,7 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         batch_size: int = 128,
         n_iter_print: int = 10,
         patience: int = 10,
-        n_iter_min: int = 100,
+        n_iter_min: int = 500,
         dropout: float = 0.1,
         clipping_value: int = 1,
         batch_norm: bool = True,
@@ -431,6 +444,7 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         if hyperparam_search_iterations:
             n_iter = 5 * int(hyperparam_search_iterations)
 
+        # Specific to Neural Net Classifier
         self.n_layers_hidden = n_layers_hidden
         self.n_units_hidden = n_units_hidden
         self.nonlin = nonlin
@@ -446,6 +460,12 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         self.batch_norm = batch_norm
         self.early_stopping = early_stopping
 
+        # Specific to CNN
+        self.conv_net = conv_net
+        self.use_pretrained = use_pretrained
+        self.fine_tune = fine_tune
+        self.n_features_out = n_features_out
+
     @staticmethod
     def name() -> str:
         return "early_fusion"
@@ -453,7 +473,7 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
-            params.Categorical("pretrained_models", ["ResNet", "Inception"]),
+            params.Categorical("conv_net", ["resnet", "alexnet"]),
             params.Integer("n_layers_hidden", 1, 2),
             params.Integer("n_units_hidden", 10, 100),
             params.Categorical("lr", [1e-3, 1e-4]),
@@ -468,11 +488,18 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
 
         y = args[0]
 
-        X = torch.from_numpy(np.asarray(X))
+        # Preprocess Data
+        X_images = X[1]
+        X_tabular = X[0]
+        X_tabular = torch.from_numpy(np.asarray(X_tabular))
         y = torch.from_numpy(np.asarray(y))
 
         self.model = EarlyFusionNet(
-            X.shape[1],
+            conv_model_name=self.conv_net,
+            use_pretrained=self.use_pretrained,
+            fine_tune=self.fine_tune,
+            n_tabular=X_tabular.shape[1],
+            n_features_out=self.n_features_out,
             categories_cnt=len(y.unique()),
             n_layers_hidden=self.n_layers_hidden,
             n_units_hidden=self.n_units_hidden,
@@ -490,20 +517,29 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
         )
 
-        self.model.train(X, y)
+        X_images = self.model.preprocess_images(X_images)
+
+        self.model.train(X_tabular, X_images, y)
+
         return self
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
-            return self.model(X).argmax(dim=-1).detach().cpu().numpy()
+            X_images = X[1]
+            X_images = self.model.preprocess_images(X_images)
+            X_tabular = X[0]
+            X_tabular = torch.from_numpy(np.asarray(X_tabular)).float().to(DEVICE)
+            return self.model(X_tabular, X_images).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         with torch.no_grad():
-            X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
-            return self.model(X).detach().cpu().numpy()
+            X_images = X[1]
+            X_images = self.model.preprocess_images(X_images)
+            X_tabular = X[0]
+            X_tabular = torch.from_numpy(np.asarray(X_tabular)).float().to(DEVICE)
+            return self.model(X_tabular, X_images).detach().cpu().numpy()
 
     def save(self) -> bytes:
         return save_model(self)
