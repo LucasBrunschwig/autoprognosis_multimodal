@@ -182,7 +182,7 @@ def evaluate_estimator(
     seed: int = 0,
     pretrained: bool = False,
     group_ids: Optional[pd.Series] = None,
-    images: str = None,
+    sources: str = None,
     *args: Any,
     **kwargs: Any,
 ) -> Dict:
@@ -255,9 +255,9 @@ def evaluate_estimator(
         Y_test = Y.loc[Y.index[test_index]]
 
         # Implementations proposition
-        if images is not None:
-            X_train = [X_train[X_train.columns.difference([images])], X_train[images]]
-            X_test = [X_test[X_test.columns.difference([images])], X_test[images]]
+        if sources is not None:
+            X_train = [X_train[X_train.columns.difference([sources])], X_train[sources]]
+            X_test = [X_test[X_test.columns.difference([sources])], X_test[sources]]
 
         if pretrained:
             model = estimator[indx]
