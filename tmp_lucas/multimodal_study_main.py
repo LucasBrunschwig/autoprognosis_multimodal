@@ -4,37 +4,53 @@ Multimodal Studies
 Description: This file is a temporary main to test the training of multimodal machine learning model
 Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
-Last Modification: 18.04.2023
 """
+
+# stdlib
+import multiprocessing
 
 # third party
 from loader import DataLoader
 
 # autoprognosis absolute
+import autoprognosis.logger as log
 from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 
-# Load Data
-DL = DataLoader(
-    path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
-    data_src_="PAD-UFES",
-    format_="PIL",
-)
-DL.load_dataset()
+log.debug("LOADING IMAGES")
 
-# Sample Dataset for Testing Purpose
-X_images, X_clinic, Y = DL.sample_dataset(n=50)
-df = X_images.join((X_clinic, Y))
 
-# Study Name
-study_name = "first test"
-study = MultimodalStudy(
-    study_name=study_name,
-    dataset=df,  # pandas DataFrame
-    target="label",  # the label column in the dataset
-    image="images",  # tje images column in the dataset
-)
+def worker_dataloader(state):
+    # Load Data
+    DL = DataLoader(
+        path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
+        data_src_="PAD-UFES",
+        format_="PIL",
+    )
+    state["X_images"], state["X_clinic"], state["Y"] = DL.load_dataset(
+        classes=["ACK", "BCC"]
+    )
 
-model = study.fit()
+    # Sample Dataset for Testing Purpose
+    # state['X_images'], state['X_clinic'], state['Y'] = DL.sample_dataset(state['n'])
 
-# Predict the probabilities of each class using the model
-# model.predict_proba(X)
+
+if __name__ == "__main__":
+
+    # Multiprocessing for memory issues
+    manager = multiprocessing.Manager()
+    state = manager.dict(n=1000)
+    p = multiprocessing.Process(target=worker_dataloader, args=(state,))
+    p.start()
+    p.join()
+    df = state["X_images"].join((state["X_clinic"], state["Y"]))
+
+    # Study Name
+    study_name = "first test"
+    study = MultimodalStudy(
+        study_name=study_name,
+        dataset=df,  # pandas DataFrame
+        target="label",  # the label column in the dataset
+        image="images",  # the image column in the dataset
+    )
+
+    model = study.fit()
