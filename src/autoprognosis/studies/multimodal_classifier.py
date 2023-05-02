@@ -270,6 +270,7 @@ class MultimodalStudy(Study):
             random_state=self.random_state,
             ensemble_size=ensemble_size,
             n_folds_cv=n_folds_cv,
+            images=image,
         )
 
     def _should_continue(self) -> None:
@@ -322,6 +323,8 @@ class MultimodalStudy(Study):
     def run(self) -> Any:
         """Run the study. The call returns the optimal model architecture - not fitted."""
         self._should_continue()
+
+        log.info("Start running study")
 
         best_score, best_model = self._load_progress()
         score = best_score

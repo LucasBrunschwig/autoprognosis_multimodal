@@ -143,6 +143,7 @@ class EnsembleSeeker:
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         random_state: int = 0,
+        images: str = None,
     ) -> None:
         ensemble_size = min(ensemble_size, len(classifiers))
 
@@ -170,6 +171,7 @@ class EnsembleSeeker:
             imputers=imputers,
             optimizer_type=optimizer_type,
             random_state=self.random_state,
+            images=images,
         )
 
     def _should_continue(self) -> None:

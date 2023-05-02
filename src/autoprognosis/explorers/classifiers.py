@@ -134,6 +134,7 @@ class ClassifierSeeker:
         optimizer_type: str = "bayesian",
         strict: bool = False,
         random_state: int = 0,
+        images: str = None,
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
             if int_val <= 0 or type(int_val) != int:
@@ -175,6 +176,7 @@ class ClassifierSeeker:
         self.metric = metric
         self.optimizer_type = optimizer_type
         self.random_state = random_state
+        self.images = images
 
     def _should_continue(self) -> None:
         if self.hooks.cancel():
@@ -197,7 +199,12 @@ class ClassifierSeeker:
             model = estimator.get_pipeline_from_named_args(**kwargs)
             try:
                 metrics = evaluate_estimator(
-                    model, X, Y, n_folds=self.n_folds_cv, group_ids=group_ids
+                    model,
+                    X,
+                    Y,
+                    n_folds=self.n_folds_cv,
+                    group_ids=group_ids,
+                    images=self.images,
                 )
             except BaseException as e:
                 log.error(f"evaluate_estimator failed: {e}")
