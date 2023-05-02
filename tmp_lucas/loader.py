@@ -71,16 +71,25 @@ class DataLoader:
         self.images = None
         self.labels = None
 
-    def load_dataset(self):
-        """Returns the loaded dataset based on the source input"""
+    def load_dataset(self, split_images=True, classes: list = None):
+        """Returns the loaded dataset based on the source input
+
+        Parameters:
+            split_images: bool,
+                if true will create one data point per image in the dataset.
+            classes: list,
+                extract a subset of labels on the dataset.
+        Returns:
+            3 pd.DataFrame containing images, clinical data, and labels
+        """
 
         # Different loaders for different sources
         if self.SOURCE == "PAD-UFES":
-            self._load_pad_ufes_dataset()
+            self._load_pad_ufes_dataset(split_images=split_images, classes=classes)
 
-        return [self.images, self.metadata, self.labels]
+        return self.images, self.metadata, self.labels
 
-    def _load_pad_ufes_dataset(self, split_images: bool = False):
+    def _load_pad_ufes_dataset(self, split_images: bool, classes: list):
         """This loader will load the zipped images and metadata and returns 3 lists
 
         Args:
@@ -146,6 +155,9 @@ class DataLoader:
         df.drop("images", axis=1, inplace=True)
         df.replace({False: 0, True: 1, "False": 0, "True": 0}, inplace=True)
         df = df_images.join(df)
+
+        if classes is not None:
+            df = df.loc[:, df["label"].isin(classes)]
 
         # Get one df per source
         self.ids = df.index
