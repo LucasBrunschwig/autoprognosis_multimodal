@@ -130,6 +130,7 @@ class ClassifierSeeker:
         feature_selection: List[str] = default_feature_selection_names,
         classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
+        image_processing: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
@@ -163,6 +164,7 @@ class ClassifierSeeker:
                 calibration=[],
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
+                image_processing=image_processing,
                 imputers=imputers,
             )
             for plugin in classifiers

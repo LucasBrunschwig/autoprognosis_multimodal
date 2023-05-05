@@ -13,6 +13,7 @@ from autoprognosis.explorers.classifiers_combos import EnsembleSeeker
 from autoprognosis.explorers.core.defaults import (
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_image_processing,
     default_multimodal_names,
 )
 from autoprognosis.hooks import DefaultHooks, Hooks
@@ -80,6 +81,9 @@ class MultimodalStudy(Study):
                 - 'gauss_projection'
                 - 'pca'
                 - 'nop' # no operation
+        image_preprocessing: list.
+            Plugin search pool to use in the pipeline for optimal preprocessing. If the list is empty, the program assumes that
+            you preprocessed the images yourself.
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
@@ -157,6 +161,7 @@ class MultimodalStudy(Study):
         >>>     study_name=study_name,
         >>>     dataset=df,  # pandas DataFrame
         >>>     target="target",  # the label column in the dataset
+        >>>     image='image',  # the image column in the dataset
         >>> )
         >>> model = study.fit()
         >>>
@@ -177,6 +182,7 @@ class MultimodalStudy(Study):
         study_name: Optional[str] = None,
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
+        image_processing: List[str] = default_image_processing,
         classifiers: List[str] = default_multimodal_names,
         imputers: List[str] = ["ice"],
         workspace: Path = Path("tmp"),
@@ -192,10 +198,8 @@ class MultimodalStudy(Study):
     ) -> None:
         super().__init__()
 
-        # LUCAS: fix numpy and random seed
         enable_reproducible_results(random_state)
 
-        # LUCAS: Hooks are a way to handle programming interaction
         self.hooks = hooks
         dataset = pd.DataFrame(dataset)
 
@@ -238,7 +242,7 @@ class MultimodalStudy(Study):
             [np.asarray(image).sum() for image in dataset[image].to_numpy()]
         )
         self.internal_name = dataframe_hash(
-            dataset[dataset.columns.difference(["images"])]
+            dataset[dataset.columns.difference(["image"])]
         )
         dataset.drop("hash_img", axis=1)
 
@@ -264,6 +268,7 @@ class MultimodalStudy(Study):
             metric=metric,
             feature_scaling=feature_scaling,
             feature_selection=feature_selection,
+            image_processing=image_processing,
             classifiers=classifiers,
             imputers=imputers,
             hooks=self.hooks,
