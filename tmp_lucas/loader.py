@@ -114,7 +114,7 @@ class DataLoader:
         images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
         images = {**images_part1, **images_part2, **images_part3}
         images_df = pd.DataFrame.from_dict(
-            images, orient="index", columns=["images"], dtype=object
+            images, orient="index", columns=["image"], dtype=object
         )
         images_df.reset_index(inplace=True)
 
@@ -128,9 +128,9 @@ class DataLoader:
             df.groupby(["patient_id"]).agg(
                 {
                     **{
-                        "images": list,
+                        "image": list,
                     },
-                    **{col: "first" for col in df.columns if col != "images"},
+                    **{col: "first" for col in df.columns if col != "image"},
                 }
             )
 
@@ -151,18 +151,18 @@ class DataLoader:
 
         # Remove Unknown and convert False True to integers
         df.replace("UNK", np.nan, inplace=True)
-        df_images = df.images.to_frame()
-        df.drop("images", axis=1, inplace=True)
+        df_images = df.image.to_frame()
+        df.drop("image", axis=1, inplace=True)
         df.replace({False: 0, True: 1, "False": 0, "True": 0}, inplace=True)
         df = df_images.join(df)
 
         if classes is not None:
-            df = df.loc[:, df["label"].isin(classes)]
+            df = df[df["label"].isin(classes)]
 
         # Get one df per source
         self.ids = df.index
-        self.images = df.images.to_frame()
-        self.metadata = df[df.columns[~df.columns.isin(["images", "label"])]]
+        self.images = df.image.to_frame()
+        self.metadata = df[df.columns[~df.columns.isin(["image", "label"])]]
         self.labels = df.label.to_frame()
 
     def summary(self):
