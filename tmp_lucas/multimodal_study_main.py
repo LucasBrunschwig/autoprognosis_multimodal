@@ -36,13 +36,32 @@ def worker_dataloader(state):
 
 if __name__ == "__main__":
 
-    # Multiprocessing for memory issues
-    manager = multiprocessing.Manager()
-    state = manager.dict(n=1000)
-    p = multiprocessing.Process(target=worker_dataloader, args=(state,))
-    p.start()
-    p.join()
-    df = state["X_images"].join((state["X_clinic"], state["Y"]))
+    subprocess = False
+    n = 100
+
+    # Use a subprocess to free memory
+    if subprocess:
+
+        manager = multiprocessing.Manager()
+
+        state = manager.dict(n=n)
+        p = multiprocessing.Process(target=worker_dataloader, args=(state,))
+        p.start()
+        p.join()
+        df = state["X_images"].join((state["X_clinic"], state["Y"]))
+
+    else:
+        DL = DataLoader(
+            path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
+            data_src_="PAD-UFES",
+            format_="PIL",
+        )
+        DL.load_dataset(classes=["ACK", "BCC"])
+
+        # Sample Dataset for Testing Purpose
+        X_images, X_clinic, Y = DL.sample_dataset(n)
+
+        df = X_images.join((X_clinic, Y))
 
     # Study Name
     study_name = "first test"
@@ -50,7 +69,7 @@ if __name__ == "__main__":
         study_name=study_name,
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
-        image="images",  # the image column in the dataset
+        image="image",  # the image column in the dataset
     )
 
     model = study.fit()
