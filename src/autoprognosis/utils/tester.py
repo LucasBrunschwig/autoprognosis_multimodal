@@ -182,7 +182,6 @@ def evaluate_estimator(
     seed: int = 0,
     pretrained: bool = False,
     group_ids: Optional[pd.Series] = None,
-    images: str = None,
     *args: Any,
     **kwargs: Any,
 ) -> Dict:
@@ -254,18 +253,21 @@ def evaluate_estimator(
         X_test = X.loc[X.index[test_index]]
         Y_test = Y.loc[Y.index[test_index]]
 
-        # Implementations proposition
-        if images is not None:
-            X_train = [X_train[X_train.columns.difference([images])], X_train[images]]
-            X_test = [X_test[X_test.columns.difference([images])], X_test[images]]
+        X_train_modalities = {}
+        X_test_modalities = {}
+        for key in kwargs.keys():
+            if key in ["img", "audio"]:
+                X_modality = pd.DataFrame(kwargs[key]).reset_index(drop=True)
+                X_train_modalities[key] = X_modality.loc[X_modality.index[train_index]]
+                X_test_modalities[key] = X_modality.loc[X_modality.index[test_index]]
 
         if pretrained:
             model = estimator[indx]
         else:
             model = copy.deepcopy(estimator)
-            model.fit(X_train, Y_train)
+            model.fit(X_train, Y_train, **X_train_modalities)
 
-        preds = model.predict_proba(X_test)
+        preds = model.predict_proba(X_test, **X_test_modalities)
 
         scores = evaluator.score_proba(Y_test, preds)
         for metric in scores:

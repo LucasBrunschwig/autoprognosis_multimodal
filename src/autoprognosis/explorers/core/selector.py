@@ -48,6 +48,7 @@ class PipelineSelector:
         imputers: List[str] = [],
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
+        image_processing: List[str] = [],
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
     ) -> None:
         self.calibration = calibration
@@ -60,6 +61,10 @@ class PipelineSelector:
             Preprocessors(category="dimensionality_reduction").get_type(plugin)
             for plugin in feature_selection
         ]
+        self.image_processing = [
+            Preprocessors(category="image_processing").get_type(plugin)
+            for plugin in image_processing
+        ]
 
         if classifier == "multinomial_naive_bayes" or classifier == "bagging":
             self.feature_scaling = [
@@ -69,7 +74,7 @@ class PipelineSelector:
 
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
-    def _generate_dist_name(self, key: str) -> str:
+    def _generate_dist_name(self, key: str, step: str = None) -> str:
         if key == "imputation_candidate":
             imputers_str = [imputer.name() for imputer in self.imputers]
             imputers_str.sort()
@@ -84,6 +89,13 @@ class PipelineSelector:
             fs_str = [fs.name() for fs in self.feature_selection]
             fs_str.sort()
             return f"{self.classifier.fqdn()}.feature_selection_candidate.{'_'.join(fs_str)}"
+        elif key == "image_processing_step":
+            fs_str = [fs.name() for fs in self.image_processing]
+            steps = []
+            for step in fs_str:
+                steps.append(f"{self.classifier.fqdn()}.image_processing_step.{step}")
+            return steps
+
         else:
             raise ValueError(f"invalid key {key}")
 
@@ -115,6 +127,17 @@ class PipelineSelector:
                     [fs.name() for fs in self.feature_selection],
                 )
             )
+
+        if len(self.image_processing) > 0:
+            # force to add all image processing steps as the only choice
+            for fs in self.image_processing:
+                hp.append(
+                    params.Categorical(
+                        self._generate_dist_name("image_processing_step", fs.name()),
+                        fs.name(),
+                    )
+                )
+
             for plugin in self.feature_selection:
                 hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
@@ -177,6 +200,15 @@ class PipelineSelector:
                 param_val = type(param.bounds[0])(param_val)
 
                 args[plugin.name()][param.name.split(".")[-1]] = param_val
+
+        # TODO: test this function
+        if len(self.image_processing) > 0:
+            select_img = hyperparams[
+                domain_list.index(self._generate_dist_name("image_processing_step"))
+            ]
+            selected = Preprocessors(category="image_processing").get_type(select_img)
+            model_list.append(selected.fqdn())
+            add_stage_hp(selected)
 
         if len(self.imputers) > 0:
             select_imp = hyperparams[
@@ -256,6 +288,14 @@ class PipelineSelector:
         elif len(self.imputers) > 0:
             model_list.append(self.imputers[0].fqdn())
             add_stage_hp(self.imputers[0])
+
+        image_key = self._generate_dist_name("image_processing_step")
+        for key in image_key:
+            if key in kwargs:
+                idx = kwargs[key]
+                selected = Preprocessors(category="image_processing").get_type(idx)
+                model_list.append(selected.fqdn())
+                add_stage_hp(selected)
 
         pre_key = self._generate_dist_name("feature_selection_candidate")
         if pre_key in kwargs:

@@ -117,17 +117,22 @@ def _generate_get_args() -> Callable:
 def _generate_fit() -> Callable:
     def fit_impl(self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any) -> Any:
 
-        if isinstance(X, list):
-            local_X = X[0].copy()
-        else:
-            local_X = X.copy()
+        local_X = X.copy()
+
+        local_X_img = pd.DataFrame()
+        if "img" in kwargs:
+            local_X_img = kwargs["img"].copy()
 
         for stage in self.stages[:-1]:
-            local_X = pd.DataFrame(local_X)
-            local_X = stage.fit_transform(local_X)
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.fit_transform(local_X)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.fit_transform(local_X_img)
 
-        if isinstance(X, list):
-            local_X = [local_X, X[1]]
+        if "img" in kwargs:
+            kwargs["img"] = local_X_img
 
         self.stages[-1].fit(local_X, *args, **kwargs)
 
@@ -149,16 +154,22 @@ def _generate_predict() -> Callable:
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
 
-        if isinstance(X, list):
-            local_X = X[0].copy()
-        else:
-            local_X = X.copy()
+        local_X = X.copy()
+
+        local_X_img = pd.DataFrame()
+        if "img" in kwargs:
+            local_X_img = kwargs["img"].copy()
 
         for stage in self.stages[:-1]:
-            local_X = stage.transform(local_X)
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.transform(local_X)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.transform(local_X_img)
 
-        if isinstance(X, list):
-            local_X = [local_X, X[1]]
+        if "img" in kwargs:
+            kwargs["img"] = local_X_img
 
         result = self.stages[-1].predict(local_X, *args, **kwargs)
 
@@ -173,18 +184,24 @@ def _generate_predict_proba() -> Callable:
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
 
-        if isinstance(X, list):
-            local_X = X[0].copy()
-        else:
-            local_X = X.copy()
+        local_X = X.copy()
+
+        local_X_img = pd.DataFrame()
+        if "img" in kwargs:
+            local_X_img = kwargs["img"].copy()
 
         for stage in self.stages[:-1]:
-            local_X = stage.transform(local_X, *args, **kwargs)
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.transform(local_X)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.transform(local_X_img)
 
-        if isinstance(X, list):
-            local_X = [local_X, X[1]]
+        if "img" in kwargs:
+            kwargs["img"] = local_X_img
 
-        result = self.stages[-1].predict_proba(local_X)
+        result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
 
         if result.isnull().values.any():
             raise ValueError(
@@ -200,6 +217,8 @@ def _generate_predict_proba() -> Callable:
 def _generate_score() -> Callable:
     @decorators.benchmark
     def predict_score(self: Any, X: pd.DataFrame, y: pd.DataFrame) -> float:
+
+        # TODO: Find a solution for predict score
         if isinstance(X, list):
             local_X = X[0].copy()
         else:

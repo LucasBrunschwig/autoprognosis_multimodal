@@ -160,13 +160,16 @@ class Plugin(metaclass=ABCMeta):
         for col in X.columns:
             if X[col].dtype.name not in ["object", "category"]:
                 continue
+            # TODO: improve this processing
+            try:
+                values = list(X[col].unique())
+                values.append("unknown")
+                encoder = LabelEncoder().fit(values)
+                X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
 
-            values = list(X[col].unique())
-            values.append("unknown")
-            encoder = LabelEncoder().fit(values)
-            X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
-
-            self._backup_encoders[col] = encoder
+                self._backup_encoders[col] = encoder
+            except Exception:
+                pass
         return X
 
     def _preprocess_inference_data(self, X: pd.DataFrame) -> pd.DataFrame:
@@ -195,13 +198,11 @@ class Plugin(metaclass=ABCMeta):
         Args:
             X: pd.DataFrame
         """
-        if not isinstance(X, list):
-            X = [X]
 
-        X[0] = self._preprocess_training_data(X[0])
-        log.debug(f"Training {self.fqdn()}, input shape = {X[0].shape}")
-        self._fit(X[0], *args, **kwargs)
-        log.debug(f"Done Training {self.fqdn()}, input shape = {X[0].shape}")
+        X = self._preprocess_training_data(X)
+        log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")
+        self._fit(X, *args, **kwargs)
+        log.debug(f"Done Training {self.fqdn()}, input shape = {X.shape}")
 
         self._fitted = True
 
