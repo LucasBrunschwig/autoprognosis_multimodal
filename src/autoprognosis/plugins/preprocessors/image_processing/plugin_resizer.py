@@ -3,7 +3,7 @@ from typing import Any, List
 
 # third party
 import pandas as pd
-from torchvision.transforms import Resize
+from torchvision.transforms import Compose, Resize, ToPILImage, ToTensor
 
 # autoprognosis absolute
 import autoprognosis.plugins.core.params as params
@@ -30,15 +30,25 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
 
     def __init__(self, size: tuple = (224, 224)) -> None:
         super().__init__()
-        self.model = Resize(size=size)
+        self.model = Compose(
+            [
+                ToTensor(),
+                Resize(size=size),
+                ToPILImage(),
+            ]
+        )
 
     @staticmethod
     def name() -> str:
-        return "image_normalization"
+        return "resizer"
 
     @staticmethod
     def subtype() -> str:
-        return "preprocessing"
+        return "image_processing"
+
+    @staticmethod
+    def modality_type():
+        return "image"
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
@@ -49,7 +59,8 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
         return self
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return self.model(X)
+
+        return pd.DataFrame([self.model(img[0]) for img in X.values])
 
     def save(self) -> bytes:
         return serialization.save_model(self.model)

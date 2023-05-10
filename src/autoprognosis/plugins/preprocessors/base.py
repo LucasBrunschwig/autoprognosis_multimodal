@@ -30,6 +30,10 @@ class PreprocessorPlugin(plugin.Plugin):
         return "preprocessor"
 
     @staticmethod
+    def modality_type():
+        ...
+
+    @staticmethod
     def components_interval(*args: Any, **kwargs: Any) -> Tuple[int, int]:
         if "features_count" not in kwargs:
             raise ValueError(

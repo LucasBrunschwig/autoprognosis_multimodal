@@ -27,6 +27,10 @@ class NopPlugin(base.PreprocessorPlugin):
         return "dimensionality_reduction"
 
     @staticmethod
+    def modality_type():
+        return "tabular"
+
+    @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return []
 

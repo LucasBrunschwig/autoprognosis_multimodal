@@ -40,6 +40,10 @@ class ImputerPlugin(plugin.Plugin):
     def subtype() -> str:
         return "default"
 
+    @staticmethod
+    def modality_type() -> str:
+        return "tabular"
+
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         raise NotImplementedError(
             "Imputation plugins do not implement the 'predict' method"
