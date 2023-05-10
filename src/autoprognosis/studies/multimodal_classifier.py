@@ -9,12 +9,14 @@ import pandas as pd
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
-from autoprognosis.explorers.classifiers_combos import EnsembleSeeker
 from autoprognosis.explorers.core.defaults import (
     default_feature_scaling_names,
     default_feature_selection_names,
     default_image_processing,
     default_multimodal_names,
+)
+from autoprognosis.explorers.multimodal_classifiers_combos import (
+    MultimodalEnsembleSeeker,
 )
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
@@ -38,9 +40,9 @@ class MultimodalStudy(Study):
     The output is an optimal model architecture, selected by the AutoML logic.
     Args:
         dataset: DataFrame.
-            The multimodal dataset to analyze. Currently, support clinical data with images.
+            The multimodal dataset to analyze. Currently, support clinical data with image.
         image: str.
-            The images column in the dataset
+            The image column in the dataset
         target: str.
             The target column in the dataset.
         num_iter: int.
@@ -260,7 +262,7 @@ class MultimodalStudy(Study):
         self.random_state = random_state
         self.n_folds_cv = n_folds_cv
 
-        self.seeker = EnsembleSeeker(
+        self.seeker = MultimodalEnsembleSeeker(
             self.internal_name,
             num_iter=num_iter,
             num_ensemble_iter=num_ensemble_iter,
@@ -275,7 +277,7 @@ class MultimodalStudy(Study):
             random_state=self.random_state,
             ensemble_size=ensemble_size,
             n_folds_cv=n_folds_cv,
-            images=image,
+            image=image,
         )
 
     def _should_continue(self) -> None:
