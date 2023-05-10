@@ -28,7 +28,8 @@ default_regressors_names = [
 ]
 
 default_imputers_names = ["mean", "ice", "missforest", "hyperimpute"]
-default_image_processing = ["resizer"]
+default_image_processing = ["normalizer", "resizer"]
+default_modalities = ["img"]
 
 default_feature_scaling_names = Preprocessors(
     category="feature_scaling"
