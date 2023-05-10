@@ -489,8 +489,8 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         y = args[0]
 
         # Preprocess Data
-        X_images = X[1]
-        X_tabular = X[0]
+        X_images = kwargs["img"].squeeze()
+        X_tabular = X
         X_tabular = torch.from_numpy(np.asarray(X_tabular))
         y = torch.from_numpy(np.asarray(y))
 
@@ -517,7 +517,12 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
         )
 
-        X_images = self.model.preprocess_images(X_images)
+        if self.use_pretrained:
+            X_images = self.model.preprocess_images(X_images)
+        else:
+            X_images = torch.stack(
+                [torchvision.transforms.ToTensor()(img[0]) for img in X_images.values]
+            )
 
         self.model.train(X_tabular, X_images, y)
 
@@ -525,9 +530,17 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_images = X[1]
-            X_images = self.model.preprocess_images(X_images)
-            X_tabular = X[0]
+            X_images = kwargs["img"].squeeze()
+            if self.use_pretrained:
+                X_images = self.model.preprocess_images(X_images)
+            else:
+                X_images = torch.stack(
+                    [
+                        torchvision.transforms.ToTensor()(img[0])
+                        for img in X_images.values
+                    ]
+                )
+            X_tabular = X
             X_tabular = torch.from_numpy(np.asarray(X_tabular)).float().to(DEVICE)
             return self.model(X_tabular, X_images).argmax(dim=-1).detach().cpu().numpy()
 
@@ -535,9 +548,17 @@ class EarlyFusionPlugin(base.ClassifierPlugin):
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         with torch.no_grad():
-            X_images = X[1]
-            X_images = self.model.preprocess_images(X_images)
-            X_tabular = X[0]
+            X_images = kwargs["img"].squeeze()
+            if self.use_pretrained:
+                X_images = self.model.preprocess_images(X_images)
+            else:
+                X_images = torch.stack(
+                    [
+                        torchvision.transforms.ToTensor()(img[0])
+                        for img in X_images.values
+                    ]
+                )
+            X_tabular = X
             X_tabular = torch.from_numpy(np.asarray(X_tabular)).float().to(DEVICE)
             return self.model(X_tabular, X_images).detach().cpu().numpy()
 
