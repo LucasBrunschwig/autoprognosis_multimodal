@@ -49,6 +49,7 @@ class PipelineSelector:
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         image_processing: List[str] = [],
+        image_dimensionality_reduction: List[str] = [],
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
     ) -> None:
         self.calibration = calibration
@@ -64,6 +65,10 @@ class PipelineSelector:
         self.image_processing = [
             Preprocessors(category="image_processing").get_type(plugin)
             for plugin in image_processing
+        ]
+        self.image_dimensionality_reduction = [
+            Preprocessors(category="image_dimensionality_reduction").get_type(plugin)
+            for plugin in image_dimensionality_reduction
         ]
 
         if classifier == "multinomial_naive_bayes" or classifier == "bagging":
@@ -95,6 +100,10 @@ class PipelineSelector:
             for step in fs_str:
                 steps.append(f"{self.classifier.fqdn()}.image_processing_step.{step}")
             return steps
+        elif key == "image_dimensionality_reduction_candidate":
+            fs_str = [fs.name() for fs in self.image_dimensionality_reduction]
+            fs_str.sort()
+            return f"{self.classifier.fqdn()}.image_dimensionality_reduction_candidate.{'_'.join(fs_str)}"
 
         else:
             raise ValueError(f"invalid key {key}")
@@ -150,7 +159,7 @@ class PipelineSelector:
                 ),
             )
 
-        hp.extend(self.classifier.hyperparameter_space_fqdn())
+        hp.extend(self.classifier.hyperparameter_space_fqdn(**predefined_args))
         return hp
 
     def sample_hyperparameters(self, trial: Trial) -> Dict:
@@ -289,13 +298,34 @@ class PipelineSelector:
             model_list.append(self.imputers[0].fqdn())
             add_stage_hp(self.imputers[0])
 
-        image_key = self._generate_dist_name("image_processing_step")
-        for key in image_key:
-            if key in kwargs:
-                idx = kwargs[key]
-                selected = Preprocessors(category="image_processing").get_type(idx)
-                model_list.append(selected.fqdn())
-                add_stage_hp(selected)
+        # Image preprocessing might not be subjected to optimization
+        if not kwargs.get("no_image_preprocessing", None):
+            # Add resizer by default
+            resizer = Preprocessors(category="image_processing").get_type("resizer")
+            model_list.append(resizer.fqdn())
+            add_stage_hp(resizer)
+
+            image_key = self._generate_dist_name("image_processing_step")
+            for key in image_key:
+                if key in kwargs:
+                    idx = kwargs[key]
+                    selected = Preprocessors(category="image_processing").get_type(idx)
+                    model_list.append(selected.fqdn())
+                    add_stage_hp(selected)
+
+        img_reduction_key = self._generate_dist_name(
+            "image_dimensionality_reduction_candidate"
+        )
+        if img_reduction_key in kwargs:
+            idx = kwargs[img_reduction_key]
+            selected = Preprocessors(
+                category="image_dimensionality_reduction"
+            ).get_type(idx)
+            model_list.append(selected.fqdn())
+            add_stage_hp(selected)
+        elif len(self.image_dimensionality_reduction) > 0:
+            model_list.append(self.image_dimensionality_reduction[0].fqdn())
+            add_stage_hp(self.image_dimensionality_reduction[0])
 
         pre_key = self._generate_dist_name("feature_selection_candidate")
         if pre_key in kwargs:
