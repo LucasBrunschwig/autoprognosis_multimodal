@@ -70,6 +70,7 @@ if __name__ == "__main__":
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
+        sample_for_search=False,  # no Sampling
     )
 
     model = study.fit()

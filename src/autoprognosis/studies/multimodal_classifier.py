@@ -12,6 +12,7 @@ from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_image_dimensionality_reduction,
     default_image_processing,
     default_multimodal_names,
 )
@@ -177,7 +178,7 @@ class MultimodalStudy(Study):
         image: str,
         target: str,
         num_iter: int = 20,
-        num_study_iter: int = 5,
+        num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
         timeout: int = 360,
         metric: str = "aucroc",
@@ -185,6 +186,9 @@ class MultimodalStudy(Study):
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         image_processing: List[str] = default_image_processing,
+        image_dimensionality_reduction: List[
+            str
+        ] = default_image_dimensionality_reduction,
         classifiers: List[str] = default_multimodal_names,
         imputers: List[str] = ["ice"],
         workspace: Path = Path("tmp"),
@@ -262,6 +266,9 @@ class MultimodalStudy(Study):
         self.random_state = random_state
         self.n_folds_cv = n_folds_cv
 
+        # Potential to add other modalities
+        self.multimodal = {"img": image}
+
         self.seeker = MultimodalEnsembleSeeker(
             self.internal_name,
             num_iter=num_iter,
@@ -271,13 +278,14 @@ class MultimodalStudy(Study):
             feature_scaling=feature_scaling,
             feature_selection=feature_selection,
             image_processing=image_processing,
+            image_dimensionality_reduction=image_dimensionality_reduction,
             classifiers=classifiers,
             imputers=imputers,
             hooks=self.hooks,
             random_state=self.random_state,
             ensemble_size=ensemble_size,
             n_folds_cv=n_folds_cv,
-            image=image,
+            multimodal=self.multimodal,
         )
 
     def _should_continue(self) -> None:

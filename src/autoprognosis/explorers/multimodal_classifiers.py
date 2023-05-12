@@ -131,6 +131,7 @@ class MultimodalClassifierSeeker:
         classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
         image_processing: List[str] = [],
+        image_dimensionality_reduction: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
@@ -165,6 +166,7 @@ class MultimodalClassifierSeeker:
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
                 image_processing=image_processing,
+                image_dimensionality_reduction=image_dimensionality_reduction,
                 imputers=imputers,
             )
             for plugin in classifiers
@@ -212,13 +214,17 @@ class MultimodalClassifierSeeker:
                 estimator.feature_selection = []
                 estimator.feature_scaling = []
 
+            # If the pipeline uses predefined CNN no image processing
             try:
-                # if we use pretrained CNN, the image preprocessing steps are defined by the weights
-                use_pretrained_cnn = getattr(model.stages[-1], "use_pretrained")
-                if use_pretrained_cnn:
-                    estimator.image_processing = []
+                use_pretrained = getattr(model.stages[-1], "use_pretrained")
+                if use_pretrained:
+                    kwargs["no_image_processing"] = True
+                log.warning(
+                    "Pipeline uses predefined CNN which handles image preprocessing"
+                )
+
             except Exception:
-                pass
+                log.warning("Image preprocessors will be optimized")
 
             model = estimator.get_pipeline_from_named_args(**kwargs)
 

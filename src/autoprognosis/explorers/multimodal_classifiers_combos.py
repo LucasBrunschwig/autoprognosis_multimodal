@@ -14,6 +14,8 @@ from autoprognosis.explorers.core.defaults import (
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_image_dimensionality_reduction,
+    default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
 from autoprognosis.hooks import DefaultHooks, Hooks
@@ -138,13 +140,16 @@ class MultimodalEnsembleSeeker:
         metric: str = "aucroc",
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
-        image_processing: List[str] = [],
+        image_processing: List[str] = default_image_processing,
+        image_dimensionality_reduction: List[
+            str
+        ] = default_image_dimensionality_reduction,
         classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         random_state: int = 0,
-        image: str = None,
+        multimodal: dict = None,
     ) -> None:
         ensemble_size = min(ensemble_size, len(classifiers))
 
@@ -157,27 +162,34 @@ class MultimodalEnsembleSeeker:
         self.hooks = hooks
         self.optimizer_type = optimizer_type
         self.random_state = random_state
-        self.image = image
-        self.type = "late_fusion"
+        self.type = "early_fusion"
         self.multimodal = {"img": ["image"]}
 
-        self.seeker = MultimodalClassifierSeeker(
-            study_name,
-            num_iter=num_iter,
-            metric=metric,
-            n_folds_cv=n_folds_cv,
-            top_k=ensemble_size,
-            timeout=timeout,
-            feature_scaling=feature_scaling,
-            feature_selection=feature_selection,
-            image_processing=image_processing,
-            classifiers=classifiers,
-            hooks=hooks,
-            imputers=imputers,
-            optimizer_type=optimizer_type,
-            random_state=self.random_state,
-            modalities=self.multimodal,
-        )
+        if self.type != "early_fusion" and image_dimensionality_reduction:
+            image_dimensionality_reduction = []
+            log.warning(
+                "Dimensionality reduction of images is only used in early fusion: will not be used"
+            )
+
+        if self.type == "early_fusion":
+            self.seeker = MultimodalClassifierSeeker(
+                study_name,
+                num_iter=num_iter,
+                metric=metric,
+                n_folds_cv=n_folds_cv,
+                top_k=ensemble_size,
+                timeout=timeout,
+                feature_scaling=feature_scaling,
+                feature_selection=feature_selection,
+                image_processing=image_processing,
+                image_dimensionality_reduction=image_dimensionality_reduction,
+                classifiers=["image_tabular_early_fusion"],
+                hooks=hooks,
+                imputers=imputers,
+                optimizer_type=optimizer_type,
+                random_state=self.random_state,
+                modalities=self.multimodal,
+            )
 
         if self.type == "late_fusion":
             self.image_seeker = MultimodalClassifierSeeker(
@@ -190,6 +202,7 @@ class MultimodalEnsembleSeeker:
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
                 image_processing=image_processing,
+                image_dimensionality_reduction=image_dimensionality_reduction,
                 classifiers=["cnn"],
                 hooks=hooks,
                 imputers=imputers,
@@ -207,6 +220,7 @@ class MultimodalEnsembleSeeker:
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
                 image_processing=[],
+                image_dimensionality_reduction=[],
                 classifiers=default_classifiers_names,
                 hooks=hooks,
                 imputers=imputers,
@@ -344,7 +358,8 @@ class MultimodalEnsembleSeeker:
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
         elif self.type == "early_fusion":
-            pass
+            best_models = self.seeker.search(X, Y, group_ids=group_ids)
+
             # 1. select one model for image representation
             #   type of image representation are through: convolutional neural networks, autoencoders
             # 2. Try various
