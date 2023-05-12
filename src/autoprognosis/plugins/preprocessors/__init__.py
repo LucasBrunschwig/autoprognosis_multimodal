@@ -17,6 +17,9 @@ dim_reduction_plugins = glob.glob(
 image_processing_plugins = glob.glob(
     join(dirname(__file__), "image_processing/plugin*.py")
 )
+image_dimensionality_reduction_plugins = glob.glob(
+    join(dirname(__file__), "image_reduction/plugin*.py")
+)
 
 
 class Preprocessors(PluginLoader):
@@ -25,6 +28,7 @@ class Preprocessors(PluginLoader):
             "feature_scaling",
             "dimensionality_reduction",
             "image_processing",
+            "image_dimensionality_reduction",
         ]:
             raise RuntimeError("Invalid preprocessing category")
 
@@ -35,6 +39,8 @@ class Preprocessors(PluginLoader):
             plugins = dim_reduction_plugins
         elif category == "image_processing":
             plugins = image_processing_plugins
+        elif category == "image_dimensionality_reduction":
+            plugins = image_dimensionality_reduction_plugins
 
         super().__init__(plugins, PreprocessorPlugin)
 
@@ -43,6 +49,7 @@ __all__ = (
     [basename(f)[:-3] for f in feature_scaling_plugins if isfile(f)]
     + [basename(f)[:-3] for f in dim_reduction_plugins if isfile(f)]
     + [basename(f)[:-3] for f in image_processing_plugins if isfile(f)]
+    + [basename(f)[:-3] for f in image_dimensionality_reduction_plugins if isfile(f)]
     + [
         "Preprocessors",
         "PreprocessorPlugin",

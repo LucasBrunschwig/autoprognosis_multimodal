@@ -28,7 +28,12 @@ default_regressors_names = [
 ]
 
 default_imputers_names = ["mean", "ice", "missforest", "hyperimpute"]
-default_image_processing = ["normalizer", "resizer"]
+default_image_processing = ["normalizer"]
+default_image_dimensionality_reduction = [
+    "pca_image",
+    "fast_ica_image",
+    "predefined_cnn",
+]
 default_modalities = ["img"]
 
 default_feature_scaling_names = Preprocessors(
@@ -44,5 +49,15 @@ default_risk_estimation_names = [
     "lognormal_aft",
     "coxnet",
 ]
+
+CNN = ["alexnet", "resnet18", "resnet50", "vgg19"]
+
+WEIGHTS = {
+    "alexnet": "AlexNet_Weights.DEFAULT",
+    "resnet18": "ResNet18_Weights.DEFAULT",
+    "resnet50": "ResNet50_Weights.DEFAULT",
+    "vgg19": "VGG19_Weights.DEFAULT",
+}
+
 
 percentile_val = 1.96
