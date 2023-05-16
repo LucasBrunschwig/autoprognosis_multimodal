@@ -37,7 +37,7 @@ def worker_dataloader(state):
 if __name__ == "__main__":
 
     subprocess = False
-    n = 100
+    n = 800
 
     # Use a subprocess to free memory
     if subprocess:
@@ -71,6 +71,9 @@ if __name__ == "__main__":
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
         sample_for_search=False,  # no Sampling
+        n_folds_cv=5,
+        num_iter=200,
+        num_study_iter=200,
     )
 
     model = study.fit()
