@@ -2,8 +2,10 @@
 from typing import Any, List, Optional
 
 # third party
+import numpy as np
 import pandas as pd
 from sklearn.decomposition import FastICA
+from torchvision.transforms import ToTensor
 
 # autoprognosis absolute
 import autoprognosis.plugins.core.params as params
@@ -35,12 +37,13 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
         self,
         model: Any = None,
         random_state: int = 0,
-        n_components: int = 2,
+        threshold: float = 0.95,
         max_iter=10000,
     ) -> None:
         super().__init__()
         self.random_state = random_state
-        self.n_components = n_components
+        self.threshold = threshold
+        self.max_iter = max_iter
         self.model: Optional[FastICA] = None
 
         if model:
@@ -52,32 +55,40 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def subtype() -> str:
-        return "dimensionality_reduction"
+        return "image_reduction"
 
     @staticmethod
     def modality_type():
-        return "tabular"
+        return "image"
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        cmin, cmax = base.PreprocessorPlugin.components_interval(*args, **kwargs)
-        return [params.Integer("n_components", cmin, cmax)]
+        return [params.Categorical("threshold", [0.85, 0.9, 0.95])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "FastICAImagePlugin":
-        n_components = min(self.n_components, X.shape[0], X.shape[1])
+
+        X_images = X.squeeze().apply(
+            lambda img_: ToTensor()(img_).flatten().detach().cpu().numpy()
+        )
+        X_images = pd.DataFrame(np.stack(X_images.to_numpy().squeeze()))
+
         self.model = FastICA(
-            n_components=n_components,
+            n_components=self.threshold,
             random_state=self.random_state,
-            max_iter=10000,
+            max_iter=self.max_iter,
             tol=1e-2,
             whiten="unit-variance",
         )
 
-        self.model.fit(X, *args, **kwargs)
+        self.model.fit(X_images, *args, **kwargs)
         return self
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return self.model.transform(X)
+        X_images = X.squeeze().apply(
+            lambda img_: ToTensor()(img_).flatten().detach().cpu().numpy()
+        )
+        X_images = pd.DataFrame(np.stack(X_images.to_numpy().squeeze()))
+        return self.model.transform(X_images)
 
     def save(self) -> bytes:
         return serialization.save_model(
