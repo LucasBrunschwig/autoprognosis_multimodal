@@ -34,6 +34,7 @@ class Plugins:
                     category="dimensionality_reduction"
                 ),
                 "image_processing": Preprocessors(category="image_processing"),
+                "image_reduction": Preprocessors(category="image_reduction"),
             },
         }
 
