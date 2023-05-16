@@ -298,6 +298,20 @@ def _generate_getstate() -> Callable:
     return getstate_impl
 
 
+def _preprocess_image() -> Callable:
+    def preprocess_img_implt(self: Any) -> bool:
+        for stage in self.stages:
+            try:
+                use_pretrained = getattr(stage, "use_pretrained")
+                if use_pretrained:
+                    return False
+            except Exception:
+                pass
+        return True
+
+    return preprocess_img_implt
+
+
 __all__ = [
     "_generate_name_impl",
     "_generate_type_impl",
@@ -318,4 +332,5 @@ __all__ = [
     "_generate_setstate",
     "_generate_getstate",
     "_generate_change_output",
+    "_preprocess_image",
 ]

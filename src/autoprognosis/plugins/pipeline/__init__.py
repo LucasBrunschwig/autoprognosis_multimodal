@@ -29,6 +29,7 @@ from .generators import (
     _generate_score,
     _generate_setstate,
     _generate_type_impl,
+    _preprocess_image,
 )
 
 
@@ -56,6 +57,7 @@ class PipelineMeta(type):
         dct["load"] = _generate_load()
         dct["load_template"] = _generate_load_template()
         dct["change_output"] = _generate_change_output()
+        dct["preprocess_image"] = _preprocess_image()
 
         dct["plugin_types"] = list(plugins)
 
