@@ -28,7 +28,7 @@ class Preprocessors(PluginLoader):
             "feature_scaling",
             "dimensionality_reduction",
             "image_processing",
-            "image_dimensionality_reduction",
+            "image_reduction",
         ]:
             raise RuntimeError("Invalid preprocessing category")
 
@@ -39,7 +39,7 @@ class Preprocessors(PluginLoader):
             plugins = dim_reduction_plugins
         elif category == "image_processing":
             plugins = image_processing_plugins
-        elif category == "image_dimensionality_reduction":
+        elif category == "image_reduction":
             plugins = image_dimensionality_reduction_plugins
 
         super().__init__(plugins, PreprocessorPlugin)
