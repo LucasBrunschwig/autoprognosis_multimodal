@@ -81,7 +81,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def subtype() -> str:
-        return "dimensionality_reduction"
+        return "image_reduction"
 
     @staticmethod
     def modality_type():
