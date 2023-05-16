@@ -2,8 +2,8 @@
 from typing import Any, List
 
 # third party
+import numpy as np
 import pandas as pd
-import torch
 from torchvision import transforms
 from torchvision.transforms import Normalize
 
@@ -57,12 +57,14 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> "ImageNormalizerPlugin":
 
-        transform = transforms.Compose([transforms.ToTensor()])
+        X_images = X.squeeze().apply(
+            lambda img_: transforms.ToTensor()(img_).detach().cpu().numpy()
+        )
+        X_images = np.stack(X_images.to_numpy().squeeze())
 
         # Compute mean and stds along each channel
-        X_tensor = transform(torch.stack(X.values))
-        mean = X_tensor.mean()
-        std = X_tensor.std()
+        mean = X_images.mean(axis=(0, 2, 3))
+        std = X_images.std(axis=(0, 2, 3))
 
         self.model = Normalize(mean=mean, std=std)
 
@@ -70,7 +72,13 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self.apply:
-            return pd.DataFrame(self.model(torch.stack(X.values)))
+            return pd.DataFrame(
+                X.squeeze().apply(
+                    lambda d: transforms.ToPILImage()(
+                        self.model(transforms.ToTensor()(d))
+                    )
+                )
+            )
         else:
             return X
 
