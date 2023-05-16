@@ -33,7 +33,7 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
         self.model = Compose(
             [
                 ToTensor(),
-                Resize(size=size),
+                Resize(size=size, antialias=True),
                 ToPILImage(),
             ]
         )
