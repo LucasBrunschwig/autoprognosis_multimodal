@@ -206,26 +206,11 @@ class MultimodalClassifierSeeker:
 
             start = time.time()
 
-            model = estimator.get_pipeline_from_named_args(**kwargs)
-
             # If no tabular data remove specific stages
             if local_X.empty:
-                estimator.imputers = []
-                estimator.feature_selection = []
-                estimator.feature_scaling = []
+                estimator.remove_tabular_processor()
 
             # If the pipeline uses predefined CNN no image processing
-            try:
-                use_pretrained = getattr(model.stages[-1], "use_pretrained")
-                if use_pretrained:
-                    kwargs["no_image_processing"] = True
-                log.warning(
-                    "Pipeline uses predefined CNN which handles image preprocessing"
-                )
-
-            except Exception:
-                log.warning("Image preprocessors will be optimized")
-
             model = estimator.get_pipeline_from_named_args(**kwargs)
 
             try:
