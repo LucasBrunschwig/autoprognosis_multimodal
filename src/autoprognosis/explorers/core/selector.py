@@ -95,12 +95,8 @@ class PipelineSelector:
             fs_str.sort()
             return f"{self.classifier.fqdn()}.feature_selection_candidate.{'_'.join(fs_str)}"
         elif key == "image_processing_step":
-            fs_str = [fs.name() for fs in self.image_processing]
-            steps = []
-            for step in fs_str:
-                steps.append(f"{self.classifier.fqdn()}.image_processing_step.{step}")
-            return steps
-        elif key == "image_dimensionality_reduction_candidate":
+            return f"{self.classifier.fqdn()}.image_processing_step.{step}"
+        elif key == "image_reduction_candidate":
             fs_str = [fs.name() for fs in self.image_dimensionality_reduction]
             fs_str.sort()
             return f"{self.classifier.fqdn()}.image_dimensionality_reduction_candidate.{'_'.join(fs_str)}"
@@ -136,6 +132,8 @@ class PipelineSelector:
                     [fs.name() for fs in self.feature_selection],
                 )
             )
+            for plugin in self.feature_selection:
+                hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
         if len(self.image_processing) > 0:
             # force to add all image processing steps as the only choice
@@ -143,9 +141,11 @@ class PipelineSelector:
                 hp.append(
                     params.Categorical(
                         self._generate_dist_name("image_processing_step", fs.name()),
-                        fs.name(),
+                        [fs.name()],
                     )
                 )
+            for plugin in self.image_processing:
+                hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
             for plugin in self.feature_selection:
                 hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
@@ -299,14 +299,13 @@ class PipelineSelector:
             add_stage_hp(self.imputers[0])
 
         # Image preprocessing might not be subjected to optimization
-        if not kwargs.get("no_image_preprocessing", None):
+        if self.preprocess_image:
             # Add resizer by default
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
-
-            image_key = self._generate_dist_name("image_processing_step")
-            for key in image_key:
+            for step in self.image_processing:
+                key = self._generate_dist_name("image_processing_step", step.name())
                 if key in kwargs:
                     idx = kwargs[key]
                     selected = Preprocessors(category="image_processing").get_type(idx)
@@ -351,4 +350,24 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list)(pipeline_args)
+        estimator = Pipeline(model_list)(pipeline_args)
+
+        if (
+            self.image_processing
+            and self.preprocess_image
+            and not estimator.preprocess_image()
+        ):
+            self.preprocess_image = False
+            return self.get_pipeline_from_named_args(**kwargs)
+
+        return estimator
+
+    def remove_tabular_processing(self):
+        """This function removes the tabular processing steps if there are no tabular data"""
+        self.imputers = []
+        self.feature_selection = []
+        self.feature_scaling = []
+
+    def remove_image_processing(self):
+        """This function removes the tabular processing steps if image are preprocessed"""
+        self.image_processing = []
