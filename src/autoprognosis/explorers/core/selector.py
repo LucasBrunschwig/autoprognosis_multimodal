@@ -53,6 +53,7 @@ class PipelineSelector:
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
     ) -> None:
         self.calibration = calibration
+        self.preprocess_image = True
         self.imputers = [Imputers().get_type(plugin) for plugin in imputers]
         self.feature_scaling = [
             Preprocessors(category="feature_scaling").get_type(plugin)
@@ -67,7 +68,7 @@ class PipelineSelector:
             for plugin in image_processing
         ]
         self.image_dimensionality_reduction = [
-            Preprocessors(category="image_dimensionality_reduction").get_type(plugin)
+            Preprocessors(category="image_reduction").get_type(plugin)
             for plugin in image_dimensionality_reduction
         ]
 
@@ -99,7 +100,9 @@ class PipelineSelector:
         elif key == "image_reduction_candidate":
             fs_str = [fs.name() for fs in self.image_dimensionality_reduction]
             fs_str.sort()
-            return f"{self.classifier.fqdn()}.image_dimensionality_reduction_candidate.{'_'.join(fs_str)}"
+            return (
+                f"{self.classifier.fqdn()}.image_reduction_candidate.{'_'.join(fs_str)}"
+            )
 
         else:
             raise ValueError(f"invalid key {key}")
@@ -147,7 +150,14 @@ class PipelineSelector:
             for plugin in self.image_processing:
                 hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
-            for plugin in self.feature_selection:
+        if len(self.image_dimensionality_reduction) > 0:
+            hp.append(
+                params.Categorical(
+                    self._generate_dist_name("image_reduction_candidate"),
+                    [fs.name() for fs in self.image_dimensionality_reduction],
+                )
+            )
+            for plugin in self.image_dimensionality_reduction:
                 hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
         if len(self.calibration) > 0:
@@ -312,14 +322,10 @@ class PipelineSelector:
                     model_list.append(selected.fqdn())
                     add_stage_hp(selected)
 
-        img_reduction_key = self._generate_dist_name(
-            "image_dimensionality_reduction_candidate"
-        )
+        img_reduction_key = self._generate_dist_name("image_reduction_candidate")
         if img_reduction_key in kwargs:
             idx = kwargs[img_reduction_key]
-            selected = Preprocessors(
-                category="image_dimensionality_reduction"
-            ).get_type(idx)
+            selected = Preprocessors(category="image_reduction").get_type(idx)
             model_list.append(selected.fqdn())
             add_stage_hp(selected)
         elif len(self.image_dimensionality_reduction) > 0:
