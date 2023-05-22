@@ -53,7 +53,7 @@ default_risk_estimation_names = [
     "coxnet",
 ]
 
-CNN = ["alexnet", "resnet18", "resnet50", "vgg19"]
+CNN = ["alexnet", "resnet18"]
 
 WEIGHTS = {
     "alexnet": "AlexNet_Weights.DEFAULT",
