@@ -8,6 +8,9 @@ default_classifiers_names = [
     "lgbm",
     "logistic_regression",
 ]
+
+default_image_classsifiers_names = ["cnn"]
+
 default_multimodal_names = [
     "early_fusion",
 ]
