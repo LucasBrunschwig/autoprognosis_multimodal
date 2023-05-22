@@ -7,6 +7,7 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
 import autoprognosis.plugins.core.params as params
+from autoprognosis.plugins.prediction.classifiers.plugin_cnn import ConvNetPredefined
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
@@ -89,16 +90,41 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("conv_net", CNN)]
+        return [
+            params.Categorical("conv_net", CNN),
+        ]
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFeaturesPlugin":
+
+        y = args[0]
+
+        self.model = ConvNetPredefined(
+            model_name=self.conv_net,
+            use_pretrained=True,
+            n_classes=len(y.value_counts()),
+            non_linear="relu",
+            batch_size=32,
+            lr=1e-6,
+            n_iter_min=5,
+            n_iter=300,
+            early_stopping=True,
+            n_iter_print=5,
+            patience=5,
+        )
+
+        X_tensor = self.model.preprocess_images(X.squeeze())
+
+        self.model.train(X_tensor, y)
+
+        self.model.remove_classification_layer()
+
         return self
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_preprocess = self.preprocess_images(X.squeeze())
+        X_preprocess = self.model.preprocess_images(X.squeeze())
         return pd.DataFrame(self.model(X_preprocess).detach())
 
     def save(self) -> bytes:
