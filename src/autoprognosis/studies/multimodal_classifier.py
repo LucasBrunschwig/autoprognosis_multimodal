@@ -10,6 +10,7 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
+    default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
     default_image_dimensionality_reduction,
@@ -177,19 +178,20 @@ class MultimodalStudy(Study):
         dataset: pd.DataFrame,
         image: str,
         target: str,
+        multimodal_type: str,
+        preprocess_images: bool = True,
         num_iter: int = 20,
         num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
-        timeout: int = 360,
+        timeout: Optional[int] = 360,
         metric: str = "aucroc",
         study_name: Optional[str] = None,
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         image_processing: List[str] = default_image_processing,
-        image_dimensionality_reduction: List[
-            str
-        ] = default_image_dimensionality_reduction,
-        classifiers: List[str] = default_multimodal_names,
+        image_dimensionality_reduction: List[str] = [],
+        fusion: List[str] = [],
+        classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = ["ice"],
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
@@ -208,6 +210,54 @@ class MultimodalStudy(Study):
 
         self.hooks = hooks
         dataset = pd.DataFrame(dataset)
+
+        if multimodal_type not in [
+            "early_fusion",
+            "intermediate_fusion",
+            "late_fusion",
+        ]:
+            raise ValueError(
+                "multimodal_type expect one of the three values "
+                "(early_fusion, intermediate_fusion, late_fusion)"
+            )
+
+        if multimodal_type != "early_fusion" and image_dimensionality_reduction:
+            image_dimensionality_reduction = []
+            log.warning(
+                f"Dimensionality reduction of images is only included in early fusion - multimodal_type = {type}"
+            )
+        elif multimodal_type == "early_fusion" and not image_dimensionality_reduction:
+            image_dimensionality_reduction = default_image_dimensionality_reduction
+
+        if multimodal_type != "early_fusion" and fusion:
+            fusion = []
+            log.warning(
+                f"Fusion plugin are only included in early fusion - multimodal_type = {type}"
+            )
+        elif multimodal_type == "early_fusion" and not fusion:
+            fusion = ["concatenate"]
+
+        # Potential to add other modalities
+        self.multimodal_key = {}
+        non_tabular_column = []
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            non_tabular_column.extend(image)
+            self.multimodal_key["img"] = image
+
+        self.multimodal_key["tab"] = dataset.columns.difference(
+            non_tabular_column + [target]
+        )
+
+        if not classifiers:
+            if multimodal_type == "early_fusion":
+                classifiers = default_classifiers_names
+            if multimodal_type == "intermediate_fusion":
+                classifiers = default_multimodal_names
+
+        if not preprocess_images:
+            image_processing = []
 
         if nan_placeholder is not None:
             dataset = dataset.replace(nan_placeholder, np.nan)
@@ -244,13 +294,17 @@ class MultimodalStudy(Study):
             self.search_Y = self.Y.copy()
             self.search_group_ids = self.group_ids
 
-        dataset["hash_img"] = np.array(
-            [np.asarray(image).sum() for image in dataset[image].to_numpy()]
-        )
-        self.internal_name = dataframe_hash(
-            dataset[dataset.columns.difference(["image"])]
-        )
-        dataset.drop("hash_img", axis=1)
+        self.search_multimodal_X = {}
+        for key, columns in self.multimodal_key.items():
+            self.search_multimodal_X[key] = self.search_X[columns]
+
+        for img_key in image:
+            dataset["hash_" + img_key] = np.array(
+                [np.asarray(img).sum() for img in dataset[img_key].to_numpy()]
+            )
+        self.internal_name = dataframe_hash(dataset[dataset.columns.difference(image)])
+        for img_key in image:
+            dataset.drop("hash_" + img_key, axis=1)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
@@ -266,26 +320,26 @@ class MultimodalStudy(Study):
         self.random_state = random_state
         self.n_folds_cv = n_folds_cv
 
-        # Potential to add other modalities
-        self.multimodal = {"img": image}
-
         self.seeker = MultimodalEnsembleSeeker(
             self.internal_name,
             num_iter=num_iter,
             num_ensemble_iter=num_ensemble_iter,
             timeout=timeout,
             metric=metric,
+            multimodal_type=multimodal_type,
             feature_scaling=feature_scaling,
             feature_selection=feature_selection,
+            preprocess_images=preprocess_images,
             image_processing=image_processing,
             image_dimensionality_reduction=image_dimensionality_reduction,
-            classifiers=classifiers,
             imputers=imputers,
+            fusion=fusion,
+            classifiers=classifiers,
             hooks=self.hooks,
             random_state=self.random_state,
             ensemble_size=ensemble_size,
             n_folds_cv=n_folds_cv,
-            multimodal=self.multimodal,
+            multimodal_key=self.multimodal_key,
         )
 
     def _should_continue(self) -> None:
@@ -350,12 +404,12 @@ class MultimodalStudy(Study):
             start = time.time()
 
             current_model = self.seeker.search(
-                self.search_X, self.search_Y, group_ids=self.search_group_ids
+                self.search_multimodal_X, self.search_Y, group_ids=self.search_group_ids
             )
 
             metrics = evaluate_estimator(
                 current_model,
-                self.search_X,
+                self.search_multimodal_X,
                 self.search_Y,
                 metric=self.metric,
                 group_ids=self.search_group_ids,
