@@ -13,11 +13,8 @@ import numpy as np
 import pandas as pd
 from torchvision import transforms
 
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s - %(message)s",
-    level=logging.INFO,
-    datefmt="%m/%d/%Y %I:%M:%S",
-)
+# autoprognosis absolute
+import autoprognosis.logger as log
 
 
 def read_zip(filename: Union[Path, str], img_format: str = "PIL") -> dict:
@@ -50,9 +47,9 @@ def read_zip(filename: Union[Path, str], img_format: str = "PIL") -> dict:
                             raise NotImplementedError("Future implementations")
                         images.update({os.path.basename(img_name): img_})
                     except ValueError:
-                        logging.info("empty images")
+                        log.info("empty images")
     except zipfile.BadZipFile:
-        logging.error("Error: Zip file is corrupted")
+        log.error("Error: Zip file is corrupted")
 
     return images
 
@@ -108,13 +105,13 @@ class DataLoader:
         # Load Metadata as DataFrame
         metadata_df = pd.read_csv(self.PATH / "metadata.csv")
 
-        # Load Images as DataFrame
+        # Load Images as dictionary
         images_part1 = read_zip(self.PATH / "imgs_part_1.zip", self.format)
         images_part2 = read_zip(self.PATH / "imgs_part_2.zip", self.format)
-        images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
-        images = {**images_part1, **images_part2, **images_part3}
+        # images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
+        images_dict = {**images_part1, **images_part2}  # , **images_part3}
         images_df = pd.DataFrame.from_dict(
-            images, orient="index", columns=["image"], dtype=object
+            images_dict, orient="index", columns=["image"], dtype=object
         )
         images_df.reset_index(inplace=True)
 
