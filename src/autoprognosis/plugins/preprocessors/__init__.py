@@ -21,6 +21,8 @@ image_dimensionality_reduction_plugins = glob.glob(
     join(dirname(__file__), "image_reduction/plugin*.py")
 )
 
+multimodal_fusion_plugins = glob.glob(join(dirname(__file__), "fusion/plugin*.py"))
+
 
 class Preprocessors(PluginLoader):
     def __init__(self, category: str = "feature_scaling") -> None:
@@ -29,6 +31,7 @@ class Preprocessors(PluginLoader):
             "dimensionality_reduction",
             "image_processing",
             "image_reduction",
+            "fusion",
         ]:
             raise RuntimeError("Invalid preprocessing category")
 
@@ -41,6 +44,8 @@ class Preprocessors(PluginLoader):
             plugins = image_processing_plugins
         elif category == "image_reduction":
             plugins = image_dimensionality_reduction_plugins
+        elif category == "fusion":
+            plugins = multimodal_fusion_plugins
 
         super().__init__(plugins, PreprocessorPlugin)
 
@@ -50,6 +55,7 @@ __all__ = (
     + [basename(f)[:-3] for f in dim_reduction_plugins if isfile(f)]
     + [basename(f)[:-3] for f in image_processing_plugins if isfile(f)]
     + [basename(f)[:-3] for f in image_dimensionality_reduction_plugins if isfile(f)]
+    + [basename(f)[:-3] for f in multimodal_fusion_plugins if isfile(f)]
     + [
         "Preprocessors",
         "PreprocessorPlugin",

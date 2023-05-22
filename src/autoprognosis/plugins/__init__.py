@@ -35,6 +35,7 @@ class Plugins:
                 ),
                 "image_processing": Preprocessors(category="image_processing"),
                 "image_reduction": Preprocessors(category="image_reduction"),
+                "fusion": Preprocessors(category="fusion"),
             },
         }
 
