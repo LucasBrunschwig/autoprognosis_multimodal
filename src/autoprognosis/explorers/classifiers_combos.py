@@ -138,13 +138,11 @@ class EnsembleSeeker:
         metric: str = "aucroc",
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
-        image_processing: List[str] = [],
         classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         random_state: int = 0,
-        images: str = None,
     ) -> None:
         ensemble_size = min(ensemble_size, len(classifiers))
 
@@ -167,13 +165,11 @@ class EnsembleSeeker:
             timeout=timeout,
             feature_scaling=feature_scaling,
             feature_selection=feature_selection,
-            image_processing=image_processing,
             classifiers=classifiers,
             hooks=hooks,
             imputers=imputers,
             optimizer_type=optimizer_type,
             random_state=self.random_state,
-            images=images,
         )
 
     def _should_continue(self) -> None:

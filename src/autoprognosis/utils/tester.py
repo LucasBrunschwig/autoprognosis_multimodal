@@ -248,26 +248,19 @@ def evaluate_estimator(
 
     # group_ids is always ignored for StratifiedKFold so safe to pass None
     for train_index, test_index in skf.split(X, Y, groups=group_ids):
+
         X_train = X.loc[X.index[train_index]]
         Y_train = Y.loc[Y.index[train_index]]
         X_test = X.loc[X.index[test_index]]
         Y_test = Y.loc[Y.index[test_index]]
 
-        X_train_modalities = {}
-        X_test_modalities = {}
-        for key in kwargs.keys():
-            if key in ["img", "audio"]:
-                X_modality = pd.DataFrame(kwargs[key]).reset_index(drop=True)
-                X_train_modalities[key] = X_modality.loc[X_modality.index[train_index]]
-                X_test_modalities[key] = X_modality.loc[X_modality.index[test_index]]
-
         if pretrained:
             model = estimator[indx]
         else:
             model = copy.deepcopy(estimator)
-            model.fit(X_train, Y_train, **X_train_modalities)
+            model.fit(X_train, Y_train)
 
-        preds = model.predict_proba(X_test, **X_test_modalities)
+        preds = model.predict_proba(X_test)
 
         scores = evaluator.score_proba(Y_test, preds)
         for metric in scores:
@@ -373,13 +366,14 @@ def evaluate_estimator_multiple_seeds(
 @validate_arguments(config=dict(arbitrary_types_allowed=True))
 def evaluate_multimodal_estimator(
     estimator: Any,
-    X: Union[pd.DataFrame, np.ndarray],
+    X: dict,
     Y: Union[pd.Series, np.ndarray, List],
+    X_modalities: dict = {},
+    multimodal_type: str = "early_fusion",
     n_folds: int = 3,
     seed: int = 0,
     pretrained: bool = False,
     group_ids: Optional[pd.Series] = None,
-    images: str = None,
     *args: Any,
     **kwargs: Any,
 ) -> Dict:
@@ -424,13 +418,20 @@ def evaluate_multimodal_estimator(
         raise ValueError("n_folds must be >= 2")
     enable_reproducible_results(seed)
 
-    X = pd.DataFrame(X).reset_index(drop=True)
+    for modality, df in X.items():
+        if not (df.empty):
+            X[modality] = pd.DataFrame(df).reset_index(drop=True)
+        else:
+            X.pop(modality)
+
     Y = LabelEncoder().fit_transform(Y)
     Y = pd.Series(Y).reset_index(drop=True)
     if group_ids is not None:
         group_ids = pd.Series(group_ids).reset_index(drop=True)
 
-    log.debug(f"evaluate_estimator shape x:{X.shape} y:{Y.shape}")
+    log.debug(
+        f"evaluate_estimator shape x_img:{X['img'].shape} x_tab:{X['tab'].shape} y:{Y.shape}"
+    )
 
     results = {}
 
@@ -445,22 +446,34 @@ def evaluate_multimodal_estimator(
         skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
 
     # group_ids is always ignored for StratifiedKFold so safe to pass None
-    for train_index, test_index in skf.split(X, Y, groups=group_ids):
-        X_train = X.loc[X.index[train_index]]
+    for train_index, test_index in skf.split(np.zeros(Y.shape[0]), Y, groups=group_ids):
         Y_train = Y.loc[Y.index[train_index]]
-        X_test = X.loc[X.index[test_index]]
         Y_test = Y.loc[Y.index[test_index]]
 
-        X_train = [X_train[X_train.columns.difference([images])], X_train[images]]
-        X_test = [X_test[X_test.columns.difference([images])], X_test[images]]
+        X_train = {}
+        X_test = {}
+        for key in X.keys():
+            X_train[key] = X[key].loc[X[key].index[train_index]]
+            X_test[key] = X[key].loc[X[key].index[test_index]]
 
         if pretrained:
             model = estimator[indx]
         else:
             model = copy.deepcopy(estimator)
-            model.fit(X_train, Y_train)
 
-        preds = model.predict_proba(X_test)
+            if multimodal_type == "early_fusion":
+                model.early_fusion_fit(X_train, Y_train)
+            elif multimodal_type == "late_fusion":
+                if len(X_train.keys()) > 1:
+                    raise RuntimeError(
+                        f"Late Fusion can only one modality at a time: {X.keys()}"
+                    )
+                model.fit(X_train[list(X_train.keys())[0]], Y_train)
+
+        if multimodal_type == "early_fusion":
+            preds = model.early_fusion_predict_proba(X_test)
+        elif multimodal_type == "late_fusion":
+            preds = model.predict_proba(X_test[list(X_test.keys())[0]])
 
         scores = evaluator.score_proba(Y_test, preds)
         for metric in scores:

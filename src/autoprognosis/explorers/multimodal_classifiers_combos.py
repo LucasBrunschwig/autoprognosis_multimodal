@@ -14,6 +14,7 @@ from autoprognosis.explorers.core.defaults import (
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_image_classsifiers_names,
     default_image_dimensionality_reduction,
     default_image_processing,
 )
@@ -26,9 +27,11 @@ from autoprognosis.plugins.ensemble.classifiers import (
     StackingEnsemble,
     WeightedEnsemble,
 )
-from autoprognosis.utils.tester import evaluate_estimator
+from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_estimator
 
 # autoprognosis relative
+from .classifiers import ClassifierSeeker
+from .image_classifiers import ImageClassifierSeeker
 from .multimodal_classifiers import MultimodalClassifierSeeker
 
 EPS = 1e-8
@@ -134,22 +137,25 @@ class MultimodalEnsembleSeeker:
         study_name: str,
         num_iter: int = 100,
         num_ensemble_iter: int = 100,
-        timeout: int = 360,
+        timeout: Optional[int] = 360,
         n_folds_cv: int = 5,
         ensemble_size: int = 3,
         metric: str = "aucroc",
+        multimodal_type: str = "early_fusion",
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
+        preprocess_images: bool = True,
         image_processing: List[str] = default_image_processing,
         image_dimensionality_reduction: List[
             str
         ] = default_image_dimensionality_reduction,
+        fusion: List[str] = ["concatenate"],
         classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         random_state: int = 0,
-        multimodal: dict = None,
+        multimodal_key: dict = None,
     ) -> None:
         ensemble_size = min(ensemble_size, len(classifiers))
 
@@ -162,16 +168,10 @@ class MultimodalEnsembleSeeker:
         self.hooks = hooks
         self.optimizer_type = optimizer_type
         self.random_state = random_state
-        self.type = "early_fusion"
-        self.multimodal = {"img": ["image"]}
+        self.multimodal_type = multimodal_type
+        self.multimodal_key = multimodal_key
 
-        if self.type != "early_fusion" and image_dimensionality_reduction:
-            image_dimensionality_reduction = []
-            log.warning(
-                "Dimensionality reduction of images is only used in early fusion: will not be used"
-            )
-
-        if self.type == "early_fusion":
+        if self.multimodal_type == "early_fusion":
             self.seeker = MultimodalClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
@@ -183,34 +183,36 @@ class MultimodalEnsembleSeeker:
                 feature_selection=feature_selection,
                 image_processing=image_processing,
                 image_dimensionality_reduction=image_dimensionality_reduction,
-                classifiers=["image_tabular_early_fusion"],
+                fusion=fusion,
+                classifiers=classifiers,
                 hooks=hooks,
                 imputers=imputers,
                 optimizer_type=optimizer_type,
                 random_state=self.random_state,
-                modalities=self.multimodal,
+                multimodal_key=self.multimodal_key,
+                multimodal_type=self.multimodal_type,
             )
 
-        if self.type == "late_fusion":
-            self.image_seeker = MultimodalClassifierSeeker(
+        if self.multimodal_type == "late_fusion":
+            # Image Seeker, solve the issue that if we do image reduction the classifier needs to be 1D however CNN
+            # Takes 2D input
+            self.image_seeker = ImageClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
                 metric=metric,
                 n_folds_cv=n_folds_cv,
                 top_k=ensemble_size,
                 timeout=timeout,
-                feature_scaling=feature_scaling,
-                feature_selection=feature_selection,
+                preprocess_images=preprocess_images,
                 image_processing=image_processing,
                 image_dimensionality_reduction=image_dimensionality_reduction,
-                classifiers=["cnn"],
+                classifiers=default_image_classsifiers_names,
                 hooks=hooks,
-                imputers=imputers,
                 optimizer_type=optimizer_type,
                 random_state=self.random_state,
-                modalities=self.multimodal,
             )
-            self.tabular_seeker = MultimodalClassifierSeeker(
+            # Tabular Seeker: Here we could use the original seeker from classifier
+            self.tabular_seeker = ClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
                 metric=metric,
@@ -219,14 +221,11 @@ class MultimodalEnsembleSeeker:
                 timeout=timeout,
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
-                image_processing=[],
-                image_dimensionality_reduction=[],
-                classifiers=default_classifiers_names,
+                classifiers=classifiers,
                 hooks=hooks,
                 imputers=imputers,
                 optimizer_type=optimizer_type,
                 random_state=self.random_state,
-                modalities={},
             )
 
     def _should_continue(self) -> None:
@@ -320,103 +319,89 @@ class MultimodalEnsembleSeeker:
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def search(
         self,
-        X: pd.DataFrame,
+        X: dict,
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
     ) -> BaseEnsemble:
         self._should_continue()
 
-        # Early Fusion should fuse model by forcing one to be the CNN
-        # The best solution would be to define an X combining images through
-
-        # Late Fusion
-        # For Late Fusion we can do a classifier search for each model
-        # - one for the clinical data and one for image data
-
-        if self.type == "late_fusion":
-
-            # Find the best classifiers for tabular data
-            X_tabular = X[X.columns.difference(self.multimodal["img"])]
-            best_tabular_models = self.tabular_seeker.search(
-                X_tabular, Y, group_ids=group_ids
-            )
+        if self.multimodal_type == "late_fusion":
 
             # Find the best classifiers for images
-            X_images = pd.DataFrame(X[self.multimodal["img"]])
             best_image_models = self.image_seeker.search(
-                X_images, Y, group_ids=group_ids
+                X["img"], Y, group_ids=group_ids
+            )
+
+            # Find the best classifiers for tabular data
+            best_tabular_models = self.tabular_seeker.search(
+                X["tab"], Y, group_ids=group_ids
             )
 
             # Combine models with one another
             best_models = best_tabular_models + best_image_models
 
+            scores = []
+            ensembles: list = []
+
             # Meta Learning and Aggregation for Late Fusion
-            # TBD
+            try:
+                stacking_ensemble = StackingEnsemble(
+                    best_models, meta_model=best_models[0]
+                )
+                stacking_ens_score = evaluate_multimodal_estimator(
+                    stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+                )["raw"][self.metric][0]
+                log.info(
+                    f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
+                )
+                scores.append(stacking_ens_score)
+                ensembles.append(stacking_ensemble)
+            except BaseException as e:
+                log.info(f"StackingEnsemble failed {e}")
 
-        # Intermediate fusion: implemented with the early fusion plugin
-        elif self.type == "intermediate_fusion":
+            if self.hooks.cancel():
+                raise StudyCancelled("Classifier search cancelled")
+
+            try:
+                aggr_ensemble = AggregatingEnsemble(best_models)
+                aggr_ens_score = evaluate_estimator(
+                    aggr_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+                )["raw"][self.metric][0]
+                log.info(
+                    f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
+                )
+
+                scores.append(aggr_ens_score)
+                ensembles.append(aggr_ensemble)
+            except BaseException as e:
+                log.info(f"AggregatingEnsemble failed {e}")
+
+            if self.hooks.cancel():
+                raise StudyCancelled("Classifier search cancelled")
+
+            weighted_ensemble, weighted_ens_score = self.search_weights(
+                best_models, X, Y, group_ids=group_ids
+            )
+            log.info(
+                f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
+            )
+
+            scores.append(weighted_ens_score)
+            ensembles.append(weighted_ensemble)
+
+            return ensembles[np.argmax(scores)]
+
+        elif self.multimodal_type == "early_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
-        elif self.type == "early_fusion":
+            # Intermediate fusion: implemented with the early fusion plugin
+        elif self.multimodal_type == "intermediate_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
-
-            # 1. select one model for image representation
-            #   type of image representation are through: convolutional neural networks, autoencoders
-            # 2. Try various
-            # 3. find the best classifier after concatenating the representation with the clinical data
 
         else:
             raise ValueError(
-                f"This type of multimodal study does not exist: {self.type}"
+                f"This type of multimodal study does not exist: {self.multimodal_type}"
             )
 
         if self.hooks.cancel():
             raise StudyCancelled("Classifier search cancelled")
-
-        scores = []
-        ensembles: list = []
-
-        try:
-            stacking_ensemble = StackingEnsemble(best_models, meta_model=best_models[0])
-            stacking_ens_score = evaluate_estimator(
-                stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
-            )["raw"][self.metric][0]
-            log.info(
-                f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
-            )
-            scores.append(stacking_ens_score)
-            ensembles.append(stacking_ensemble)
-        except BaseException as e:
-            log.info(f"StackingEnsemble failed {e}")
-
-        if self.hooks.cancel():
-            raise StudyCancelled("Classifier search cancelled")
-
-        try:
-            aggr_ensemble = AggregatingEnsemble(best_models)
-            aggr_ens_score = evaluate_estimator(
-                aggr_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
-            )["raw"][self.metric][0]
-            log.info(
-                f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
-            )
-
-            scores.append(aggr_ens_score)
-            ensembles.append(aggr_ensemble)
-        except BaseException as e:
-            log.info(f"AggregatingEnsemble failed {e}")
-
-        if self.hooks.cancel():
-            raise StudyCancelled("Classifier search cancelled")
-
-        weighted_ensemble, weighted_ens_score = self.search_weights(
-            best_models, X, Y, group_ids=group_ids
-        )
-        log.info(
-            f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
-        )
-
-        scores.append(weighted_ens_score)
-        ensembles.append(weighted_ensemble)
-
-        return ensembles[np.argmax(scores)]

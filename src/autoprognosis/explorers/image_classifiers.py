@@ -11,9 +11,9 @@ from pydantic import validate_arguments
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
-    default_classifiers_names,
-    default_feature_scaling_names,
-    default_feature_selection_names,
+    default_image_classsifiers_names,
+    default_image_dimensionality_reduction,
+    default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import Optimizer
 from autoprognosis.explorers.core.selector import PipelineSelector
@@ -25,7 +25,7 @@ from autoprognosis.utils.tester import evaluate_estimator
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
 
 
-class ClassifierSeeker:
+class ImageClassifierSeeker:
     """
     AutoML core logic for classification tasks.
 
@@ -126,10 +126,12 @@ class ClassifierSeeker:
         n_folds_cv: int = 5,
         top_k: int = 3,
         timeout: int = 360,
-        feature_scaling: List[str] = default_feature_scaling_names,
-        feature_selection: List[str] = default_feature_selection_names,
-        classifiers: List[str] = default_classifiers_names,
-        imputers: List[str] = [],
+        image_processing: List[str] = default_image_processing,
+        image_dimensionality_reduction: List[
+            str
+        ] = default_image_dimensionality_reduction,
+        preprocess_images: bool = True,
+        classifiers: List[str] = default_image_classsifiers_names,
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
@@ -160,9 +162,9 @@ class ClassifierSeeker:
             PipelineSelector(
                 plugin,
                 calibration=[],
-                feature_scaling=feature_scaling,
-                feature_selection=feature_selection,
-                imputers=imputers,
+                preprocess_images=preprocess_images,
+                image_dimensionality_reduction=image_dimensionality_reduction,
+                image_processing=image_processing,
             )
             for plugin in classifiers
         ]
@@ -194,7 +196,7 @@ class ClassifierSeeker:
 
             start = time.time()
 
-            model = estimator.get_pipeline_from_named_args(**kwargs)
+            model = estimator.get_image_pipeline_from_named_args(**kwargs)
             try:
                 metrics = evaluate_estimator(
                     model, X, Y, n_folds=self.n_folds_cv, group_ids=group_ids

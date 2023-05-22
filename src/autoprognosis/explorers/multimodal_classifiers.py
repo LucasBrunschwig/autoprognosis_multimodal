@@ -20,7 +20,7 @@ from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.utils.parallel import n_opt_jobs
-from autoprognosis.utils.tester import evaluate_estimator
+from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
 
@@ -132,11 +132,13 @@ class MultimodalClassifierSeeker:
         imputers: List[str] = [],
         image_processing: List[str] = [],
         image_dimensionality_reduction: List[str] = [],
+        fusion: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
         random_state: int = 0,
-        modalities: dict = {},
+        multimodal_key: dict = {},
+        multimodal_type: str = "early_fusion",
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
             if int_val <= 0 or type(int_val) != int:
@@ -158,6 +160,7 @@ class MultimodalClassifierSeeker:
 
         self.study_name = study_name
         self.hooks = hooks
+        self.multimodal_type = multimodal_type
 
         self.estimators = [
             PipelineSelector(
@@ -168,6 +171,7 @@ class MultimodalClassifierSeeker:
                 image_processing=image_processing,
                 image_dimensionality_reduction=image_dimensionality_reduction,
                 imputers=imputers,
+                fusion=fusion,
             )
             for plugin in classifiers
         ]
@@ -180,7 +184,7 @@ class MultimodalClassifierSeeker:
         self.metric = metric
         self.optimizer_type = optimizer_type
         self.random_state = random_state
-        self.multimodal = modalities
+        self.multimodal_key = multimodal_key
 
     def _should_continue(self) -> None:
         if self.hooks.cancel():
@@ -189,7 +193,7 @@ class MultimodalClassifierSeeker:
     def search_best_args_for_estimator(
         self,
         estimator: Any,
-        X: pd.DataFrame,
+        X: dict,
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
     ) -> Tuple[List[float], List[float]]:
@@ -198,29 +202,23 @@ class MultimodalClassifierSeeker:
         def evaluate_args(**kwargs: Any) -> float:
             self._should_continue()
 
-            local_X = X.copy()
-            other_modalities = {}
-            for modality, column in self.multimodal.items():
-                other_modalities[modality] = local_X[column].squeeze()
-                local_X = local_X[local_X.columns.difference(column)]
-
             start = time.time()
 
             # If no tabular data remove specific stages
-            if local_X.empty:
+            if X["tab"].empty:
                 estimator.remove_tabular_processor()
 
-            # If the pipeline uses predefined CNN no image processing
-            model = estimator.get_pipeline_from_named_args(**kwargs)
+            # Create the model pipeline
+            model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)
 
             try:
-                metrics = evaluate_estimator(
+                metrics = evaluate_multimodal_estimator(
                     model,
-                    local_X,
+                    X,
                     Y,
+                    type=self.multimodal_type,
                     n_folds=self.n_folds_cv,
                     group_ids=group_ids,
-                    **other_modalities,
                 )
             except BaseException as e:
                 log.error(f"evaluate_estimator failed: {e}")
@@ -261,7 +259,7 @@ class MultimodalClassifierSeeker:
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def search(
         self,
-        X: pd.DataFrame,
+        X: dict,
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
     ) -> List:
