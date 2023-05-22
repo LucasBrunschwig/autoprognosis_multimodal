@@ -125,7 +125,7 @@ class MultimodalClassifierSeeker:
         metric: str = "aucroc",
         n_folds_cv: int = 5,
         top_k: int = 3,
-        timeout: int = 360,
+        timeout: Optional[int] = 360,
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         classifiers: List[str] = default_classifiers_names,
@@ -140,7 +140,7 @@ class MultimodalClassifierSeeker:
         multimodal_key: dict = {},
         multimodal_type: str = "early_fusion",
     ) -> None:
-        for int_val in [num_iter, n_folds_cv, top_k, timeout]:
+        for int_val in [num_iter, n_folds_cv, top_k]:
             if int_val <= 0 or type(int_val) != int:
                 raise ValueError(
                     f"invalid input number {int_val}. Should be a positive integer"

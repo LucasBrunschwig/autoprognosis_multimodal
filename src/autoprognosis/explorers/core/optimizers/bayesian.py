@@ -95,7 +95,7 @@ class BayesianOptimizer:
         estimator: Any = None,
         ensemble_len: Optional[int] = None,
         n_trials: int = 50,
-        timeout: int = 60,
+        timeout: Optional[int] = 60,
         skip_recap: bool = False,
         random_state: int = 0,
     ):
