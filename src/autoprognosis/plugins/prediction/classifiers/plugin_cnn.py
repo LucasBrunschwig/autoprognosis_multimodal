@@ -49,6 +49,19 @@ WEIGHTS = {
     "resnet": "ResNet18_Weights.DEFAULT",
 }
 
+NONLIN = {
+    "elu": nn.ELU,
+    "relu": nn.ReLU,
+    "leaky_relu": nn.LeakyReLU,
+    "selu": nn.SELU,
+}
+
+# Depending on the number of additional layer the intermediate layer have different sizes
+N_INTERMEDIATE = {
+    "alexnet": {1: 512, 2: 1024, 3: 2048},
+    "resnet": {1: 128, 2: 256, 3: 512},
+}
+
 
 class ConvNet(nn.Module):
     # TBD: this will be a class where CNN models will be defined using predefined building blocks
@@ -80,8 +93,8 @@ class ConvNetPredefined(nn.Module):
         self,
         model_name: str,
         use_pretrained: bool,
-        fine_tune: bool,
         n_classes: Optional[int],
+        non_linear: str,
         batch_size: int,
         lr: float,
         n_iter: int,
@@ -89,6 +102,7 @@ class ConvNetPredefined(nn.Module):
         n_iter_print: int,
         n_iter_min: int,
         patience: int,
+        n_additional_layer: int = 1,
     ):
 
         super(ConvNetPredefined, self).__init__()
@@ -96,8 +110,9 @@ class ConvNetPredefined(nn.Module):
         self.model_name = model_name.lower()
         self.use_pretrained = use_pretrained
         self.n_classes = n_classes
-        self.fine_tune = fine_tune
+        self.additional_layer = n_additional_layer
 
+        self.non_linear = non_linear
         self.batch_size = batch_size
         self.lr = lr
         self.n_iter = n_iter
@@ -123,16 +138,30 @@ class ConvNetPredefined(nn.Module):
             raise ValueError("Late Fusion CNN requires to know the number of classes")
 
         # Replace the output layer by the given number of classes
-        if self.model_name in ["resnet"]:
+        if self.model_name == "resnet":
             n_features_in = self.model.fc.in_features
-            self.model.fc = nn.Linear(n_features_in, n_classes)
-        elif self.model_name in ["alexnet"]:
-            n_features_in = self.model.classifier[4].in_features
-            n_intermediate = 1024
-            self.model.classifier[4] = nn.Linear(n_features_in, n_intermediate)
-            self.model.classifier[6] = nn.Linear(n_intermediate, n_classes)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        elif self.model_name == "alexnet":
+            n_features_in = self.model.classifier[6].in_features
+
+        n_intermediate = N_INTERMEDIATE[self.model_name][self.additional_layer]
+        additional_layers = [
+            nn.Linear(n_features_in, n_intermediate),
+            NONLIN[self.non_linear](),
+        ]
+        for i in range(self.additional_layer - 1):
+            additional_layers.append(nn.Linear(n_intermediate, int(n_intermediate / 2)))
+            additional_layers.append(NONLIN[self.non_linear]())
+            n_intermediate = int(n_intermediate / 2)
+        additional_layers.append(nn.Linear(n_intermediate, n_classes))
+
+        if self.model_name == "resnet":
+            self.model.fc = nn.Sequential(*additional_layers)
+
+        elif self.model_name == "alexnet":
+            self.model.classifier[6] = nn.Sequential(*additional_layers)
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
@@ -140,9 +169,8 @@ class ConvNetPredefined(nn.Module):
     def set_parameter_requires_grad(
         self,
     ):
-        if not self.fine_tune:
-            for param in self.model.parameters():
-                param.requires_grad = False
+        for param in self.model.parameters():
+            param.requires_grad = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -211,6 +239,12 @@ class ConvNetPredefined(nn.Module):
 
         return self
 
+    def remove_classification_layer(self):
+        if self.model_name == "alexnet":
+            self.model.classifier[-1] = nn.Identity()
+        else:
+            self.model.fc = nn.Identity()
+
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
             return X.to(DEVICE)
@@ -257,6 +291,8 @@ class CNNPlugin(base.ClassifierPlugin):
         use_pretrained: bool = True,
         fine_tune: bool = False,
         n_classes: Optional[int] = None,
+        n_layer: int = 1,
+        non_linear: str = "relu",
         lr: float = 1e-3,
         weight_decay: float = 1e-3,
         n_iter: int = 100,
@@ -278,6 +314,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
         # Specific to Training
         self.lr = lr
+        self.non_linear = non_linear
         self.weight_decay = weight_decay
         self.n_iter = n_iter
         self.batch_size = batch_size
@@ -291,6 +328,7 @@ class CNNPlugin(base.ClassifierPlugin):
         self.use_pretrained = use_pretrained
         self.fine_tune = fine_tune
         self.n_classes = n_classes
+        self.n_additional_layer = n_layer
 
     @staticmethod
     def name() -> str:
@@ -300,7 +338,9 @@ class CNNPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", ["resnet", "alexnet"]),
-            params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
+            params.Categorical("lr", [1e-5, 1e-6, 1e-7]),
+            params.Integer("n_layer", 1, 3),
+            params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
         ]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNPlugin":
@@ -308,7 +348,6 @@ class CNNPlugin(base.ClassifierPlugin):
             raise RuntimeError("Please provide the labels for training")
 
         y = args[0]
-        X = kwargs["img"].squeeze()
 
         # Preprocess Data
         n_classes = np.unique(y).shape[0]
@@ -317,9 +356,10 @@ class CNNPlugin(base.ClassifierPlugin):
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
             use_pretrained=self.use_pretrained,
-            fine_tune=self.fine_tune,
             n_classes=n_classes,
+            n_additional_layer=self.n_additional_layer,
             lr=self.lr,
+            non_linear=self.non_linear,
             n_iter=self.n_iter,
             n_iter_min=self.n_iter_min,
             n_iter_print=self.n_iter_print,
@@ -329,10 +369,13 @@ class CNNPlugin(base.ClassifierPlugin):
         )
 
         if self.use_pretrained:
-            X = self.model.preprocess_images(X)
+            X = self.model.preprocess_images(X.squeeze())
         else:
             X = torch.stack(
-                [torchvision.transforms.ToTensor()(img[0]) for img in X.values]
+                [
+                    torchvision.transforms.ToTensor()(img[0])
+                    for img in X.squeeze().values
+                ]
             )
 
         self.model.train(X, y)
@@ -341,12 +384,14 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X = kwargs["img"].squeeze()
             if self.use_pretrained:
-                X = self.model.preprocess_images(X).to(DEVICE)
+                X = self.model.preprocess_images(X.squeeze()).to(DEVICE)
             else:
                 X = torch.stack(
-                    [torchvision.transforms.ToTensor()(img[0]) for img in X.values]
+                    [
+                        torchvision.transforms.ToTensor()(img[0])
+                        for img in X.squeeze().values
+                    ]
                 ).to(DEVICE)
 
             return self.model(X).argmax(dim=-1).detach().cpu().numpy()
@@ -355,12 +400,14 @@ class CNNPlugin(base.ClassifierPlugin):
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         with torch.no_grad():
-            X = kwargs["img"].squeeze()
             if self.use_pretrained:
-                X = self.model.preprocess_images(X)
+                X = self.model.preprocess_images(X.squeeze())
             else:
                 X = torch.stack(
-                    [torchvision.transforms.ToTensor()(img[0]) for img in X.values]
+                    [
+                        torchvision.transforms.ToTensor()(img[0])
+                        for img in X.squeeze().values
+                    ]
                 ).to(DEVICE)
 
             return self.model(X).detach().cpu().numpy()
