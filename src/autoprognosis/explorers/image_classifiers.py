@@ -286,7 +286,7 @@ class ImageClassifierSeeker:
             log.info(
                 f"Selected score {score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
             )
-            model = all_estimators[pos_est].get_pipeline_from_named_args(
+            model = all_estimators[pos_est].get_image_pipeline_from_named_args(
                 **all_args[pos_est]
             )
             result.append(model)
