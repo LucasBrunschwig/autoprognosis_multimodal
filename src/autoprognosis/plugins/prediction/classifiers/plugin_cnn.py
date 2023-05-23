@@ -293,13 +293,13 @@ class CNNPlugin(base.ClassifierPlugin):
         n_classes: Optional[int] = None,
         n_layer: int = 1,
         non_linear: str = "relu",
-        lr: float = 1e-3,
+        lr: float = 1e-6,
         weight_decay: float = 1e-3,
-        n_iter: int = 100,
+        n_iter: int = 50,
         batch_size: int = 32,
         n_iter_print: int = 1,
-        patience: int = 10,
-        n_iter_min: int = 5,
+        patience: int = 5,
+        n_iter_min: int = 10,
         early_stopping: bool = True,
         hyperparam_search_iterations: Optional[int] = None,
         random_state: int = 0,
@@ -335,11 +335,15 @@ class CNNPlugin(base.ClassifierPlugin):
         return "cnn"
 
     @staticmethod
+    def modality_type() -> str:
+        return "img"
+
+    @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", ["resnet", "alexnet"]),
-            params.Categorical("lr", [1e-5, 1e-6, 1e-7]),
-            params.Integer("n_layer", 1, 3),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Integer("n_layer", 1, 2),
             params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
         ]
 
