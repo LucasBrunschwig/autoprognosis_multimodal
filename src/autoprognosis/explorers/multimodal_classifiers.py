@@ -216,7 +216,7 @@ class MultimodalClassifierSeeker:
                     model,
                     X,
                     Y,
-                    type=self.multimodal_type,
+                    multimodal_type=self.multimodal_type,
                     n_folds=self.n_folds_cv,
                     group_ids=group_ids,
                 )

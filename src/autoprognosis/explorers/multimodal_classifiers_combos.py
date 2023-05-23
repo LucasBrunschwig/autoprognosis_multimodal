@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
@@ -27,7 +28,7 @@ from autoprognosis.plugins.ensemble.classifiers import (
     StackingEnsemble,
     WeightedEnsemble,
 )
-from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_estimator
+from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 # autoprognosis relative
 from .classifiers import ClassifierSeeker
@@ -171,7 +172,7 @@ class MultimodalEnsembleSeeker:
         self.multimodal_type = multimodal_type
         self.multimodal_key = multimodal_key
 
-        if self.multimodal_type == "early_fusion":
+        if self.multimodal_type in ["early_fusion", "intermediate_fusion"]:
             self.seeker = MultimodalClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
@@ -234,13 +235,17 @@ class MultimodalEnsembleSeeker:
 
     def pretrain_for_cv(
         self,
-        ensemble: List,
-        X: pd.DataFrame,
+        ensemble: list,
+        X: dict,
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
         seed: int = 0,
     ) -> List:
         self._should_continue()
+
+        Y = pd.DataFrame(LabelEncoder().fit_transform(Y)).reset_index(drop=True)
+        for X_mod, X_df in X.items():
+            X[X_mod] = X_df.reset_index(drop=True)
 
         if group_ids is not None:
             skf = StratifiedGroupKFold(
@@ -252,14 +257,20 @@ class MultimodalEnsembleSeeker:
             )
 
         folds = []
-        for train_index, _ in skf.split(X, Y, groups=group_ids):
-            X_train = X.loc[X.index[train_index]]
+        X_train = dict()
+        for train_index, _ in skf.split(np.zeros(Y.shape[0]), Y, groups=group_ids):
+
+            for mod_, columns in self.multimodal_key.items():
+                X_train[mod_] = X[mod_][columns].loc[
+                    X[mod_][columns].index[train_index]
+                ]
             Y_train = Y.loc[Y.index[train_index]]
 
             local_fold = []
             for estimator in ensemble:
                 model = copy.deepcopy(estimator)
-                model.fit(X_train, Y_train)
+                modality = model.modality_type()
+                model.fit(X_train[modality], Y_train)
                 local_fold.append(model)
             folds.append(local_fold)
         return folds
@@ -267,7 +278,7 @@ class MultimodalEnsembleSeeker:
     def search_weights(
         self,
         ensemble: List,
-        X: pd.DataFrame,
+        X: dict,
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
     ) -> Tuple[WeightedEnsemble, float]:
@@ -283,8 +294,14 @@ class MultimodalEnsembleSeeker:
                 folds.append(WeightedEnsemble(fold, weights))
 
             try:
-                metrics = evaluate_estimator(
-                    folds, X, Y, self.n_folds_cv, pretrained=True, group_ids=group_ids
+                metrics = evaluate_multimodal_estimator(
+                    folds,
+                    X,
+                    Y,
+                    self.multimodal_type,
+                    self.n_folds_cv,
+                    pretrained=True,
+                    group_ids=group_ids,
                 )
             except BaseException as e:
                 log.error(f"evaluate_ensemble failed: {e}")
@@ -349,7 +366,12 @@ class MultimodalEnsembleSeeker:
                     best_models, meta_model=best_models[0]
                 )
                 stacking_ens_score = evaluate_multimodal_estimator(
-                    stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+                    stacking_ensemble,
+                    X,
+                    Y,
+                    self.multimodal_type,
+                    self.n_folds_cv,
+                    group_ids=group_ids,
                 )["raw"][self.metric][0]
                 log.info(
                     f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
@@ -364,8 +386,13 @@ class MultimodalEnsembleSeeker:
 
             try:
                 aggr_ensemble = AggregatingEnsemble(best_models)
-                aggr_ens_score = evaluate_estimator(
-                    aggr_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+                aggr_ens_score = evaluate_multimodal_estimator(
+                    aggr_ensemble,
+                    X,
+                    Y,
+                    multimodal_type=self.multimodal_type,
+                    n_folds=self.n_folds_cv,
+                    group_ids=group_ids,
                 )["raw"][self.metric][0]
                 log.info(
                     f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"

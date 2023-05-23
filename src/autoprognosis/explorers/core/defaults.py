@@ -12,8 +12,11 @@ default_classifiers_names = [
 default_image_classsifiers_names = ["cnn"]
 
 default_multimodal_names = [
-    "early_fusion",
+    "intermediate_neural_net",
 ]
+
+default_multimodal_steps = {"intemediate_neural_net": [""]}
+
 default_conv_models = [
     "AlexNet",
     "ResNet",
@@ -37,7 +40,8 @@ default_image_dimensionality_reduction = [
     "fast_ica_image",
     "predefined_cnn",
 ]
-default_modalities = ["img"]
+default_fusion = ["concatenate"]
+default_modalities = ["img", "tab"]
 
 default_feature_scaling_names = Preprocessors(
     category="feature_scaling"

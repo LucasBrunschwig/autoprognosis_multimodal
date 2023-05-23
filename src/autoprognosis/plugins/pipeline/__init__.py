@@ -20,6 +20,7 @@ from .generators import (
     _generate_getstate,
     _generate_hyperparameter_space_for_layer_impl,
     _generate_hyperparameter_space_impl,
+    _generate_intermediate_fusion_fit,
     _generate_is_fitted,
     _generate_load,
     _generate_load_template,
@@ -32,6 +33,7 @@ from .generators import (
     _generate_score,
     _generate_setstate,
     _generate_type_impl,
+    _modality_type,
     _preprocess_image,
 )
 
@@ -43,6 +45,7 @@ class PipelineMeta(type):
         dct["__getstate__"] = _generate_getstate()
         dct["fit"] = _generate_fit()
         dct["early_fusion_fit"] = _generate_early_fusion_fit()
+        dct["intermediate_fusion_fit"] = _generate_intermediate_fusion_fit()
         dct["is_fitted"] = _generate_is_fitted()
         dct["predict"] = _generate_predict()
         dct["early_fusion_predict"] = _generate_early_fusion_predict()
@@ -64,6 +67,7 @@ class PipelineMeta(type):
         dct["load_template"] = _generate_load_template()
         dct["change_output"] = _generate_change_output()
         dct["preprocess_image"] = _preprocess_image()
+        dct["modality_type"] = _modality_type()
 
         dct["plugin_types"] = list(plugins)
 

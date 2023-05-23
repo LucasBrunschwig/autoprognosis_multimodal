@@ -79,6 +79,16 @@ class PipelineSelector:
             ]
             self.feature_selection = []
 
+        if "intermediate" in classifier:
+            self.fusion = []
+
+        if classifier == "intermediate_conv_net":
+            self.image_dimensionality_reduction = []
+
+        if classifier == "cnn":
+            self.image_processing = []
+            self.image_dimensionality_reduction = []
+
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
     def _generate_dist_name(self, key: str, step: str = None) -> str:
@@ -350,7 +360,6 @@ class PipelineSelector:
 
     def get_image_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
-
         pipeline_args: dict = {}
 
         def add_stage_hp(plugin: Type[Plugin]) -> None:

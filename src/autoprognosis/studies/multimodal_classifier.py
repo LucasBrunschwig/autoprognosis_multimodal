@@ -13,6 +13,7 @@ from autoprognosis.explorers.core.defaults import (
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_fusion,
     default_image_dimensionality_reduction,
     default_image_processing,
     default_multimodal_names,
@@ -29,7 +30,7 @@ from autoprognosis.utils.serialization import (
     load_model_from_file,
     save_model_to_file,
 )
-from autoprognosis.utils.tester import evaluate_estimator
+from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 PATIENCE = 10
 SCORE_THRESHOLD = 0.65
@@ -191,7 +192,7 @@ class MultimodalStudy(Study):
         image_processing: List[str] = default_image_processing,
         image_dimensionality_reduction: List[str] = [],
         fusion: List[str] = [],
-        classifiers: List[str] = default_classifiers_names,
+        classifiers: List[str] = [],
         imputers: List[str] = ["ice"],
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
@@ -220,6 +221,7 @@ class MultimodalStudy(Study):
                 "multimodal_type expect one of the three values "
                 "(early_fusion, intermediate_fusion, late_fusion)"
             )
+        self.multimodal_type = multimodal_type
 
         if multimodal_type != "early_fusion" and image_dimensionality_reduction:
             image_dimensionality_reduction = []
@@ -253,8 +255,11 @@ class MultimodalStudy(Study):
         if not classifiers:
             if multimodal_type == "early_fusion":
                 classifiers = default_classifiers_names
+                fusion = default_fusion
+                image_dimensionality_reduction = default_image_dimensionality_reduction
             if multimodal_type == "intermediate_fusion":
                 classifiers = default_multimodal_names
+                image_dimensionality_reduction = default_image_dimensionality_reduction
 
         if not preprocess_images:
             image_processing = []
@@ -355,10 +360,11 @@ class MultimodalStudy(Study):
         try:
             start = time.time()
             best_model = load_model_from_file(self.output_file)
-            metrics = evaluate_estimator(
+            metrics = evaluate_multimodal_estimator(
                 best_model,
-                self.search_X,
+                self.search_multimodal_X,
                 self.search_Y,
+                self.multimodal_type,
                 metric=self.metric,
                 group_ids=self.search_group_ids,
                 n_folds=self.n_folds_cv,
@@ -407,10 +413,11 @@ class MultimodalStudy(Study):
                 self.search_multimodal_X, self.search_Y, group_ids=self.search_group_ids
             )
 
-            metrics = evaluate_estimator(
+            metrics = evaluate_multimodal_estimator(
                 current_model,
                 self.search_multimodal_X,
                 self.search_Y,
+                self.multimodal_type,
                 metric=self.metric,
                 group_ids=self.search_group_ids,
                 n_folds=self.n_folds_cv,

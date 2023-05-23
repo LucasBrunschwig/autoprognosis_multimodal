@@ -114,6 +114,31 @@ def _generate_get_args() -> Callable:
     return get_args_impl
 
 
+def _generate_intermediate_fusion_fit() -> Callable:
+    def fit_multimodal_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
+
+        local_X_tab = X["tab"].copy()
+        local_X_img = X["img"].copy()
+
+        for stage in self.stages[:-1]:
+            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.fit_transform(local_X_tab)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.fit_transform(local_X_img, *args)
+
+        # combine data
+        local_X = {"tab": local_X_tab, "img": local_X_img}
+
+        # Fit the classifier
+        self.stages[-1].fit(local_X, *args, **kwargs)
+
+        return self
+
+    return fit_multimodal_impl
+
+
 def _generate_early_fusion_fit() -> Callable:
     def fit_multimodal_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
 
@@ -172,20 +197,9 @@ def _generate_predict() -> Callable:
 
         local_X = X.copy()
 
-        local_X_img = pd.DataFrame()
-        if "img" in kwargs:
-            local_X_img = kwargs["img"].copy()
-
         for stage in self.stages[:-1]:
-            if stage.modality_type() == "tabular" and not local_X.empty:
-                local_X = pd.DataFrame(local_X)
-                local_X = stage.transform(local_X)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
-                local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img)
-
-        if "img" in kwargs:
-            kwargs["img"] = local_X_img
+            local_X = pd.DataFrame(local_X)
+            local_X = stage.transform(local_X)
 
         result = self.stages[-1].predict(local_X, *args, **kwargs)
 
@@ -264,20 +278,9 @@ def _generate_predict_proba() -> Callable:
 
         local_X = X.copy()
 
-        local_X_img = pd.DataFrame()
-        if "img" in kwargs:
-            local_X_img = kwargs["img"].copy()
-
         for stage in self.stages[:-1]:
-            if stage.modality_type() == "tabular" and not local_X.empty:
-                local_X = pd.DataFrame(local_X)
-                local_X = stage.transform(local_X)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
-                local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img)
-
-        if "img" in kwargs:
-            kwargs["img"] = local_X_img
+            local_X = pd.DataFrame(local_X)
+            local_X = stage.transform(local_X)
 
         result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
 
@@ -390,6 +393,13 @@ def _preprocess_image() -> Callable:
     return preprocess_img_implt
 
 
+def _modality_type() -> Callable:
+    def modality_type_implt(self: Any) -> bool:
+        return self.stages[-1].modality_type()
+
+    return modality_type_implt
+
+
 __all__ = [
     "_generate_name_impl",
     "_generate_type_impl",
@@ -414,4 +424,6 @@ __all__ = [
     "_generate_early_fusion_fit",
     "_generate_early_fusion_predict",
     "_generate_early_fusion_predict_proba",
+    "_generate_intermediate_fusion_fit",
+    "_modality_type",
 ]
