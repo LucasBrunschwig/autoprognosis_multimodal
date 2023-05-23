@@ -32,6 +32,10 @@ class PredictionPlugin(plugin.Plugin):
     def type() -> str:
         return "prediction"
 
+    @staticmethod
+    def modality_type() -> str:
+        return "tab"
+
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError(
             "Prediction plugins do not implement the 'transform' method"
