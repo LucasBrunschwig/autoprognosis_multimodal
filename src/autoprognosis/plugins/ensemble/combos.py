@@ -34,6 +34,9 @@ from sklearn.utils.extmath import weighted_mode
 from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.validation import check_is_fitted
 
+# autoprognosis absolute
+import autoprognosis.logger as log
+
 
 class BaseAggregator(ABC):
     """Abstract class for all combination classes.
@@ -498,6 +501,126 @@ class Stacking(BaseAggregator):
             warnings.warn("Stacking does not support pre_fitted option.")
 
     def fit(self, X, y):
+        """Overloading of fit method for multimodal and unimodal"""
+        if isinstance(X, dict):
+            return self.fit_multimodal(X, y)
+        elif isinstance(X, pd.DataFrame):
+            return self.fit_unimodal(X, y)
+
+    def fit_multimodal(self, X_modalities, y):
+        """Fit classifier.
+
+        Parameters
+        ----------
+        X : dict of numpy array of shape (n_samples, n_features)
+
+        y : numpy array of shape (n_samples,), optional (default=None)
+            The ground truth of the input samples (labels).
+        """
+        self._backup_encoders = {}
+
+        self.target_encoder = LabelEncoder().fit(y)
+        y = self.target_encoder.transform(y)
+        self._set_n_classes(y)
+
+        for mod_, X in X_modalities.items():
+            if mod_ == "tab":
+                for col in X.columns:
+                    if X[col].dtype.name not in ["object", "category"]:
+                        continue
+
+                    values = list(X[col].unique())
+                    values.append("unknown")
+                    encoder = LabelEncoder().fit(values)
+                    X.loc[X[col].notna(), col] = encoder.transform(
+                        X[col][X[col].notna()]
+                    )
+
+                    self._backup_encoders[col] = encoder
+
+                    # Validate inputs X and y
+                X, y = check_X_y(X, y, force_all_finite=False)
+                X_modalities[mod_] = check_array(X, force_all_finite=False)
+            elif mod_ == "img":
+                X_modalities[mod_] = X.to_numpy()
+
+            n_samples = X.shape[0]
+
+        # initialize matrix for storing newly generated features
+        new_features = np.zeros([n_samples, self.n_base_estimators_])
+
+        # build CV datasets
+        X_new_modalities = {}
+        y_new_modalities = {}
+        index_lists = {}
+        for mod_, X in X_modalities.items():
+            (
+                X_new_modalities[mod_],
+                y_new_modalities[mod_],
+                index_lists[mod_],
+            ) = split_datasets(
+                X,
+                y,
+                n_folds=self.n_folds,
+                shuffle_data=self.shuffle_data,
+                random_state=self.random_state,
+            )
+
+        # safety check that the y are the same across modalities
+        keys = list(y_new_modalities.keys())
+        for i in range(len(keys) - 1):
+            if sum(y_new_modalities[keys[i]] != y_new_modalities[keys[i + 1]]):
+                raise RuntimeError(
+                    "The y are not the same through modalities -> different shuffling"
+                )
+
+        # iterate over all base classifiers
+        for i, raw_clf in enumerate(self.base_estimators):
+            modality = raw_clf.modality_type()
+            # iterate over all folds
+            for j in range(self.n_folds):
+                # build train and test index
+                full_idx = list(range(n_samples))
+                test_idx = index_lists[modality][j]
+                train_idx = list_diff(full_idx, test_idx)
+                X_train, y_train = (
+                    X_new_modalities[modality][train_idx, :],
+                    y_new_modalities[modality][train_idx],
+                )
+                X_test, _ = (
+                    X_new_modalities[modality][test_idx, :],
+                    y_new_modalities[modality][test_idx],
+                )
+
+                # train the classifier
+                clf = copy.deepcopy(raw_clf)
+                clf.fit(X_train, y_train)
+
+                # generate the new features on the pseudo test set
+                if self.use_proba:
+                    new_features[test_idx, i] = clf.predict_proba(pd.DataFrame(X_test))[
+                        :, 1
+                    ]
+                else:
+                    new_features[test_idx, i] = clf.predict(
+                        pd.DataFrame(X_test)
+                    ).squeeze()
+
+        y_new_comb = y_new_modalities[list(y_new_modalities.keys())[0]]
+
+        # train the meta classifier
+        self.meta_clf.fit(new_features, y_new_comb)
+        self.fitted_ = True
+
+        # train all base classifiers on the full train dataset
+        # iterate over all base classifiers
+        for i, clf in enumerate(self.base_estimators):
+            modality = clf.modality_type()
+            clf.fit(X_new_modalities[modality], y_new_modalities[modality])
+
+        return
+
+    def fit_unimodal(self, X, y):
         """Fit classifier.
 
         Parameters
@@ -586,6 +709,44 @@ class Stacking(BaseAggregator):
 
         return
 
+    def _process_multimodal_data(self, X_modalities):
+
+        check_is_fitted(self, ["fitted_"])
+
+        for mod_, X in X_modalities.items():
+            if mod_ == "tab":
+                for col in self._backup_encoders:
+                    eval_data = X[col][X[col].notna()]
+                    inf_values = [
+                        x if x in self._backup_encoders[col].classes_ else "unknown"
+                        for x in eval_data
+                    ]
+
+                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                        inf_values
+                    )
+
+                    X_modalities[mod_] = check_array(X, force_all_finite=False)
+            elif mod_ == "img":
+                X_modalities[mod_] = X.to_numpy()
+
+        n_samples = X_modalities[list(X_modalities.keys())[0]].shape[0]
+
+        # initialize matrix for storing newly generated features
+        new_features = np.zeros([n_samples, self.n_base_estimators_])
+
+        # build the new features for unknown samples
+        # iterate over all base classifiers
+        for i, clf in enumerate(self.base_estimators):
+            modality = clf.modality_type()
+            # generate the new features on the test set
+            if self.use_proba:
+                new_features[:, i] = clf.predict_proba(X_modalities[modality])[:, 1]
+            else:
+                new_features[:, i] = clf.predict(X_modalities[modality]).squeeze()
+
+        return new_features
+
     def _process_data(self, X):
         """Internal class for both `predict` and `predict_proba`
 
@@ -647,7 +808,11 @@ class Stacking(BaseAggregator):
         labels : numpy array of shape (n_samples,)
             Class labels for each data sample.
         """
-        X_new_comb = self._process_data(X)
+        if isinstance(X, dict):
+            X_new_comb = self._process_multimodal_data(X)
+        else:
+            X_new_comb = self._process_data(X)
+
         return self.meta_clf.predict(X_new_comb)
 
     def predict_proba(self, X):
@@ -664,7 +829,11 @@ class Stacking(BaseAggregator):
             The class probabilities of the input samples.
             Classes are ordered by lexicographic order.
         """
-        X_new_comb = self._process_data(X)
+        if isinstance(X, dict):
+            X_new_comb = self._process_multimodal_data(X)
+        else:
+            X_new_comb = self._process_data(X)
+
         return self.meta_clf.predict_proba(X_new_comb)
 
     def fit_predict(self, X, y):
@@ -742,7 +911,7 @@ class SimpleClassifierAggregator(BaseAggregator):
         # set estimator weights
         self._set_weights(weights)
 
-    def fit(self, X, y):
+    def fit_unimodal(self, X, y):
         """Fit classifier.
 
         Parameters
@@ -782,7 +951,99 @@ class SimpleClassifierAggregator(BaseAggregator):
                 clf.fitted_ = True
             return
 
+    def fit_multimodal(self, X_modalities, y):
+
+        self.target_encoder = LabelEncoder().fit(y)
+        y = self.target_encoder.transform(y)
+        self._set_n_classes(y)
+        self._backup_encoders = {}
+
+        for X_mod, X in X_modalities.items():
+            try:
+                for col in X.columns:
+                    if X[col].dtype.name not in ["object", "category"]:
+                        continue
+
+                    values = list(X[col].unique())
+                    values.append("unknown")
+                    encoder = LabelEncoder().fit(values)
+                    X.loc[X[col].notna(), col] = encoder.transform(
+                        X[col][X[col].notna()]
+                    )
+                    self._backup_encoders[col] = encoder
+                    # Validate inputs X and y
+                    X, y = check_X_y(X, y, force_all_finite=False)
+                    X_modalities[X_mod] = check_array(X, force_all_finite=False)
+
+            except Exception as e:
+                log.error(f"could not preprocess: {e}")
+
+        if self.pre_fitted:
+            return
+        else:
+            for clf in self.base_estimators:
+                modality = clf.modality_type()
+                clf.fit(X_modalities[modality], y)
+                clf.fitted_ = True
+            return
+
+    def fit(self, X, y):
+        """This method will fit data based on its data type"""
+        if isinstance(X, dict):
+            self.fit_multimodal(X, y)
+        else:
+            self.fit_unimodal(X, y)
+
     def predict(self, X):
+        if isinstance(X, dict):
+            return self.predict_multimodal(X)
+        else:
+            return self.predict_unimodal(X)
+
+    def predict_multimodal(self, X_modalities):
+
+        for mod_, X in X_modalities.items():
+            try:
+                for col in self._backup_encoders:
+                    eval_data = X[col][X[col].notna()]
+                    inf_values = [
+                        x if x in self._backup_encoders[col].classes_ else "unknown"
+                        for x in eval_data
+                    ]
+
+                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                        inf_values
+                    )
+
+                X_modalities[mod_] = check_array(X, force_all_finite=False)
+
+            except Exception as e:
+                log.error(f"could not preprocess: {e}")
+
+            all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
+
+        for i, clf in enumerate(self.base_estimators):
+            if clf.fitted_ is not True and self.pre_fitted is False:
+                ValueError("Classifier should be fitted first!")
+            else:
+                if hasattr(clf, "predict"):
+                    modality = clf.modality_type()
+                    all_scores[:, i] = clf.predict(X_modalities[modality])
+                else:
+                    raise ValueError(f"{clf} does not have predict.")
+
+        if self.method == "average":
+            agg_score = average(all_scores, estimator_weights=self.weights)
+        if self.method == "maximization":
+            agg_score = maximization(all_scores)
+        if self.method == "majority_vote":
+            agg_score = majority_vote(all_scores, weights=self.weights)
+        if self.method == "median":
+            agg_score = median(all_scores)
+
+        return (agg_score >= self.threshold).astype("int").ravel()
+
+    def predict_unimodal(self, X):
         """Predict the class labels for the provided data.
 
         Parameters
@@ -831,6 +1092,76 @@ class SimpleClassifierAggregator(BaseAggregator):
         return (agg_score >= self.threshold).astype("int").ravel()
 
     def predict_proba(self, X):
+        if isinstance(X, dict):
+            return self.predict_multimodal_proba(X)
+        else:
+            return self.predict_unimodal_proba(X)
+
+    def predict_multimodal_proba(self, X_modalities):
+        """Return probability estimates for the test data X.
+
+        Parameters
+        ----------
+        X : dict containing dataframe (n_samples, n_features)
+            The input modality samples.
+
+        Returns
+        -------
+        p : numpy array of shape (n_samples,)
+            The class probabilities of the input samples.
+            Classes are ordered by lexicographic order.
+        """
+
+        for mod_, X in X_modalities.items():
+            try:
+                for col in self._backup_encoders:
+                    eval_data = X[col][X[col].notna()]
+                    inf_values = [
+                        x if x in self._backup_encoders[col].classes_ else "unknown"
+                        for x in eval_data
+                    ]
+
+                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                        inf_values
+                    )
+
+                X_modalities[mod_] = check_array(X, force_all_finite=False)
+
+            except Exception as e:
+                log.error(f"could not preprocess: {e}")
+
+            all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
+
+        for i in range(self.n_base_estimators_):
+            clf = self.base_estimators[i]
+            if clf.fitted_ is not True and self.pre_fitted is False:
+                ValueError("Classifier should be fitted first!")
+            else:
+                if hasattr(clf, "predict_proba"):
+                    modality = clf.modality_type()
+                    all_scores[:, :, i] = clf.predict_proba(X_modalities[modality])
+                else:
+                    raise ValueError(f"{clf} does not have predict_proba.")
+
+        if self.method == "average":
+            return np.mean(all_scores * self.weights, axis=2)
+        if self.method == "maximization":
+            scores = np.max(all_scores * self.weights, axis=2)
+            return score_to_proba(scores)
+        if self.method == "majority_vote":
+            Warning(
+                "average method is invoked for predict_proba as"
+                "probability is not continuous"
+            )
+            return np.mean(all_scores * self.weights, axis=2)
+        if self.method == "median":
+            Warning(
+                "average method is invoked for predict_proba as"
+                "probability is not continuous"
+            )
+            return np.mean(all_scores * self.weights, axis=2)
+
+    def predict_unimodal_proba(self, X):
         """Return probability estimates for the test data X.
 
         Parameters

@@ -120,7 +120,40 @@ class WeightedEnsemble(BaseEnsemble):
 
         return _fitted
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame) -> "WeightedEnsemble":
+    def fit(self, X: Union[pd.DataFrame, dict], Y: pd.DataFrame):
+        if isinstance(X, dict):
+            return self.fit_multimodal(X, Y)
+        else:
+            return self.fit_unimodal(X, Y)
+
+    def fit_multimodal(self, X: dict, Y: pd.DataFrame):
+        def fit_model(k: int) -> Any:
+            modality = self.models[k].modality_type()
+            return self.models[k].fit(X[modality], Y)
+
+        log.debug("Fitting the WeightedEnsemble")
+        self.models = dispatcher(delayed(fit_model)(k) for k in range(len(self.models)))
+
+        if self.explainers:
+            return self
+
+        self.explainers = {}
+        # TODO: make multimodal works with explainers
+        for exp in self.explainer_plugins:
+            log.debug("Fitting the explainer for the WeightedEnsemble")
+            exp_model = Explainers().get(
+                exp,
+                copy.deepcopy(self),
+                X,
+                Y,
+                n_epoch=self.explanations_nepoch,
+                prefit=True,
+            )
+            self.explainers[exp] = exp_model
+
+        return self
+
+    def fit_unimodal(self, X: pd.DataFrame, Y: pd.DataFrame) -> "WeightedEnsemble":
         def fit_model(k: int) -> Any:
             return self.models[k].fit(X, Y)
 
@@ -146,9 +179,28 @@ class WeightedEnsemble(BaseEnsemble):
 
         return self
 
-    def predict_proba(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
+    def predict_proba(self, X: Union[dict, pd.DataFrame], *args: Any):
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
+
+        if isinstance(X, dict):
+            return self.predict_multimodal_proba(X, *args)
+        else:
+            return self.predict_unimodal_proba(X, *args)
+
+    def predict_multimodal_proba(self, X: dict, *args: Any):
+
+        preds_ = []
+        for k in range(len(self.models)):
+            modality = self.models[k].modality_type()
+            preds_.append(
+                self.models[k].predict_proba(X[modality], *args) * self.weights[k]
+            )
+        pred_ens = np.sum(np.array(preds_), axis=0)
+
+        return pd.DataFrame(pred_ens)
+
+    def predict_unimodal_proba(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
 
         preds_ = []
         for k in range(len(self.models)):
@@ -382,11 +434,11 @@ class StackingEnsemble(BaseEnsemble):
 
         return _fitted
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame) -> "StackingEnsemble":
+    def fit(self, X: Union[pd.DataFrame, dict], Y: pd.DataFrame) -> "StackingEnsemble":
         self.clf.fit(X, Y)
 
         self.explainers = {}
-
+        # TODO: make explainers works with multimodal
         for exp in self.explainer_plugins:
             self.explainers[exp] = Explainers().get(
                 exp,
@@ -489,13 +541,16 @@ class AggregatingEnsemble(BaseEnsemble):
 
         return _fitted
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame) -> "AggregatingEnsemble":
+    def fit(
+        self, X: Union[pd.DataFrame, dict], Y: pd.DataFrame
+    ) -> "AggregatingEnsemble":
         Y = pd.DataFrame(Y).values.ravel()
 
         self.clf.fit(X, Y)
 
         self.explainers = {}
 
+        # TODO: make multimodal works with explainers
         for exp in self.explainer_plugins:
             self.explainers[exp] = Explainers().get(
                 exp,
