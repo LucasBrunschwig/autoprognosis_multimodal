@@ -96,52 +96,49 @@ class BasicIntermediateNet(nn.Module):
 
         NL = NONLIN[nonlin]
 
-        self.n_img_layer = n_img_layer
-        self.n_tab_layer = n_tab_layer
-
         # Tab Net
-        if self.n_tab_layer == 3:
-            tab_layer = [
-                nn.Linear(n_tab_in, self.n_neurons),
-                NONLIN[self.non_linear](),
-                nn.Linear(n_inter_hidden, n_inter_hidden),
-                NONLIN[self.non_linear](),
-                nn.Linear(n_inter_hidden, n_tab_out),
-            ]
-        elif self.n_img_layer == 2:
+        if n_tab_layer == 3:
             tab_layer = [
                 nn.Linear(n_tab_in, n_inter_hidden),
-                NONLIN[self.non_linear](),
+                NL(),
+                nn.Linear(n_inter_hidden, n_inter_hidden),
+                NL(),
                 nn.Linear(n_inter_hidden, n_tab_out),
             ]
-        elif self.n_img_layer == 1:
-            tab_layer = [nn.Linear(n_tab_in, n_tab_out), NONLIN[self.non_linear]()]
+        elif n_tab_layer == 2:
+            tab_layer = [
+                nn.Linear(n_tab_in, n_inter_hidden),
+                NL(),
+                nn.Linear(n_inter_hidden, n_tab_out),
+            ]
+        elif n_tab_layer == 1:
+            tab_layer = [nn.Linear(n_tab_in, n_tab_out), NL()]
         else:
             tab_layer = [nn.Identity()]
 
-        self.tab_model = nn.Sequential(*tab_layer)
+        self.tab_model = nn.Sequential(*tab_layer).to(DEVICE)
 
         # Image Net
-        if self.n_img_layer == 3:
+        if n_img_layer == 3:
             img_layer = [
                 nn.Linear(n_img_in, n_inter_hidden),
-                NONLIN[self.non_linear](),
+                NL(),
                 nn.Linear(n_inter_hidden, n_inter_hidden),
-                NONLIN[self.non_linear](),
+                NL(),
                 nn.Linear(n_inter_hidden, n_img_out),
             ]
-        elif self.n_img_layer == 2:
+        elif n_img_layer == 2:
             img_layer = [
-                nn.Linear(n_img_in, self.n_neurons),
-                NONLIN[self.non_linear](),
-                nn.Linear(self.n_neurons, n_img_out),
+                nn.Linear(n_img_in, n_inter_hidden),
+                NL(),
+                nn.Linear(n_inter_hidden, n_img_out),
             ]
-        elif self.n_img_layer == 1:
-            img_layer = [nn.Linear(n_tab_in, n_tab_out), NONLIN[self.non_linear]()]
+        elif n_img_layer == 1:
+            img_layer = [nn.Linear(n_tab_in, n_tab_out), NL()]
         else:
             img_layer = [nn.Identity()]
 
-        self.image_model = nn.Sequential(*img_layer)
+        self.image_model = nn.Sequential(*img_layer).to(DEVICE)
 
         n_unit_in = n_tab_out + n_img_out
 
@@ -210,11 +207,12 @@ class BasicIntermediateNet(nn.Module):
         return self.classifier_model(x_combined)
 
     def train(self, X: dict, y: torch.Tensor) -> "BasicIntermediateNet":
+
         X_img = self._check_tensor(X["img"]).float()
         X_tab = self._check_tensor(X["tab"]).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TensorDataset(X_img, X_tab, y)
+        dataset = TensorDataset(X_tab, X_img, y)
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -323,7 +321,7 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         nonlin="relu",
         n_image_layer: int = 2,
         n_neurons: int = 64,
-        ratio: float = 1.0,
+        ratio: float = 0.8,
         n_layers_hidden: int = 1,
         n_units_hidden: int = 100,
         lr: float = 1e-3,
@@ -331,6 +329,7 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         dropout: float = 0.1,
         clipping_value: int = 1,
         random_state: int = 0,
+        tab_reduction_ratio=0.6,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -348,6 +347,7 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         self.weight_decay = weight_decay
         self.dropout = dropout
         self.clipping_value = clipping_value
+        self.tab_reduction_ratio = tab_reduction_ratio
 
         #  self.n_iter_print = n_iter_print
         #  self.patience = patience
@@ -363,10 +363,15 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
     def name() -> str:
         return "intermediate_neural_net"
 
+    @staticmethod
+    def modality_type() -> str:
+        return "multimodal"
+
     @classmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
-            params.Categorical("ratio", [0.5, 1.0, 1.5]),
+            params.Categorical("ratio", [0.5, 0.6, 0.7, 0.8]),
+            params.Categorical("tab_reduction_ratio", [0.5, 0.6, 0.7]),
             params.Integer("n_image_layer", 0, 2),
             params.Integer("n_tab_layer", 0, 2),
             params.Integer("n_tab_layer", 0, 2),
@@ -385,13 +390,23 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         X_img = torch.from_numpy(np.asarray(X["img"]))
         X_tab = torch.from_numpy(np.asarray(X["tab"]))
         y = args[0]
+        cat = len(np.unique(y))
         y = torch.from_numpy(np.asarray(y))
 
+        n_tab_out = int(self.tab_reduction_ratio * X_tab.shape[1])
+        n_img_out = int(n_tab_out / (1 - self.ratio) - n_tab_out)
+        # tab_ratio = 1/(n_tab + n_img) * n_tab
+        # img_ratio = 1 - tab_ratio
+        # 1 - ratio = 1/(n_tab + n_img) n_tab
+        # (1- ratio)(n_tab + n_img) = n_tab
+        # n_img = n_tab/(1-ratio) - n_tab
+
         self.model = BasicIntermediateNet(
+            categories_cnt=cat,
             n_tab_in=X_tab.shape[1],
             n_img_in=X_img.shape[1],
-            n_tab_out=50,
-            n_img_out=50,
+            n_tab_out=n_tab_out,
+            n_img_out=n_img_out,
             n_tab_layer=self.n_tab_layer,
             n_img_layer=self.n_img_layer,
             n_inter_hidden=self.n_neurons,
@@ -408,19 +423,17 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
 
         return self
 
-    def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
-        X_images = kwargs["img"]
-        kwargs.pop("img")
-        X = pd.DataFrame(np.concatenate((X.to_numpy(), X_images.to_numpy()), axis=1))
-        return self.model.predict(X, *args, **kwargs)
+    def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        with torch.no_grad():
+            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
-    def _predict_proba(
-        self, X: pd.DataFrame, *args: Any, **kwargs: Any
-    ) -> pd.DataFrame:
-        X_images = kwargs["img"]
-        kwargs.pop("img")
-        X = pd.DataFrame(np.concatenate((X.to_numpy(), X_images.to_numpy()), axis=1))
-        return self.model.predict_proba(X, *args, **kwargs)
+    def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        with torch.no_grad():
+            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            return self.model(X_tab, X_img).detach().cpu().numpy()
 
     def save(self) -> bytes:
         return save_model(self.model)
