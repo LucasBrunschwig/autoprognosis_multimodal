@@ -73,7 +73,7 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
         X_images = pd.DataFrame(np.stack(X_images.to_numpy().squeeze()))
 
         self.model = FastICA(
-            n_components=self.threshold,
+            n_components=X_images.shape[1] * self.threshold,
             random_state=self.random_state,
             max_iter=self.max_iter,
             tol=1e-2,
