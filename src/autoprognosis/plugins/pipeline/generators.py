@@ -228,7 +228,33 @@ def _generate_early_fusion_predict() -> Callable:
         local_X = self.stages[-2].transform(local_X)
 
         # Fit the classifier
-        self.stages[-1].fit(local_X, *args, **kwargs)
+        self.stages[-1].predict(local_X, *args, **kwargs)
+
+        return self
+
+    return predict_impl
+
+
+def _generate_intermediate_fusion_predict() -> Callable:
+    def predict_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
+
+        local_X_tab = X["tab"].copy()
+        local_X_img = X["img"].copy()
+
+        for stage in self.stages[:-1]:
+            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.transform(local_X_tab)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.transform(local_X_img)
+
+        local_X = {"tab": local_X_tab, "img": local_X_img}
+
+        # Require tabular + main modalities
+
+        # Fit the classifier
+        self.stages[-1].predict(local_X, *args, **kwargs)
 
         return self
 
@@ -256,6 +282,38 @@ def _generate_early_fusion_predict_proba() -> Callable:
 
         # Require tabular + main modalities
         local_X = self.stages[-2].transform(local_X)
+
+        result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
+
+        if result.isnull().values.any():
+            raise ValueError(
+                "pipeline ({})({}) failed: nan in predict_proba output".format(
+                    self.name(), self.get_args()
+                )
+            )
+        return self.output(result)
+
+    return predict_proba_impl
+
+
+def _generate_intermediate_fusion_predict_proba() -> Callable:
+    @decorators.benchmark
+    def predict_proba_impl(
+        self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
+    ) -> pd.DataFrame:
+
+        local_X_tab = X["tab"].copy()
+        local_X_img = X["img"].copy()
+
+        for stage in self.stages[:-1]:
+            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.transform(local_X_tab)
+            elif stage.modality_type() == "image" and not local_X_img.empty:
+                local_X_img = pd.DataFrame(local_X_img)
+                local_X_img = stage.transform(local_X_img)
+
+        local_X = {"tab": local_X_tab, "img": local_X_img}
 
         result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
 
@@ -425,5 +483,7 @@ __all__ = [
     "_generate_early_fusion_predict",
     "_generate_early_fusion_predict_proba",
     "_generate_intermediate_fusion_fit",
+    "_generate_intermediate_fusion_predict",
+    "_generate_intermediate_fusion_predict_proba",
     "_modality_type",
 ]

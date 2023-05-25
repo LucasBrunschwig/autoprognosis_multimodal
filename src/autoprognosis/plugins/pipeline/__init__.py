@@ -21,6 +21,8 @@ from .generators import (
     _generate_hyperparameter_space_for_layer_impl,
     _generate_hyperparameter_space_impl,
     _generate_intermediate_fusion_fit,
+    _generate_intermediate_fusion_predict,
+    _generate_intermediate_fusion_predict_proba,
     _generate_is_fitted,
     _generate_load,
     _generate_load_template,
@@ -49,8 +51,12 @@ class PipelineMeta(type):
         dct["is_fitted"] = _generate_is_fitted()
         dct["predict"] = _generate_predict()
         dct["early_fusion_predict"] = _generate_early_fusion_predict()
+        dct["intermediate_fusion_predict"] = _generate_intermediate_fusion_predict()
         dct["predict_proba"] = _generate_predict_proba()
         dct["early_fusion_predict_proba"] = _generate_early_fusion_predict_proba()
+        dct[
+            "intermediate_fusion_predict_proba"
+        ] = _generate_intermediate_fusion_predict_proba()
         dct["score"] = _generate_score()
         dct["name"] = _generate_name_impl(plugins)
         dct["multimodal_type"] = _generate_type_impl(plugins)

@@ -180,15 +180,16 @@ class Plugin(metaclass=ABCMeta):
             self._backup_encoders = {}
 
         for col in self._backup_encoders:
-            eval_data = X[col][X[col].notna()]
-            inf_values = [
-                x if x in self._backup_encoders[col].classes_ else "unknown"
-                for x in eval_data
-            ]
+            if col in X.columns:
+                eval_data = X[col][X[col].notna()]
+                inf_values = [
+                    x if x in self._backup_encoders[col].classes_ else "unknown"
+                    for x in eval_data
+                ]
 
-            X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                inf_values
-            )
+                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                    inf_values
+                )
 
         return X
 

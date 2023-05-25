@@ -3,6 +3,7 @@ from abc import abstractmethod
 from typing import Any
 
 # third party
+import numpy
 import pandas as pd
 
 # autoprognosis absolute
@@ -51,8 +52,15 @@ class PredictionPlugin(plugin.Plugin):
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
 
-        X = self._preprocess_inference_data(X)
-        log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
+        if isinstance(X, dict):
+            for mod_, df in X.items():
+                X[mod_] = self._preprocess_inference_data(df)
+                log.debug(
+                    f"Predicting using {self.fqdn()}, {mod_}, input shape = {X[mod_].shape}"
+                )
+        elif isinstance(X, (numpy.ndarray, pd.DataFrame)):
+            X = self._preprocess_inference_data(X)
+            log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
 
         result = pd.DataFrame(self._predict_proba(X, *args, **kwargs))
 
