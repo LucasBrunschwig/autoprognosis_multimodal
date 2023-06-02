@@ -15,8 +15,6 @@ default_multimodal_names = [
     "intermediate_neural_net",
 ]
 
-default_multimodal_steps = {"intemediate_neural_net": [""]}
-
 default_conv_models = [
     "AlexNet",
     "ResNet",
