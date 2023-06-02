@@ -54,7 +54,7 @@ if __name__ == "__main__":
         p = multiprocessing.Process(target=worker_dataloader, args=(state,))
         p.start()
         p.join()
-        df = state["X_images"].join((state["X_clinic"], state["Y"]))
+        df = state["df"]
 
     else:
         DL = DataLoader(
@@ -62,12 +62,9 @@ if __name__ == "__main__":
             data_src_="PAD-UFES",
             format_="PIL",
         )
-        DL.load_dataset(classes=["ACK", "BCC"])
-
+        DL.load_dataset()
+        df = DL.sample_dataset(n)
         # Sample Dataset for Testing Purpose
-        X_images, X_clinic, Y = DL.sample_dataset(n)
-
-        df = X_images.join((X_clinic, Y))
 
     logger.debug("Image Loaded")
     logger.debug(
