@@ -235,6 +235,12 @@ class MultimodalStudy(Study):
             if not fusion:
                 fusion = default_fusion
 
+        if (
+            multimodal_type == "intermediate_fusion"
+            and not image_dimensionality_reduction
+        ):
+            image_dimensionality_reduction = default_image_dimensionality_reduction
+
         # Fusion is only used in early fusion
         if multimodal_type != "early_fusion":
             if fusion:
@@ -242,10 +248,13 @@ class MultimodalStudy(Study):
                 log.warning(
                     "Fusion plugin are only included in early fusion - multimodal_type"
                 )
-            if image_dimensionality_reduction:
+            if (
+                multimodal_type != "intermediate_fusion"
+                and image_dimensionality_reduction
+            ):
                 image_dimensionality_reduction = []
                 log.warning(
-                    "Image dimensionality reduction plugin are only included in early fusion"
+                    "Image dimensionality reduction plugin is not used in late fusion"
                 )
 
         if not classifiers:
