@@ -14,6 +14,7 @@ from autoprognosis.explorers.core.defaults import (
     default_feature_scaling_names,
     default_feature_selection_names,
     default_fusion,
+    default_image_classsifiers_names,
     default_image_dimensionality_reduction,
     default_image_processing,
     default_multimodal_names,
@@ -193,6 +194,7 @@ class MultimodalStudy(Study):
         image_dimensionality_reduction: List[str] = [],
         fusion: List[str] = [],
         classifiers: List[str] = [],
+        image_classifiers: List[str] = [],
         imputers: List[str] = ["ice"],
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
@@ -223,23 +225,49 @@ class MultimodalStudy(Study):
             )
         self.multimodal_type = multimodal_type
 
-        if multimodal_type != "early_fusion" and image_dimensionality_reduction:
-            image_dimensionality_reduction = []
-            log.warning(
-                f"Dimensionality reduction of images is only included in early fusion - multimodal_type = {type}"
-            )
-        elif multimodal_type == "early_fusion" and not image_dimensionality_reduction:
-            image_dimensionality_reduction = default_image_dimensionality_reduction
+        if not preprocess_images:
+            image_processing = []
 
-        if multimodal_type != "early_fusion" and fusion:
-            fusion = []
-            log.warning(
-                f"Fusion plugin are only included in early fusion - multimodal_type = {type}"
-            )
-        elif multimodal_type == "early_fusion" and not fusion:
-            fusion = ["concatenate"]
+        # Early Fusion requires image dimensionality reduction and fusion plugins
+        if multimodal_type == "early_fusion":
+            if not image_dimensionality_reduction:
+                image_dimensionality_reduction = default_image_dimensionality_reduction
+            if not fusion:
+                fusion = default_fusion
 
-        # Potential to add other modalities
+        # Fusion is only used in early fusion
+        if multimodal_type != "early_fusion":
+            if fusion:
+                fusion = []
+                log.warning(
+                    "Fusion plugin are only included in early fusion - multimodal_type"
+                )
+            if image_dimensionality_reduction:
+                image_dimensionality_reduction = []
+                log.warning(
+                    "Image dimensionality reduction plugin are only included in early fusion"
+                )
+
+        if not classifiers:
+            if multimodal_type == "early_fusion":
+                classifiers = default_classifiers_names
+            elif multimodal_type == "intermediate_fusion":
+                classifiers = default_multimodal_names
+            elif multimodal_type == "late_fusion":
+                classifiers = default_classifiers_names
+        if multimodal_type == "late_fusion" and not image_classifiers:
+            image_classifiers = default_image_classsifiers_names
+
+        if nan_placeholder is not None:
+            dataset = dataset.replace(nan_placeholder, np.nan)
+
+        if dataset.isnull().values.any():
+            if len(imputers) == 0:
+                raise RuntimeError("Please provide at least one imputation method")
+        else:
+            imputers = []
+
+        # Sort modalities
         self.multimodal_key = {}
         non_tabular_column = []
         if image is not None:
@@ -251,27 +279,6 @@ class MultimodalStudy(Study):
         self.multimodal_key["tab"] = dataset.columns.difference(
             non_tabular_column + [target]
         )
-
-        if not classifiers:
-            if multimodal_type == "early_fusion":
-                classifiers = default_classifiers_names
-                fusion = default_fusion
-                image_dimensionality_reduction = default_image_dimensionality_reduction
-            if multimodal_type == "intermediate_fusion":
-                classifiers = default_multimodal_names
-                image_dimensionality_reduction = default_image_dimensionality_reduction
-
-        if not preprocess_images:
-            image_processing = []
-
-        if nan_placeholder is not None:
-            dataset = dataset.replace(nan_placeholder, np.nan)
-
-        if dataset.isnull().values.any():
-            if len(imputers) == 0:
-                raise RuntimeError("Please provide at least one imputation method")
-        else:
-            imputers = []
 
         drop_cols = [target]
         self.group_ids = None
@@ -302,6 +309,7 @@ class MultimodalStudy(Study):
         self.search_multimodal_X = {}
         for key, columns in self.multimodal_key.items():
             self.search_multimodal_X[key] = self.search_X[columns]
+            self.multimodal_X = self.X[columns]
 
         for img_key in image:
             dataset["hash_" + img_key] = np.array(
@@ -340,6 +348,7 @@ class MultimodalStudy(Study):
             imputers=imputers,
             fusion=fusion,
             classifiers=classifiers,
+            image_classifiers=image_classifiers,
             hooks=self.hooks,
             random_state=self.random_state,
             ensemble_size=ensemble_size,
@@ -480,6 +489,6 @@ class MultimodalStudy(Study):
     def fit(self) -> Any:
         """Run the study and train the model. The call returns the fitted model."""
         model = self.run()
-        model.fit(self.X, self.Y)
+        model.fit(self.multimodal_X, self.Y)
 
         return model

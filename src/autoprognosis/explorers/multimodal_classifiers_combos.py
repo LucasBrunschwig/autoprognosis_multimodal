@@ -152,6 +152,7 @@ class MultimodalEnsembleSeeker:
         ] = default_image_dimensionality_reduction,
         fusion: List[str] = ["concatenate"],
         classifiers: List[str] = default_classifiers_names,
+        image_classifiers: List[str] = default_image_classsifiers_names,
         imputers: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
@@ -195,8 +196,6 @@ class MultimodalEnsembleSeeker:
             )
 
         if self.multimodal_type == "late_fusion":
-            # Image Seeker, solve the issue that if we do image reduction the classifier needs to be 1D however CNN
-            # Takes 2D input
             self.image_seeker = ImageClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
@@ -207,12 +206,11 @@ class MultimodalEnsembleSeeker:
                 preprocess_images=preprocess_images,
                 image_processing=image_processing,
                 image_dimensionality_reduction=image_dimensionality_reduction,
-                classifiers=default_image_classsifiers_names,
+                classifiers=image_classifiers,
                 hooks=hooks,
                 optimizer_type=optimizer_type,
                 random_state=self.random_state,
             )
-            # Tabular Seeker: Here we could use the original seeker from classifier
             self.tabular_seeker = ClassifierSeeker(
                 study_name,
                 num_iter=num_iter,
