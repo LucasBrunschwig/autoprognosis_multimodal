@@ -361,7 +361,7 @@ class MultimodalEnsembleSeeker:
             # Meta Learning and Aggregation for Late Fusion
             try:
                 stacking_ensemble = StackingEnsemble(
-                    best_models, meta_model=best_models[0]
+                    best_models, meta_model=best_models[0], use_proba=True
                 )
                 stacking_ens_score = evaluate_multimodal_estimator(
                     stacking_ensemble,
@@ -414,19 +414,46 @@ class MultimodalEnsembleSeeker:
             scores.append(weighted_ens_score)
             ensembles.append(weighted_ensemble)
 
+            if self.hooks.cancel():
+                raise StudyCancelled("Classifier search cancelled")
+
             return ensembles[np.argmax(scores)]
 
         elif self.multimodal_type == "early_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
+            scores = []
+
+            for model in best_models:
+                try:
+                    model_score = evaluate_multimodal_estimator(
+                        model,
+                        X,
+                        Y,
+                        multimodal_type=self.multimodal_type,
+                        n_folds=self.n_folds_cv,
+                        group_ids=group_ids,
+                    )["raw"][self.metric][0]
+                    log.info(f"Model: {model.name()} --> {model_score}")
+
+                    scores.append(model_score)
+                except Exception as e:
+                    log.error(f"Could not be fitted: {model.name()} - {e}")
+
+            if self.hooks.cancel():
+                raise StudyCancelled("Classifier search cancelled")
+
+            return best_models[np.argmax(scores)]
 
             # Intermediate fusion: implemented with the early fusion plugin
         elif self.multimodal_type == "intermediate_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
+            if self.hooks.cancel():
+                raise StudyCancelled("Classifier search cancelled")
+
+            return best_models[0]
+
         else:
             raise ValueError(
                 f"This type of multimodal study does not exist: {self.multimodal_type}"
             )
-
-        if self.hooks.cancel():
-            raise StudyCancelled("Classifier search cancelled")
