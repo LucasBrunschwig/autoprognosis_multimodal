@@ -162,8 +162,7 @@ class PipelineSelector:
                         [fs.name()],
                     )
                 )
-            for plugin in self.image_processing:
-                hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
+                hp.extend(fs.hyperparameter_space_fqdn(**predefined_args))
 
         if len(self.image_dimensionality_reduction) > 0:
             hp.append(
@@ -442,6 +441,26 @@ class PipelineSelector:
             model_list.append(self.imputers[0].fqdn())
             add_stage_hp(self.imputers[0])
 
+        pre_key = self._generate_dist_name("feature_selection_candidate")
+        if pre_key in kwargs:
+            idx = kwargs[pre_key]
+            selected = Preprocessors(category="dimensionality_reduction").get_type(idx)
+            model_list.append(selected.fqdn())
+            add_stage_hp(selected)
+
+        pre_key = self._generate_dist_name("feature_scaling_candidate")
+        if pre_key in kwargs:
+            idx = kwargs[pre_key]
+            selected = Preprocessors(category="feature_scaling").get_type(idx)
+            model_list.append(selected.fqdn())
+            add_stage_hp(selected)
+
+        # Add data cleanup
+        cleaner = Preprocessors(category="dimensionality_reduction").get_type(
+            "data_cleanup"
+        )
+        model_list.append(cleaner.fqdn())
+
         # Image preprocessing might not be subjected to optimization
         if self.preprocess_image:
             # Add resizer by default
@@ -465,26 +484,6 @@ class PipelineSelector:
         elif len(self.image_dimensionality_reduction) > 0:
             model_list.append(self.image_dimensionality_reduction[0].fqdn())
             add_stage_hp(self.image_dimensionality_reduction[0])
-
-        pre_key = self._generate_dist_name("feature_selection_candidate")
-        if pre_key in kwargs:
-            idx = kwargs[pre_key]
-            selected = Preprocessors(category="dimensionality_reduction").get_type(idx)
-            model_list.append(selected.fqdn())
-            add_stage_hp(selected)
-
-        pre_key = self._generate_dist_name("feature_scaling_candidate")
-        if pre_key in kwargs:
-            idx = kwargs[pre_key]
-            selected = Preprocessors(category="feature_scaling").get_type(idx)
-            model_list.append(selected.fqdn())
-            add_stage_hp(selected)
-
-        # Add data cleanup
-        cleaner = Preprocessors(category="dimensionality_reduction").get_type(
-            "data_cleanup"
-        )
-        model_list.append(cleaner.fqdn())
 
         # in early fusion needs a fusion candidate
         fusion_key = self._generate_dist_name("fusion_candidate")
