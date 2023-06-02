@@ -58,8 +58,8 @@ NONLIN = {
 
 # Depending on the number of additional layer the intermediate layer have different sizes
 N_INTERMEDIATE = {
-    "alexnet": {1: 512, 2: 1024, 3: 2048},
-    "resnet": {1: 128, 2: 256, 3: 512},
+    "alexnet": {1: 256, 2: 512, 3: 2048},  # last layer is 4096
+    "resnet": {1: 128, 2: 256, 3: 512},  # last layer is 1024
 }
 
 
@@ -77,12 +77,20 @@ class ConvNetPredefined(nn.Module):
         model name of one of the default Deep CNN architectures.
     use_pretrained (bool):
         instantiate the model with the latest PyTorch weights of the model.
+    n_classes (int):
+        the number of predicted classes
+    n_additional_layer (int):
+        the added layer to the predefined CNN for transfer learning
+    non_linear (str):
+        the non linearity of the added layers
+    batch_size (int):
+        batch size for each step during training
+    lr (float):
+        learning rate for training, usually lower than the initial training
+    n_iter (int):
+        the number of iteration
     fine_tune (bool):
         define if the weights optimization operates only on the new layer or the whole models
-    n_classes (int, optional):
-        the number of output classes, the last layer is replaced by the new number of classes
-    preprocess (,optional):
-        custom preprocessing for image_processing
 
     TODO:
     - allow user to use their own weight for a given model.
@@ -102,17 +110,15 @@ class ConvNetPredefined(nn.Module):
         n_iter_print: int,
         n_iter_min: int,
         patience: int,
-        n_additional_layer: int = 1,
+        n_unfrozen_layer: int = 0,
+        n_additional_layer: int = 2,
+        n_last_layer: Optional[int] = None,
     ):
 
         super(ConvNetPredefined, self).__init__()
 
         self.model_name = model_name.lower()
-        self.use_pretrained = use_pretrained
-        self.n_classes = n_classes
-        self.additional_layer = n_additional_layer
 
-        self.non_linear = non_linear
         self.batch_size = batch_size
         self.lr = lr
         self.n_iter = n_iter
@@ -121,7 +127,7 @@ class ConvNetPredefined(nn.Module):
         self.n_iter_print = n_iter_print
         self.patience = patience
 
-        if not self.use_pretrained:
+        if not use_pretrained:
             WEIGHTS[self.model_name] = None
 
         self.model = models.get_model(
@@ -132,10 +138,12 @@ class ConvNetPredefined(nn.Module):
             weights = models.get_weight(WEIGHTS[self.model_name])
             self.preprocess = weights.transforms
 
-        self.set_parameter_requires_grad()
+        self.set_parameter_requires_grad(n_unfrozen_layer)
 
         if n_classes is None:
-            raise ValueError("Late Fusion CNN requires to know the number of classes")
+            raise RuntimeError(
+                "To build the architecture, the CNN requires to know the number of classes"
+            )
 
         # Replace the output layer by the given number of classes
         if self.model_name == "resnet":
@@ -144,33 +152,119 @@ class ConvNetPredefined(nn.Module):
         elif self.model_name == "alexnet":
             n_features_in = self.model.classifier[6].in_features
 
-        n_intermediate = N_INTERMEDIATE[self.model_name][self.additional_layer]
-        additional_layers = [
-            nn.Linear(n_features_in, n_intermediate),
-            NONLIN[self.non_linear](),
-        ]
-        for i in range(self.additional_layer - 1):
-            additional_layers.append(nn.Linear(n_intermediate, int(n_intermediate / 2)))
-            additional_layers.append(NONLIN[self.non_linear]())
-            n_intermediate = int(n_intermediate / 2)
-        additional_layers.append(nn.Linear(n_intermediate, n_classes))
+        NL = NONLIN[non_linear]
 
+        if n_additional_layer > 0:
+
+            if n_last_layer:
+                n_intermediate = n_last_layer
+                for i in range(n_additional_layer - 1):
+                    n_intermediate *= 2
+            else:
+                n_intermediate = N_INTERMEDIATE[self.model_name][n_additional_layer]
+            additional_layers = [
+                nn.Linear(n_features_in, n_intermediate),
+                NL(),
+            ]
+            for i in range(n_additional_layer - 1):
+                additional_layers.append(
+                    nn.Linear(n_intermediate, int(n_intermediate / 2))
+                )
+                additional_layers.append(NL())
+                n_intermediate = int(n_intermediate / 2)
+            # Classification layer
+            additional_layers.append(nn.Linear(n_intermediate, n_classes))
+        else:
+            additional_layers = [nn.Linear(n_features_in, n_classes)]
+
+        params = []
         if self.model_name == "resnet":
             self.model.fc = nn.Sequential(*additional_layers)
+            for name, param in self.model.named_parameters():
+                if "fc" in name:
+                    params.append({"params": param, "lr": lr})
+                elif param.requires_grad:
+                    params.append({"params": param, "lr": 1e-7})
 
         elif self.model_name == "alexnet":
             self.model.classifier[6] = nn.Sequential(*additional_layers)
+            for name, param in self.model.named_parameters():
+                if "classifier.6" in name:
+                    params.append({"params": param, "lr": lr})
+                elif param.requires_grad:
+                    params.append({"params": param, "lr": 1e-7})
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(params)
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def set_parameter_requires_grad(
         self,
+        num_layers_to_unfreeze: int,
     ):
         for param in self.model.parameters():
             param.requires_grad = False
+
+        if num_layers_to_unfreeze > 0:
+            unfrozen_layers = 0
+            skip = True
+            # Iterate over the model modules in reverse order and unfreeze the desired number of layers
+            for module in reversed(list(self.model.modules())):
+                if isinstance(
+                    module,
+                    (
+                        torch.nn.modules.Conv2d,
+                        torch.nn.modules.Linear,
+                        torch.nn.modules.BatchNorm2d,
+                    ),
+                ):
+                    if skip:
+                        skip = False
+                        continue
+                    for param in module.parameters():
+                        param.requires_grad = True
+                    unfrozen_layers += 1
+                    if unfrozen_layers >= num_layers_to_unfreeze:
+                        break
+                elif isinstance(module, torch.nn.modules.Sequential):
+                    for submodule in reversed(list(module.children())):
+                        if isinstance(
+                            submodule,
+                            (
+                                torch.nn.modules.Conv2d,
+                                torch.nn.modules.Linear,
+                                torch.nn.modules.BatchNorm2d,
+                            ),
+                        ):
+                            if skip:
+                                skip = False
+                                continue
+                            for param in submodule.parameters():
+                                param.requires_grad = True
+                            unfrozen_layers += 1
+                            if unfrozen_layers >= num_layers_to_unfreeze:
+                                break
+                        elif isinstance(submodule, torch.nn.Sequential):
+                            for subsubmodule in reversed(list(submodule.children())):
+                                if isinstance(
+                                    subsubmodule,
+                                    (
+                                        torch.nn.modules.Conv2d,
+                                        torch.nn.modules.Linear,
+                                        torch.nn.modules.BatchNorm2d,
+                                    ),
+                                ):
+                                    if skip:
+                                        skip = False
+                                        continue
+                                    for param in subsubmodule.parameters():
+                                        param.requires_grad = True
+                                    unfrozen_layers += 1
+                                    if unfrozen_layers >= num_layers_to_unfreeze:
+                                        break
+                if unfrozen_layers >= num_layers_to_unfreeze:
+                    break
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -289,17 +383,17 @@ class CNNPlugin(base.ClassifierPlugin):
         self,
         conv_net: str = "AlexNet",
         use_pretrained: bool = True,
-        fine_tune: bool = False,
+        n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
         n_layer: int = 1,
         non_linear: str = "relu",
         lr: float = 1e-6,
         weight_decay: float = 1e-3,
-        n_iter: int = 50,
+        n_iter: int = 5,
         batch_size: int = 32,
         n_iter_print: int = 1,
         patience: int = 5,
-        n_iter_min: int = 10,
+        n_iter_min: int = 3,
         early_stopping: bool = True,
         hyperparam_search_iterations: Optional[int] = None,
         random_state: int = 0,
@@ -326,7 +420,7 @@ class CNNPlugin(base.ClassifierPlugin):
         # Specific to CNN model
         self.conv_net = conv_net
         self.use_pretrained = use_pretrained
-        self.fine_tune = fine_tune
+        self.n_unfrozen_layer = n_unfrozen_layer
         self.n_classes = n_classes
         self.n_additional_layer = n_layer
 
@@ -345,6 +439,7 @@ class CNNPlugin(base.ClassifierPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Integer("n_layer", 1, 2),
             params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
+            params.Integer("n_unfrozen_layer", 0, 3),
         ]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNPlugin":
@@ -362,6 +457,7 @@ class CNNPlugin(base.ClassifierPlugin):
             use_pretrained=self.use_pretrained,
             n_classes=n_classes,
             n_additional_layer=self.n_additional_layer,
+            n_unfrozen_layer=self.n_unfrozen_layer,
             lr=self.lr,
             non_linear=self.non_linear,
             n_iter=self.n_iter,
