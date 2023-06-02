@@ -395,6 +395,7 @@ class StackingEnsemble(BaseEnsemble):
         clf: Union[None, Stacking] = None,
         explainer_plugins: list = [],
         explanations_nepoch: int = 10000,
+        use_proba: bool = False,
     ) -> None:
         super().__init__()
 
@@ -424,7 +425,7 @@ class StackingEnsemble(BaseEnsemble):
             self.clf = Stacking(
                 models,
                 meta_clf=meta_model,
-                use_proba=False,
+                use_proba=use_proba,
             )
 
     def is_fitted(self) -> bool:
