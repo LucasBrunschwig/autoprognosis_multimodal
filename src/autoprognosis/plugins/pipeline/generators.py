@@ -126,7 +126,9 @@ def _generate_intermediate_fusion_fit() -> Callable:
                 local_X_tab = stage.fit_transform(local_X_tab)
             elif stage.modality_type() == "image" and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.fit_transform(local_X_img, *args)
+                local_X_img = stage.fit_transform(
+                    local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
+                )
 
         # combine data
         local_X = {"tab": local_X_tab, "img": local_X_img}
@@ -145,18 +147,24 @@ def _generate_early_fusion_fit() -> Callable:
         local_X_tab = X["tab"].copy()
         local_X_img = X["img"].copy()
 
+        # Transform the image
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
-                local_X_tab = pd.DataFrame(local_X_tab)
-                local_X_tab = stage.fit_transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == "image" and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.fit_transform(local_X_img, *args)
+                local_X_img = stage.fit_transform(
+                    local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
+                )
 
         local_X = {"tab": local_X_tab, "img": local_X_img}
 
-        # Require tabular + main modalities
+        # Modalities Fusion
         local_X = self.stages[-2].fit_transform(local_X)
+
+        # Preprocess Multimodal vector
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.fit_transform(local_X)
 
         # Fit the classifier
         self.stages[-1].fit(local_X, *args, **kwargs)
@@ -214,18 +222,22 @@ def _generate_early_fusion_predict() -> Callable:
         local_X_tab = X["tab"].copy()
         local_X_img = X["img"].copy()
 
+        # Transform the image
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
-                local_X_tab = pd.DataFrame(local_X_tab)
-                local_X_tab = stage.transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == "image" and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img)
+                local_X_img = stage.transform(local_X_img, *args)
 
         local_X = {"tab": local_X_tab, "img": local_X_img}
 
-        # Require tabular + main modalities
+        # Data Fusion
         local_X = self.stages[-2].transform(local_X)
+
+        # Clean multimodal vector
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.transform(local_X)
 
         # Fit the classifier
         self.stages[-1].predict(local_X, *args, **kwargs)
@@ -270,19 +282,24 @@ def _generate_early_fusion_predict_proba() -> Callable:
         local_X_tab = X["tab"].copy()
         local_X_img = X["img"].copy()
 
+        # Transform the image
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
-                local_X_tab = pd.DataFrame(local_X_tab)
-                local_X_tab = stage.transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == "image" and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img)
+                local_X_img = stage.transform(local_X_img, *args)
 
         local_X = {"tab": local_X_tab, "img": local_X_img}
 
-        # Require tabular + main modalities
+        # Modalities Fusion
         local_X = self.stages[-2].transform(local_X)
 
+        # Preprocess Multimodal vector
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == "tabular" and not local_X.empty:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.transform(local_X)
+
+        # Predict Proba
         result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
 
         if result.isnull().values.any():
