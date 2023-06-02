@@ -37,12 +37,12 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
         self,
         model: Any = None,
         random_state: int = 0,
-        threshold: float = 0.95,
+        ratio_ica: int = 2,
         max_iter=10000,
     ) -> None:
         super().__init__()
         self.random_state = random_state
-        self.threshold = threshold
+        self.ratio = ratio_ica
         self.max_iter = max_iter
         self.model: Optional[FastICA] = None
 
@@ -63,9 +63,14 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("threshold", [0.85, 0.9, 0.95])]
+        return [params.Integer("ratio_ica", 1, 4)]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "FastICAImagePlugin":
+
+        if kwargs.get("n_tab", None):
+            self.n_components = self.ratio * kwargs["n_tab"]
+        else:
+            self.n_components = self.ratio * 60
 
         X_images = X.squeeze().apply(
             lambda img_: ToTensor()(img_).flatten().detach().cpu().numpy()
@@ -73,7 +78,7 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
         X_images = pd.DataFrame(np.stack(X_images.to_numpy().squeeze()))
 
         self.model = FastICA(
-            n_components=X_images.shape[1] * self.threshold,
+            n_components=self.n_components,
             random_state=self.random_state,
             max_iter=self.max_iter,
             tol=1e-2,
