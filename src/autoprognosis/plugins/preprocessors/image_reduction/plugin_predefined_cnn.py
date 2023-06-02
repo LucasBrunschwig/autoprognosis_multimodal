@@ -59,12 +59,29 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
     def __init__(
         self,
         conv_net: str = "AlexNet",
-        random_state: int = 0,
+        nonlin: str = "relu",
+        lr: float = 1e-5,
+        ratio_cnn: int = 2,
+        batch_size: int = 32,
+        n_iter: int = 200,
+        n_iter_min: int = 10,
+        n_iter_print: int = 10,
+        patience: int = 5,
+        early_stopping: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
 
         self.conv_net = conv_net.lower()
+        self.non_lin = nonlin
+        self.ratio = ratio_cnn
+        self.lr = lr
+        self.batch_size = batch_size
+        self.n_iter = n_iter
+        self.n_iter_min = n_iter_min
+        self.patience = patience
+        self.early_stopping = early_stopping
+        self.n_iter_print = n_iter_print
 
         self.model = models.get_model(self.conv_net, weights=WEIGHTS[self.conv_net]).to(
             DEVICE
@@ -92,6 +109,8 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", CNN),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Integer("ratio_cnn", 1, 4),
         ]
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
@@ -100,19 +119,24 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFeaturesPlugin":
 
         y = args[0]
+        if kwargs.get("n_tab", None):
+            n_tab = kwargs["n_tab"]
+        else:
+            n_tab = 60
 
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
             use_pretrained=True,
             n_classes=len(y.value_counts()),
-            non_linear="relu",
-            batch_size=32,
-            lr=1e-6,
-            n_iter_min=5,
-            n_iter=300,
-            early_stopping=True,
-            n_iter_print=5,
-            patience=5,
+            non_linear=self.non_lin,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            n_iter_min=self.n_iter_min,
+            n_iter=self.n_iter,
+            early_stopping=self.early_stopping,
+            n_iter_print=self.n_iter_print,
+            patience=self.patience,
+            n_last_layer=self.ratio * n_tab,
         )
 
         X_tensor = self.model.preprocess_images(X.squeeze())
