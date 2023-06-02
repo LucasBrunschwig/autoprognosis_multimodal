@@ -17,6 +17,51 @@ from torchvision import transforms
 import autoprognosis.logger as log
 
 
+def crop_center(image, size):
+    width, height = image.size
+    left = (width - size) // 2
+    top = (height - size) // 2
+    right = (width + size) // 2
+    bottom = (height + size) // 2
+    cropped_image = image.crop((left, top, right, bottom))
+    return cropped_image
+
+
+def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
+    """Read zipped images where the filename corresponds to the id.
+
+    Args:
+        filename: name of the file (.zip)
+        img_format: which format would you like to work with (
+                    "PIL": PIL.Image.Image, "OpenCV": OpenCV,
+                    "Numpy": NumPy.ndarray, "Tensor": PyTorch.Tensor)
+
+    Returns:
+        images: dictionary  {id : image}
+
+    """
+
+    images = {}
+    files = os.listdir(dirpath)
+    try:
+        for img_name in files:
+            if img_name.endswith(".png"):
+                img_ = Image.open(os.path.join(dirpath, img_name))
+                img_ = crop_center(img_.convert("RGB"), 300)
+                if img_format.upper() == "NUMPY":
+                    img_ = np.asarray(img_)
+                elif img_format.upper() == "TENSOR":
+                    img_ = transforms.PILToTensor()(img_)
+                elif img_format.upper() == "OPENCV":
+                    raise NotImplementedError("Future implementations")
+                images.update({os.path.basename(img_name): img_})
+
+    except zipfile.BadZipFile:
+        log.error("Error: Zip file is corrupted")
+
+    return images
+
+
 def read_zip(filename: Union[Path, str], img_format: str = "PIL") -> dict:
     """Read zipped images where the filename corresponds to the id.
 
@@ -68,7 +113,9 @@ class DataLoader:
         self.images = None
         self.labels = None
 
-    def load_dataset(self, split_images=True, classes: list = None):
+    def load_dataset(
+        self, split_images=True, classes: list = None, sample: bool = False
+    ):
         """Returns the loaded dataset based on the source input
 
         Parameters:
@@ -82,11 +129,13 @@ class DataLoader:
 
         # Different loaders for different sources
         if self.SOURCE == "PAD-UFES":
-            self._load_pad_ufes_dataset(split_images=split_images, classes=classes)
+            self._load_pad_ufes_dataset(
+                split_images=split_images, classes=classes, sample=sample
+            )
 
-        return self.images, self.metadata, self.labels
+        return self.df
 
-    def _load_pad_ufes_dataset(self, split_images: bool, classes: list):
+    def _load_pad_ufes_dataset(self, split_images: bool, classes: list, sample):
         """This loader will load the zipped images and metadata and returns 3 lists
 
         Args:
@@ -106,10 +155,11 @@ class DataLoader:
         metadata_df = pd.read_csv(self.PATH / "metadata.csv")
 
         # Load Images as dictionary
-        images_part1 = read_zip(self.PATH / "imgs_part_1.zip", self.format)
-        images_part2 = read_zip(self.PATH / "imgs_part_2.zip", self.format)
-        # images_part3 = read_zip(self.PATH / "imgs_part_3.zip", self.format)
-        images_dict = {**images_part1, **images_part2}  # , **images_part3}
+        if sample:
+            images_dict = read_folder(self.PATH / "imgs_part_1", self.format)
+        else:
+            images_dict = read_folder(self.PATH / "imgs", self.format)
+
         images_df = pd.DataFrame.from_dict(
             images_dict, orient="index", columns=["image"], dtype=object
         )
@@ -158,8 +208,7 @@ class DataLoader:
 
         # Get one df per source
         self.ids = df.index
-        self.images = df.image.to_frame()
-        self.metadata = df[df.columns[~df.columns.isin(["image", "label"])]]
+        self.df = df
         self.labels = df.label.to_frame()
 
     def summary(self):
@@ -178,16 +227,10 @@ class DataLoader:
         Args:
             n: int, the number of data points returned
         """
-        if self.images is None:
-            self.load_dataset()
 
-        indices = random.sample(range(0, len(self.images)), n)
+        indices = random.sample(range(0, len(self.df)), n)
 
-        return (
-            self.images.iloc[indices, :],
-            self.metadata.iloc[indices, :],
-            self.labels.iloc[indices, :],
-        )
+        return self.df.iloc[indices, :]
 
 
 if __name__ == "__main__":
