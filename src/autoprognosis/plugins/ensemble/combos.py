@@ -524,25 +524,25 @@ class Stacking(BaseAggregator):
         self._set_n_classes(y)
 
         for mod_, X in X_modalities.items():
-            if mod_ == "tab":
-                for col in X.columns:
-                    if X[col].dtype.name not in ["object", "category"]:
-                        continue
+            for col in X.columns:
+                if (
+                    X[col].dtype.name not in ["object", "category"]
+                    and not X[col]
+                    .apply(lambda x: isinstance(x, (str, int, float)))
+                    .sum()
+                ):
+                    continue
 
-                    values = list(X[col].unique())
-                    values.append("unknown")
-                    encoder = LabelEncoder().fit(values)
-                    X.loc[X[col].notna(), col] = encoder.transform(
-                        X[col][X[col].notna()]
-                    )
+                values = list(X[col].unique())
+                values.append("unknown")
+                encoder = LabelEncoder().fit(values)
+                X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
 
-                    self._backup_encoders[col] = encoder
+                self._backup_encoders[col] = encoder
 
-                    # Validate inputs X and y
+                # Validate inputs X and y
                 X, y = check_X_y(X, y, force_all_finite=False)
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
-            elif mod_ == "img":
-                X_modalities[mod_] = X.to_numpy()
 
             n_samples = X.shape[0]
 
@@ -583,14 +583,24 @@ class Stacking(BaseAggregator):
                 full_idx = list(range(n_samples))
                 test_idx = index_lists[modality][j]
                 train_idx = list_diff(full_idx, test_idx)
-                X_train, y_train = (
-                    X_new_modalities[modality][train_idx, :],
-                    y_new_modalities[modality][train_idx],
-                )
-                X_test, _ = (
-                    X_new_modalities[modality][test_idx, :],
-                    y_new_modalities[modality][test_idx],
-                )
+                if modality == "img":
+                    X_train, y_train = (
+                        X_new_modalities[modality].iloc[train_idx],
+                        y_new_modalities[modality][train_idx],
+                    )
+                    X_test, _ = (
+                        X_new_modalities[modality].iloc[test_idx],
+                        y_new_modalities[modality][test_idx],
+                    )
+                else:
+                    X_train, y_train = (
+                        X_new_modalities[modality][train_idx, :],
+                        y_new_modalities[modality][train_idx],
+                    )
+                    X_test, _ = (
+                        X_new_modalities[modality][test_idx, :],
+                        y_new_modalities[modality][test_idx],
+                    )
 
                 # train the classifier
                 clf = copy.deepcopy(raw_clf)
@@ -959,24 +969,24 @@ class SimpleClassifierAggregator(BaseAggregator):
         self._backup_encoders = {}
 
         for X_mod, X in X_modalities.items():
-            try:
-                for col in X.columns:
-                    if X[col].dtype.name not in ["object", "category"]:
-                        continue
+            for col in X.columns:
+                if (
+                    X[col].dtype.name not in ["object", "category"]
+                    and not X[col]
+                    .apply(lambda x: isinstance(x, (str, int, float)))
+                    .sum()
+                ):
 
-                    values = list(X[col].unique())
-                    values.append("unknown")
-                    encoder = LabelEncoder().fit(values)
-                    X.loc[X[col].notna(), col] = encoder.transform(
-                        X[col][X[col].notna()]
-                    )
-                    self._backup_encoders[col] = encoder
-                    # Validate inputs X and y
-                    X, y = check_X_y(X, y, force_all_finite=False)
-                    X_modalities[X_mod] = check_array(X, force_all_finite=False)
+                    continue
 
-            except Exception as e:
-                log.error(f"could not preprocess: {e}")
+                values = list(X[col].unique())
+                values.append("unknown")
+                encoder = LabelEncoder().fit(values)
+                X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
+                self._backup_encoders[col] = encoder
+                # Validate inputs X and y
+                X, y = check_X_y(X, y, force_all_finite=False)
+                X_modalities[X_mod] = check_array(X, force_all_finite=False)
 
         if self.pre_fitted:
             return
@@ -1003,22 +1013,25 @@ class SimpleClassifierAggregator(BaseAggregator):
     def predict_multimodal(self, X_modalities):
 
         for mod_, X in X_modalities.items():
-            try:
-                for col in self._backup_encoders:
-                    eval_data = X[col][X[col].notna()]
-                    inf_values = [
-                        x if x in self._backup_encoders[col].classes_ else "unknown"
-                        for x in eval_data
-                    ]
+            for col in self._backup_encoders:
+                if (
+                    X[col].dtype.name not in ["object", "category"]
+                    and not X[col]
+                    .apply(lambda x: isinstance(x, (str, int, float)))
+                    .sum()
+                ):
+                    continue
+                eval_data = X[col][X[col].notna()]
+                inf_values = [
+                    x if x in self._backup_encoders[col].classes_ else "unknown"
+                    for x in eval_data
+                ]
 
-                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                        inf_values
-                    )
+                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                    inf_values
+                )
 
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
-
-            except Exception as e:
-                log.error(f"could not preprocess: {e}")
 
             all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
 
