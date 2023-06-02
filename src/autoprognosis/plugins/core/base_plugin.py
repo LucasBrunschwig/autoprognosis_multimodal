@@ -146,7 +146,7 @@ class Plugin(metaclass=ABCMeta):
 
     def fit_transform(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         """Fit the model and transform the training data. Used by imputers and preprocessors."""
-        return pd.DataFrame(self.fit(X, *args, *kwargs).transform(X))
+        return pd.DataFrame(self.fit(X, *args, **kwargs).transform(X))
 
     def fit_predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         """Fit the model and predict the training data. Used by predictors."""
@@ -158,18 +158,18 @@ class Plugin(metaclass=ABCMeta):
         self._backup_encoders = {}
 
         for col in X.columns:
-            if X[col].dtype.name not in ["object", "category"]:
+            if (
+                X[col].dtype.name not in ["object", "category"]
+                or not X[col].apply(lambda x: isinstance(x, (str, int, float))).sum()
+            ):
                 continue
-            # TODO: improve this processing
-            try:
-                values = list(X[col].unique())
-                values.append("unknown")
-                encoder = LabelEncoder().fit(values)
-                X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
+            values = list(X[col].unique())
+            values.append("unknown")
+            encoder = LabelEncoder().fit(values)
+            X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
 
-                self._backup_encoders[col] = encoder
-            except Exception:
-                pass
+            self._backup_encoders[col] = encoder
+
         return X
 
     def _preprocess_inference_data(self, X: pd.DataFrame) -> pd.DataFrame:
