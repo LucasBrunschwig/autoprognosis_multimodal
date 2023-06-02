@@ -106,6 +106,7 @@ class ConvNetPredefined(nn.Module):
         batch_size: int,
         lr: float,
         n_iter: int,
+        weight_decay: float,
         early_stopping: bool,
         n_iter_print: int,
         n_iter_min: int,
@@ -190,9 +191,13 @@ class ConvNetPredefined(nn.Module):
             self.model.classifier[6] = nn.Sequential(*additional_layers)
             for name, param in self.model.named_parameters():
                 if "classifier.6" in name:
-                    params.append({"params": param, "lr": lr})
+                    params.append(
+                        {"params": param, "lr": lr, "weight_decay": weight_decay}
+                    )
                 elif param.requires_grad:
-                    params.append({"params": param, "lr": 1e-7})
+                    params.append(
+                        {"params": param, "lr": 1e-7, "weight_decay": weight_decay}
+                    )
 
         self.optimizer = torch.optim.Adam(params)
 
@@ -466,6 +471,7 @@ class CNNPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
             patience=self.patience,
             batch_size=self.batch_size,
+            weight_decay=self.weight_decay,
         )
 
         if self.use_pretrained:
