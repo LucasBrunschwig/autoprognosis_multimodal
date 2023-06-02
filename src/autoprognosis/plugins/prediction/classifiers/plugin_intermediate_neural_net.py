@@ -330,6 +330,12 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         clipping_value: int = 1,
         random_state: int = 0,
         tab_reduction_ratio=0.6,
+        n_iter_print: int = 10,
+        patience: int = 5,
+        n_iter_min: int = 10,
+        n_iter: int = 1000,
+        batch_norm: bool = False,
+        early_stopping: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -349,11 +355,12 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         self.clipping_value = clipping_value
         self.tab_reduction_ratio = tab_reduction_ratio
 
-        #  self.n_iter_print = n_iter_print
-        #  self.patience = patience
-        #  self.n_iter_min = n_iter_min
-        #  self.batch_norm = batch_norm
-        #  self.early_stopping = early_stopping
+        self.n_iter_print = n_iter_print
+        self.patience = patience
+        self.n_iter_min = n_iter_min
+        self.n_iter = n_iter
+        self.batch_norm = batch_norm
+        self.early_stopping = early_stopping
 
         if model is not None:
             self.model = model
@@ -416,6 +423,12 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
             weight_decay=self.weight_decay,
             dropout=self.dropout,
             clipping_value=self.clipping_value,
+            n_iter_print=self.n_iter_print,
+            n_iter_min=self.n_iter_min,
+            patience=self.patience,
+            n_iter=self.n_iter,
+            batch_norm=self.batch_norm,
+            early_stopping=self.early_stopping,
         )
 
         # Step 2: fit the newly obtained vector with the selected classifier
