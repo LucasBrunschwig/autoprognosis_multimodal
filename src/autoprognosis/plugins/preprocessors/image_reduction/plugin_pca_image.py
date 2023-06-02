@@ -35,10 +35,7 @@ class PCAImagePlugin(base.PreprocessorPlugin):
     """
 
     def __init__(
-        self,
-        random_state: int = 0,
-        model: Any = None,
-        threshold: float = 0.95,
+        self, random_state: int = 0, model: Any = None, threshold: float = 0.9, **kwargs
     ) -> None:
         super().__init__()
         self.random_state = random_state
@@ -62,7 +59,7 @@ class PCAImagePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("threshold", [0.85, 0.9, 0.95])]
+        return [params.Categorical("threshold", [0.8, 0.85, 0.9, 0.95])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "PCAImagePlugin":
 
@@ -73,7 +70,7 @@ class PCAImagePlugin(base.PreprocessorPlugin):
 
         self.model = PCA(n_components=self.threshold, random_state=self.random_state)
 
-        self.model.fit(X_images, *args, **kwargs)
+        self.model.fit(X_images)
 
         return self
 
