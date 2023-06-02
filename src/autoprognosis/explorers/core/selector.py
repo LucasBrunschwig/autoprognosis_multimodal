@@ -84,6 +84,7 @@ class PipelineSelector:
 
         if classifier == "intermediate_conv_net":
             self.image_dimensionality_reduction = []
+            self.image_processing = []
 
         if classifier == "cnn":
             self.image_processing = []
