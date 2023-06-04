@@ -11,9 +11,13 @@ from pydantic import validate_arguments
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
+    IMAGE_KEY,
+    TABULAR_KEY,
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_image_dimensionality_reduction,
+    default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import Optimizer
 from autoprognosis.explorers.core.selector import PipelineSelector
@@ -70,6 +74,22 @@ class MultimodalClassifierSeeker:
                 - 'gauss_projection'
                 - 'pca'
                 - 'nop' # no operation
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
+            assumes that you preprocessed the images yourself.
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                - 'normalizer'
+                - 'resizer'
+        image_processing: list.
+            Plugin search pool to use in the pipeline for optimal dimensionlity reduction.
+            Available retrieved using `Preprocessors(category="image_reduction").list_available()`
+                - 'fast_ica_image'
+                - 'pca_image'
+                - 'predefined_cnn'
+        fusion: list.
+            Plugin search pool to use in the pipeline for optimal early modality fusion.
+            Available retrieved using `Preprocessors(category="fusion").list_available()`
+                - 'fusion'
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
@@ -128,11 +148,13 @@ class MultimodalClassifierSeeker:
         timeout: Optional[int] = 360,
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
-        classifiers: List[str] = default_classifiers_names,
         imputers: List[str] = [],
-        image_processing: List[str] = [],
-        image_dimensionality_reduction: List[str] = [],
+        image_processing: List[str] = default_image_processing,
+        image_dimensionality_reduction: List[
+            str
+        ] = default_image_dimensionality_reduction,
         fusion: List[str] = [],
+        classifiers: List[str] = default_classifiers_names,
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
@@ -204,11 +226,11 @@ class MultimodalClassifierSeeker:
 
             start = time.time()
 
-            # If no tabular data remove specific stages
-            if X["tab"].empty:
-                estimator.remove_tabular_processor()
+            if not X.get(TABULAR_KEY, None) or X[TABULAR_KEY].empty:
+                raise RuntimeError("Multimodal Fusion but no tabular inputs")
+            if not X.get(IMAGE_KEY, None) or X[IMAGE_KEY].empty:
+                raise RuntimeError("Multimodal Fusion but no image inputs")
 
-            # Create the model pipeline
             model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)
 
             try:
