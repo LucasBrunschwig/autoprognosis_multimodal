@@ -11,9 +11,7 @@ default_classifiers_names = [
 
 default_image_classsifiers_names = ["cnn"]
 
-default_multimodal_names = [
-    "intermediate_neural_net",
-]
+default_multimodal_names = ["intermediate_neural_net", "intermediate_conv_net"]
 
 default_conv_models = [
     "AlexNet",
@@ -39,7 +37,10 @@ default_image_dimensionality_reduction = [
     "predefined_cnn",
 ]
 default_fusion = ["concatenate"]
-default_modalities = ["img", "tab"]
+
+IMAGE_KEY = "img"
+TABULAR_KEY = "tab"
+MULTIMODAL_KEY = "multimodal"
 
 default_feature_scaling_names = Preprocessors(
     category="feature_scaling"
@@ -55,7 +56,7 @@ default_risk_estimation_names = [
     "coxnet",
 ]
 
-CNN = ["alexnet", "resnet18"]
+CNN = ["alexnet", "resnet18", "resnet50", "vgg19"]
 
 WEIGHTS = {
     "alexnet": "AlexNet_Weights.DEFAULT",
