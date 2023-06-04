@@ -15,6 +15,7 @@ from autoprognosis.explorers.core.defaults import (
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
+    default_fusion,
     default_image_classsifiers_names,
     default_image_dimensionality_reduction,
     default_image_processing,
@@ -85,6 +86,22 @@ class MultimodalEnsembleSeeker:
                 - 'gauss_projection'
                 - 'pca'
                 - 'nop' # no operation
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
+            assumes that you preprocessed the images yourself.
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                - 'normalizer'
+                - 'resizer'
+        image_processing: list.
+            Plugin search pool to use in the pipeline for optimal dimensionlity reduction.
+            Available retrieved using `Preprocessors(category="image_reduction").list_available()`
+                - 'fast_ica_image'
+                - 'pca_image'
+                - 'predefined_cnn'
+        fusion: list.
+            Plugin search pool to use in the pipeline for optimal early modality fusion.
+            Available retrieved using `Preprocessors(category="fusion").list_available()`
+                - 'fusion'
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
@@ -111,6 +128,9 @@ class MultimodalEnsembleSeeker:
                 - 'gaussian_naive_bayes'
                 - 'knn'
                 - 'xgboost'
+        image_classifiers: list.
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+                - 'cnn'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -150,7 +170,7 @@ class MultimodalEnsembleSeeker:
         image_dimensionality_reduction: List[
             str
         ] = default_image_dimensionality_reduction,
-        fusion: List[str] = ["concatenate"],
+        fusion: List[str] = default_fusion,
         classifiers: List[str] = default_classifiers_names,
         image_classifiers: List[str] = default_image_classsifiers_names,
         imputers: List[str] = [],
@@ -173,6 +193,7 @@ class MultimodalEnsembleSeeker:
         self.multimodal_type = multimodal_type
         self.multimodal_key = multimodal_key
 
+        # In case of early/intermediate fusion use both modality type
         if self.multimodal_type in ["early_fusion", "intermediate_fusion"]:
             self.seeker = MultimodalClassifierSeeker(
                 study_name,
@@ -195,6 +216,7 @@ class MultimodalEnsembleSeeker:
                 multimodal_type=self.multimodal_type,
             )
 
+        # In case of late fusion one model per modality
         if self.multimodal_type == "late_fusion":
             self.image_seeker = ImageClassifierSeeker(
                 study_name,
@@ -242,6 +264,7 @@ class MultimodalEnsembleSeeker:
         self._should_continue()
 
         Y = pd.DataFrame(LabelEncoder().fit_transform(Y)).reset_index(drop=True)
+
         for X_mod, X_df in X.items():
             X[X_mod] = X_df.reset_index(drop=True)
 
@@ -255,13 +278,11 @@ class MultimodalEnsembleSeeker:
             )
 
         folds = []
-        X_train = dict()
+        X_train = {}
         for train_index, _ in skf.split(np.zeros(Y.shape[0]), Y, groups=group_ids):
 
-            for mod_, columns in self.multimodal_key.items():
-                X_train[mod_] = X[mod_][columns].loc[
-                    X[mod_][columns].index[train_index]
-                ]
+            for mod_ in self.X.keys():
+                X_train[mod_] = X[mod_].loc[X[mod_].index[train_index]]
             Y_train = Y.loc[Y.index[train_index]]
 
             local_fold = []
@@ -342,23 +363,21 @@ class MultimodalEnsembleSeeker:
 
         if self.multimodal_type == "late_fusion":
 
-            # Find the best classifiers for images
+            # Optimal Image Models
             best_image_models = self.image_seeker.search(
                 X["img"], Y, group_ids=group_ids
             )
 
-            # Find the best classifiers for tabular data
+            # Optimal Tabular Models
             best_tabular_models = self.tabular_seeker.search(
                 X["tab"], Y, group_ids=group_ids
             )
 
-            # Combine models with one another
             best_models = best_tabular_models + best_image_models
 
             scores = []
             ensembles: list = []
 
-            # Meta Learning and Aggregation for Late Fusion
             try:
                 stacking_ensemble = StackingEnsemble(
                     best_models, meta_model=best_models[0], use_proba=True
@@ -395,7 +414,6 @@ class MultimodalEnsembleSeeker:
                 log.info(
                     f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
                 )
-
                 scores.append(aggr_ens_score)
                 ensembles.append(aggr_ensemble)
             except BaseException as e:

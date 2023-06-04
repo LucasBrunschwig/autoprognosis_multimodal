@@ -10,6 +10,8 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
+    IMAGE_KEY,
+    TABULAR_KEY,
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
@@ -87,9 +89,22 @@ class MultimodalStudy(Study):
                 - 'gauss_projection'
                 - 'pca'
                 - 'nop' # no operation
-        image_preprocessing: list.
-            Plugin search pool to use in the pipeline for optimal preprocessing. If the list is empty, the program assumes that
-            you preprocessed the images yourself.
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
+            assumes that you preprocessed the images yourself.
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                - 'normalizer'
+                - 'resizer'
+        image_processing: list.
+            Plugin search pool to use in the pipeline for optimal dimensionlity reduction.
+            Available retrieved using `Preprocessors(category="image_reduction").list_available()`
+                - 'fast_ica_image'
+                - 'pca_image'
+                - 'predefined_cnn'
+        fusion: list.
+            Plugin search pool to use in the pipeline for optimal early modality fusion.
+            Available retrieved using `Preprocessors(category="fusion").list_available()`
+                - 'fusion'
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
@@ -116,6 +131,9 @@ class MultimodalStudy(Study):
                 - 'gaussian_naive_bayes'
                 - 'knn'
                 - 'xgboost'
+        image_classifiers: list.
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+                - 'cnn'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -152,9 +170,9 @@ class MultimodalStudy(Study):
     Example:
         >>> from sklearn.datasets import load_breast_cancer
         >>>
-        >>> from autoprognosis.studies.classifiers import ClassifierStudy
+        >>> from autoprognosis.studies.multimodal_classifier import MultimodalStudy
         >>> from autoprognosis.utils.serialization import load_model_from_file
-        >>> from autoprognosis.utils.tester import evaluate_estimator
+        >>> from autoprognosis.utils.tester import evaluate_multimodal_estimator
         >>>
         >>> X, Y = load_breast_cancer(return_X_y=True, as_frame=True)
         >>>
@@ -191,7 +209,9 @@ class MultimodalStudy(Study):
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         image_processing: List[str] = default_image_processing,
-        image_dimensionality_reduction: List[str] = [],
+        image_dimensionality_reduction: List[
+            str
+        ] = default_image_dimensionality_reduction,
         fusion: List[str] = [],
         classifiers: List[str] = [],
         image_classifiers: List[str] = [],
@@ -241,7 +261,6 @@ class MultimodalStudy(Study):
         ):
             image_dimensionality_reduction = default_image_dimensionality_reduction
 
-        # Fusion is only used in early fusion
         if multimodal_type != "early_fusion":
             if fusion:
                 fusion = []
@@ -276,16 +295,16 @@ class MultimodalStudy(Study):
         else:
             imputers = []
 
-        # Sort modalities
+        # Build modalities dictionary
         self.multimodal_key = {}
         non_tabular_column = []
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
             non_tabular_column.extend(image)
-            self.multimodal_key["img"] = image
+            self.multimodal_key[IMAGE_KEY] = image
 
-        self.multimodal_key["tab"] = dataset.columns.difference(
+        self.multimodal_key[TABULAR_KEY] = dataset.columns.difference(
             non_tabular_column + [target]
         )
 
