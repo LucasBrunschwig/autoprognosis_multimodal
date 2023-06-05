@@ -7,6 +7,7 @@ from optuna.trial import Trial
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import IMAGE_KEY, TABULAR_KEY
 import autoprognosis.plugins.utils.decorators as decorators
 import autoprognosis.utils.serialization as serialization
 
@@ -117,14 +118,14 @@ def _generate_get_args() -> Callable:
 def _generate_intermediate_fusion_fit() -> Callable:
     def fit_multimodal_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
         for stage in self.stages[:-1]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
                 local_X_tab = pd.DataFrame(local_X_tab)
                 local_X_tab = stage.fit_transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.fit_transform(
                     local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
@@ -149,7 +150,7 @@ def _generate_early_fusion_fit() -> Callable:
 
         # Transform the image
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.fit_transform(
                     local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
@@ -219,27 +220,27 @@ def _generate_predict() -> Callable:
 def _generate_early_fusion_predict() -> Callable:
     def predict_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
-        # Transform the image
+        # Process images
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img, *args)
 
-        local_X = {"tab": local_X_tab, "img": local_X_img}
+        local_X = {IMAGE_KEY: local_X_tab, TABULAR_KEY: local_X_img}
 
-        # Data Fusion
+        # Fusion
         local_X = self.stages[-2].transform(local_X)
 
-        # Clean multimodal vector
+        # Process tabular
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
                 local_X = pd.DataFrame(local_X)
                 local_X = stage.transform(local_X)
 
-        # Fit the classifier
+        # Fit classifier
         self.stages[-1].predict(local_X, *args, **kwargs)
 
         return self
@@ -250,22 +251,21 @@ def _generate_early_fusion_predict() -> Callable:
 def _generate_intermediate_fusion_predict() -> Callable:
     def predict_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
+        # Process Image and Tabular separately
         for stage in self.stages[:-1]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
                 local_X_tab = pd.DataFrame(local_X_tab)
                 local_X_tab = stage.transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img)
 
-        local_X = {"tab": local_X_tab, "img": local_X_img}
+        local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
-        # Require tabular + main modalities
-
-        # Fit the classifier
+        # Fit  classifier
         self.stages[-1].predict(local_X, *args, **kwargs)
 
         return self
@@ -279,23 +279,23 @@ def _generate_early_fusion_predict_proba() -> Callable:
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
-        # Transform the image
+        # Process images
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "image" and not local_X_img.empty:
+            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img, *args)
 
-        local_X = {"tab": local_X_tab, "img": local_X_img}
+        local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
-        # Modalities Fusion
+        # Fusion
         local_X = self.stages[-2].transform(local_X)
 
-        # Preprocess Multimodal vector
+        # Process tabular
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
                 local_X = pd.DataFrame(local_X)
                 local_X = stage.transform(local_X)
 
@@ -319,18 +319,18 @@ def _generate_intermediate_fusion_predict_proba() -> Callable:
         self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
         for stage in self.stages[:-1]:
-            if stage.modality_type() == "tabular" and not local_X_tab.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
                 local_X_tab = pd.DataFrame(local_X_tab)
                 local_X_tab = stage.transform(local_X_tab)
-            elif stage.modality_type() == "image" and not local_X_img.empty:
+            elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img)
 
-        local_X = {"tab": local_X_tab, "img": local_X_img}
+        local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
         result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
 
@@ -374,11 +374,7 @@ def _generate_score() -> Callable:
     @decorators.benchmark
     def predict_score(self: Any, X: pd.DataFrame, y: pd.DataFrame) -> float:
 
-        # TODO: Find a solution for predict score
-        if isinstance(X, list):
-            local_X = X[0].copy()
-        else:
-            local_X = X.copy()
+        local_X = X.copy()
 
         for stage in self.stages[:-1]:
             local_X = stage.transform(local_X)
@@ -454,20 +450,6 @@ def _generate_getstate() -> Callable:
     return getstate_impl
 
 
-def _preprocess_image() -> Callable:
-    def preprocess_img_implt(self: Any) -> bool:
-        for stage in self.stages:
-            try:
-                use_pretrained = getattr(stage, "use_pretrained")
-                if use_pretrained:
-                    return False
-            except Exception:
-                pass
-        return True
-
-    return preprocess_img_implt
-
-
 def _modality_type() -> Callable:
     def modality_type_implt(self: Any) -> bool:
         return self.stages[-1].modality_type()
@@ -495,7 +477,6 @@ __all__ = [
     "_generate_setstate",
     "_generate_getstate",
     "_generate_change_output",
-    "_preprocess_image",
     "_generate_early_fusion_fit",
     "_generate_early_fusion_predict",
     "_generate_early_fusion_predict_proba",

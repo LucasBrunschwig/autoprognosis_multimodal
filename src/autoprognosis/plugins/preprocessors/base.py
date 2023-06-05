@@ -5,6 +5,7 @@ from typing import Any, Tuple
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import TABULAR_KEY
 import autoprognosis.plugins.core.base_plugin as plugin
 
 
@@ -31,7 +32,7 @@ class PreprocessorPlugin(plugin.Plugin):
 
     @staticmethod
     def modality_type():
-        ...
+        TABULAR_KEY
 
     @staticmethod
     def components_interval(*args: Any, **kwargs: Any) -> Tuple[int, int]:

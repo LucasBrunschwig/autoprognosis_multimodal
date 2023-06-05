@@ -7,6 +7,7 @@ import numpy
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import TABULAR_KEY
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.base_plugin as plugin
 
@@ -35,7 +36,7 @@ class PredictionPlugin(plugin.Plugin):
 
     @staticmethod
     def modality_type() -> str:
-        return "tab"
+        return TABULAR_KEY
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError(
