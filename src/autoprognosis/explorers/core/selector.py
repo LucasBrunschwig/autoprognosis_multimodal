@@ -31,7 +31,15 @@ class PipelineSelector:
         feature_scaling: list
             list of feature scaling transformers to sample from.
         feature_selection: list
-            list of feature selection methods ti sample from
+            list of feature selection methods to sample from
+        preprocess_images: bool
+            if image preprocessing should be optimized
+        image_processing: list
+            list of step in image preprocessing ordered list
+        image_dimensionality_reduction: list
+            list of image dimensionality reduction to sample from
+        fusion: list
+            list of fusion to sample from
         classifier_category: str
             task type: "classifier" or "risk_estimation"
 
@@ -82,13 +90,9 @@ class PipelineSelector:
         if "intermediate" in classifier:
             self.fusion = []
 
-        if classifier == "intermediate_conv_net":
+        if classifier in ["intermediate_conv_net", "cnn"]:
             self.image_dimensionality_reduction = []
             self.image_processing = []
-
-        if classifier == "cnn":
-            self.image_processing = []
-            self.image_dimensionality_reduction = []
 
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
@@ -244,15 +248,6 @@ class PipelineSelector:
 
                 args[plugin.name()][param.name.split(".")[-1]] = param_val
 
-        # TODO: test this function
-        if len(self.image_processing) > 0:
-            select_img = hyperparams[
-                domain_list.index(self._generate_dist_name("image_processing_step"))
-            ]
-            selected = Preprocessors(category="image_processing").get_type(select_img)
-            model_list.append(selected.fqdn())
-            add_stage_hp(selected)
-
         if len(self.imputers) > 0:
             select_imp = hyperparams[
                 domain_list.index(self._generate_dist_name("imputation_candidate"))
@@ -374,9 +369,8 @@ class PipelineSelector:
 
                 pipeline_args[plugin.name()][param.name.split(".")[-1]] = param_val
 
-        # Image preprocessing might not be subjected to optimization
+        # if image preprocessing is optimized
         if self.preprocess_image:
-            # Add resizer by default
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
@@ -462,9 +456,9 @@ class PipelineSelector:
         )
         model_list.append(cleaner.fqdn())
 
-        # Image preprocessing might not be subjected to optimization
-        if self.preprocess_image:
-            # Add resizer by default
+        # TODO: TEST THIS
+        pre_cnn = self._generate_dist_name("predefined_nn")
+        if self.preprocess_image and pre_cnn not in kwargs:
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
@@ -486,7 +480,6 @@ class PipelineSelector:
             model_list.append(self.image_dimensionality_reduction[0].fqdn())
             add_stage_hp(self.image_dimensionality_reduction[0])
 
-        # in early fusion needs a fusion candidate
         fusion_key = self._generate_dist_name("fusion_candidate")
         if fusion_key in kwargs:
             idx = kwargs[fusion_key]
@@ -501,17 +494,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        estimator = Pipeline(model_list)(pipeline_args)
-
-        if (
-            self.image_processing
-            and self.preprocess_image
-            and not estimator.preprocess_image()
-        ):
-            self.preprocess_image = False
-            return self.get_pipeline_from_named_args(**kwargs)
-
-        return estimator
+        return Pipeline(model_list)(pipeline_args)
 
     def remove_tabular_processing(self):
         """This function removes the tabular processing steps if there are no tabular data"""

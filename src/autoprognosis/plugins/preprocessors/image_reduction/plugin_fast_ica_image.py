@@ -8,6 +8,7 @@ from sklearn.decomposition import FastICA
 from torchvision.transforms import ToTensor
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import IMAGE_KEY
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
 import autoprognosis.utils.serialization as serialization
@@ -59,7 +60,7 @@ class FastICAImagePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def modality_type():
-        return "image"
+        return IMAGE_KEY
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:

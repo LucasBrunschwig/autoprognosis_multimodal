@@ -7,6 +7,7 @@ import pandas as pd
 import torchvision
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import CNN, IMAGE_KEY, WEIGHTS
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -39,16 +40,6 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
 
-CNN = {
-    "resnet": "resnet18",
-    "alexnet": "alexnet",
-}
-
-WEIGHTS = {
-    "alexnet": "AlexNet_Weights.DEFAULT",
-    "resnet": "ResNet18_Weights.DEFAULT",
-}
-
 NONLIN = {
     "elu": nn.ELU,
     "relu": nn.ReLU,
@@ -59,7 +50,9 @@ NONLIN = {
 # Depending on the number of additional layer the intermediate layer have different sizes
 N_INTERMEDIATE = {
     "alexnet": {1: 256, 2: 512, 3: 2048},  # last layer is 4096
-    "resnet": {1: 128, 2: 256, 3: 512},  # last layer is 1024
+    "resnet18": {1: 128, 2: 256, 3: 512},  # last layer is 1024
+    "resnet50": {1: 128, 2: 256, 3: 512},  # last layer is 1024
+    "vgg19": {1: 128, 2: 256, 3: 512},  # last layer is 1024
 }
 
 
@@ -132,7 +125,7 @@ class ConvNetPredefined(nn.Module):
             WEIGHTS[self.model_name] = None
 
         self.model = models.get_model(
-            CNN[self.model_name], weights=WEIGHTS[self.model_name]
+            self.model_name, weights=WEIGHTS[self.model_name]
         ).to(DEVICE)
 
         if use_pretrained:
@@ -147,10 +140,10 @@ class ConvNetPredefined(nn.Module):
             )
 
         # Replace the output layer by the given number of classes
-        if self.model_name == "resnet":
+        if "resnet" in self.model_name:
             n_features_in = self.model.fc.in_features
 
-        elif self.model_name == "alexnet":
+        elif self.model_name in ["alexnet", "vgg19"]:
             n_features_in = self.model.classifier[6].in_features
 
         NL = NONLIN[non_linear]
@@ -179,7 +172,7 @@ class ConvNetPredefined(nn.Module):
             additional_layers = [nn.Linear(n_features_in, n_classes)]
 
         params = []
-        if self.model_name == "resnet":
+        if "resnet" in self.model_name:
             self.model.fc = nn.Sequential(*additional_layers)
             for name, param in self.model.named_parameters():
                 if "fc" in name:
@@ -187,7 +180,7 @@ class ConvNetPredefined(nn.Module):
                 elif param.requires_grad:
                     params.append({"params": param, "lr": 1e-7})
 
-        elif self.model_name == "alexnet":
+        elif self.model_name in ["alexnet", "vgg19"]:
             self.model.classifier[6] = nn.Sequential(*additional_layers)
             for name, param in self.model.named_parameters():
                 if "classifier.6" in name:
@@ -282,6 +275,9 @@ class ConvNetPredefined(nn.Module):
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
+        test_size = min(test_size, 300)
+        train_size = len(dataset) - test_size
+
         train_dataset, test_dataset = torch.utils.data.random_split(
             dataset, [train_size, test_size]
         )
@@ -316,7 +312,7 @@ class ConvNetPredefined(nn.Module):
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
-                    X_val, y_val = test_dataset.dataset.tensors
+                    X_val, y_val = test_dataset.dataset[test_dataset.indices]
 
                     preds = self.forward(X_val).squeeze()
                     val_loss = loss(preds, y_val)
@@ -386,19 +382,19 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
-        conv_net: str = "AlexNet",
+        conv_net: str = "vgg19",
         use_pretrained: bool = True,
         n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
         n_layer: int = 1,
         non_linear: str = "relu",
-        lr: float = 1e-6,
+        lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        n_iter: int = 5,
-        batch_size: int = 32,
-        n_iter_print: int = 1,
+        n_iter: int = 1000,
+        batch_size: int = 64,
+        n_iter_print: int = 10,
         patience: int = 5,
-        n_iter_min: int = 3,
+        n_iter_min: int = 10,
         early_stopping: bool = True,
         hyperparam_search_iterations: Optional[int] = None,
         random_state: int = 0,
@@ -435,12 +431,12 @@ class CNNPlugin(base.ClassifierPlugin):
 
     @staticmethod
     def modality_type() -> str:
-        return "img"
+        return IMAGE_KEY
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
-            params.Categorical("conv_net", ["resnet", "alexnet"]),
+            params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Integer("n_layer", 1, 2),
             params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),

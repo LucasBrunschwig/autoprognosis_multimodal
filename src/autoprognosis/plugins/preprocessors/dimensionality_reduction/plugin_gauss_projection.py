@@ -52,10 +52,6 @@ class GaussianRandomProjectionPlugin(base.PreprocessorPlugin):
         return "dimensionality_reduction"
 
     @staticmethod
-    def modality_type():
-        return "tabular"
-
-    @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         cmin, cmax = base.PreprocessorPlugin.components_interval(*args, **kwargs)
         return [params.Integer("n_components", cmin, cmax)]

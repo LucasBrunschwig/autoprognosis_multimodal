@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import MULTIMODAL_KEY
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
 import autoprognosis.utils.serialization as serialization
@@ -49,7 +50,7 @@ class ConcatenatePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def modality_type():
-        return "image"
+        return MULTIMODAL_KEY
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:

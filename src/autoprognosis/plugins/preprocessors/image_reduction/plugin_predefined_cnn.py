@@ -5,7 +5,7 @@ from typing import Any, List
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
+from autoprognosis.explorers.core.defaults import CNN, IMAGE_KEY
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.plugin_cnn import ConvNetPredefined
 import autoprognosis.plugins.preprocessors.base as base
@@ -16,21 +16,12 @@ for retry in range(2):
     try:
         # third party
         import torch
-        from torch import nn
 
         break
     except ImportError:
         depends = ["torch"]
         install(depends)
-for retry in range(2):
-    try:
-        # third party
-        import torchvision.models as models
 
-        break
-    except ImportError:
-        depends = ["torchvision"]
-        install(depends)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -68,6 +59,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         n_iter_print: int = 10,
         patience: int = 5,
         early_stopping: bool = True,
+        weight_decay: float = 1e-3,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -82,16 +74,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         self.patience = patience
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
-
-        self.model = models.get_model(self.conv_net, weights=WEIGHTS[self.conv_net]).to(
-            DEVICE
-        )
-
-        weights = models.get_weight(WEIGHTS[self.conv_net])
-        self.preprocess = weights.transforms
-
-        if self.conv_net == "alexnet":
-            self.model.classifier[6] = nn.Identity()
+        self.weight_decay = weight_decay
 
     @staticmethod
     def name() -> str:
@@ -103,7 +86,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def modality_type():
-        return "image"
+        return IMAGE_KEY
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
@@ -129,6 +112,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             use_pretrained=True,
             n_classes=len(y.value_counts()),
             non_linear=self.non_lin,
+            weight_decay=self.weight_decay,
             batch_size=self.batch_size,
             lr=self.lr,
             n_iter_min=self.n_iter_min,
