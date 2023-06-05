@@ -177,9 +177,18 @@ class BayesianOptimizer:
 
         def objective(trial: optuna.Trial) -> float:
             args = self.estimator.sample_hyperparameters(trial)
+            log.info("####################################")
+            log.info("New Trial: ")
+            for key, value in args.items():
+                print(f"{key} - {value}")
+            log.info("####################################")
+
             pruner.check_trial(trial)
 
             score = self.evaluation_cbk(**args)
+
+            log.info(f"Evaluation score for {self.estimator.name()}: {score}")
+            log.info("####################################")
 
             pruner.report_score(score)
 

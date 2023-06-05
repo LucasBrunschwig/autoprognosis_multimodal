@@ -41,7 +41,7 @@ if __name__ == "__main__":
     subprocess = False
     n = 1000
 
-    logger.debug(
+    logger.info(
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
@@ -62,12 +62,12 @@ if __name__ == "__main__":
             data_src_="PAD-UFES",
             format_="PIL",
         )
-        DL.load_dataset()
-        df = DL.sample_dataset(n)
+        df = DL.load_dataset()
+        # df = DL.sample_dataset(n)
         # Sample Dataset for Testing Purpose
 
-    logger.debug("Image Loaded")
-    logger.debug(
+    logger.info("Image Loaded")
+    logger.info(
         f"GB available after loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
@@ -78,13 +78,12 @@ if __name__ == "__main__":
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
-        multimodal_type="late_fusion",
+        multimodal_type="early_fusion",
         sample_for_search=False,  # no Sampling
-        image_dimensionality_reduction=["predefined_cnn"],
         n_folds_cv=5,
-        num_iter=10,
+        num_iter=5,
         timeout=360,
-        num_study_iter=50,
+        num_study_iter=10,
     )
 
     model = study.fit()
