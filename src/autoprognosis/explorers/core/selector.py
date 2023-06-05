@@ -457,7 +457,7 @@ class PipelineSelector:
         model_list.append(cleaner.fqdn())
 
         # TODO: TEST THIS
-        pre_cnn = self._generate_dist_name("predefined_nn")
+        pre_cnn = self._generate_dist_name("image_processing_step", "predefined_cnn")
         if self.preprocess_image and pre_cnn not in kwargs:
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())

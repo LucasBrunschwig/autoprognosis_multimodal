@@ -145,8 +145,8 @@ def _generate_intermediate_fusion_fit() -> Callable:
 def _generate_early_fusion_fit() -> Callable:
     def fit_multimodal_impl(self: Any, X: dict, *args: Any, **kwargs: Any) -> Any:
 
-        local_X_tab = X["tab"].copy()
-        local_X_img = X["img"].copy()
+        local_X_tab = X[TABULAR_KEY].copy()
+        local_X_img = X[IMAGE_KEY].copy()
 
         # Transform the image
         for stage in self.stages[:-2]:
@@ -156,14 +156,14 @@ def _generate_early_fusion_fit() -> Callable:
                     local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
                 )
 
-        local_X = {"tab": local_X_tab, "img": local_X_img}
+        local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
         # Modalities Fusion
         local_X = self.stages[-2].fit_transform(local_X)
 
         # Preprocess Multimodal vector
         for stage in self.stages[:-2]:
-            if stage.modality_type() == "tabular" and not local_X.empty:
+            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
                 local_X = pd.DataFrame(local_X)
                 local_X = stage.fit_transform(local_X)
 

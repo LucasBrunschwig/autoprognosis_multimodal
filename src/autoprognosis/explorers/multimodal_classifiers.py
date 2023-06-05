@@ -225,9 +225,15 @@ class MultimodalClassifierSeeker:
 
             start = time.time()
 
-            if not X.get(TABULAR_KEY, None) or X[TABULAR_KEY].empty:
+            if (
+                not isinstance(X.get(TABULAR_KEY, None), pd.DataFrame)
+                or X[TABULAR_KEY].empty
+            ):
                 raise RuntimeError("Multimodal Fusion but no tabular inputs")
-            if not X.get(IMAGE_KEY, None) or X[IMAGE_KEY].empty:
+            if (
+                not isinstance(X.get(IMAGE_KEY, None), pd.DataFrame)
+                or X[IMAGE_KEY].empty
+            ):
                 raise RuntimeError("Multimodal Fusion but no image inputs")
 
             model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)

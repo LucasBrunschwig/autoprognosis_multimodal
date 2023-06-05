@@ -7,6 +7,7 @@ import pandas as pd
 # autoprognosis absolute
 import autoprognosis.plugins.core.base_plugin as plugin
 import autoprognosis.plugins.utils.decorators as decorators
+from autoprognosis.utils.default_modalities import TABULAR_KEY
 from autoprognosis.utils.serialization import load_model, save_model
 
 
@@ -42,7 +43,7 @@ class ImputerPlugin(plugin.Plugin):
 
     @staticmethod
     def modality_type() -> str:
-        return "tabular"
+        return TABULAR_KEY
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         raise NotImplementedError(

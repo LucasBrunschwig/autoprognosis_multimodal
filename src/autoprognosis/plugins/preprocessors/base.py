@@ -32,7 +32,7 @@ class PreprocessorPlugin(plugin.Plugin):
 
     @staticmethod
     def modality_type():
-        TABULAR_KEY
+        return TABULAR_KEY
 
     @staticmethod
     def components_interval(*args: Any, **kwargs: Any) -> Tuple[int, int]:
