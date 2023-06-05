@@ -7,10 +7,12 @@ import pandas as pd
 import torchvision
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, IMAGE_KEY, WEIGHTS
+# autoprognosis absolut
+from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
+from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
@@ -382,7 +384,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
-        conv_net: str = "vgg19",
+        conv_net: str = "alexnet",
         use_pretrained: bool = True,
         n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
@@ -390,9 +392,9 @@ class CNNPlugin(base.ClassifierPlugin):
         non_linear: str = "relu",
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        n_iter: int = 1000,
+        n_iter: int = 10,
         batch_size: int = 64,
-        n_iter_print: int = 10,
+        n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
         early_stopping: bool = True,

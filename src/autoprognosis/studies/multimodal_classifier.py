@@ -10,8 +10,6 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
-    IMAGE_KEY,
-    TABULAR_KEY,
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
@@ -27,6 +25,7 @@ from autoprognosis.explorers.multimodal_classifiers_combos import (
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.studies._base import Study
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.serialization import (
     dataframe_hash,

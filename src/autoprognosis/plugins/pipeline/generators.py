@@ -7,8 +7,8 @@ from optuna.trial import Trial
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import IMAGE_KEY, TABULAR_KEY
 import autoprognosis.plugins.utils.decorators as decorators
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 import autoprognosis.utils.serialization as serialization
 
 

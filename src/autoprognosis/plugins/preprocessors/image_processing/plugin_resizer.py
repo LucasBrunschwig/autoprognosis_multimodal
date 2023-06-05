@@ -6,9 +6,9 @@ import pandas as pd
 from torchvision.transforms import Compose, Resize, ToPILImage, ToTensor
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import IMAGE_KEY
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
+from autoprognosis.utils.default_modalities import IMAGE_KEY
 import autoprognosis.utils.serialization as serialization
 
 

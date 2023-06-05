@@ -11,8 +11,6 @@ from pydantic import validate_arguments
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
-    IMAGE_KEY,
-    TABULAR_KEY,
     default_classifiers_names,
     default_feature_scaling_names,
     default_feature_selection_names,
@@ -23,6 +21,7 @@ from autoprognosis.explorers.core.optimizer import Optimizer
 from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.parallel import n_opt_jobs
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
