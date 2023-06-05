@@ -80,8 +80,8 @@ class MultimodalClassifierSeeker:
             Available retrieved using `Preprocessors(category="image_processing").list_available()`
                 - 'normalizer'
                 - 'resizer'
-        image_processing: list.
-            Plugin search pool to use in the pipeline for optimal dimensionlity reduction.
+        image_dimensionality_reduction: list.
+            Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
                 - 'fast_ica_image'
                 - 'pca_image'
@@ -89,7 +89,7 @@ class MultimodalClassifierSeeker:
         fusion: list.
             Plugin search pool to use in the pipeline for optimal early modality fusion.
             Available retrieved using `Preprocessors(category="fusion").list_available()`
-                - 'fusion'
+                - 'concatenate'
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
