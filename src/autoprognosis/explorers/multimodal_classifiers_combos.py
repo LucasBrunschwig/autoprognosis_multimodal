@@ -281,7 +281,7 @@ class MultimodalEnsembleSeeker:
         X_train = {}
         for train_index, _ in skf.split(np.zeros(Y.shape[0]), Y, groups=group_ids):
 
-            for mod_ in self.X.keys():
+            for mod_ in X.keys():
                 X_train[mod_] = X[mod_].loc[X[mod_].index[train_index]]
             Y_train = Y.loc[Y.index[train_index]]
 
