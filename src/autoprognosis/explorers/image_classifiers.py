@@ -51,66 +51,22 @@ class ImageClassifierSeeker:
             Number of candidates to return
         timeout: int.
             Maximum wait time(seconds) for each estimator hyperparameter search. This timeout will apply to each estimator in the "classifiers" list.
-        feature_scaling: list.
-            Plugin search pool to use in the pipeline for scaling. Defaults to : ['maxabs_scaler', 'scaler', 'feature_normalizer', 'normal_transform', 'uniform_transform', 'nop', 'minmax_scaler']
-            Available plugins, retrieved using `Preprocessors(category="feature_scaling").list_available()`:
-                - 'maxabs_scaler'
-                - 'scaler'
-                - 'feature_normalizer'
-                - 'normal_transform'
-                - 'uniform_transform'
-                - 'nop' # empty operation
-                - 'minmax_scaler'
-        feature_selection: list.
-            Plugin search pool to use in the pipeline for feature selection. Defaults ["nop", "variance_threshold", "pca", "fast_ica"]
-            Available plugins, retrieved using `Preprocessors(category="dimensionality_reduction").list_available()`:
-                - 'feature_agglomeration'
-                - 'fast_ica'
-                - 'variance_threshold'
-                - 'gauss_projection'
-                - 'pca'
-                - 'nop' # no operation
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
+            assumes that you preprocessed the images yourself.
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                - 'normalizer'
+                - 'resizer'
+                - 'data_augmentation'
+        image_dimensionality_reduction: list.
+            Plugin search pool to use in the pipeline for optimal dimensionality reduction.
+            Available retrieved using `Preprocessors(category="image_reduction").list_available()`
+                - 'fast_ica_image'
+                - 'pca_image'
+                - 'predefined_cnn'
         classifiers: list.
-            Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
-            Available plugins, retrieved using `Classifiers().list_available()`:
-                - 'adaboost'
-                - 'bernoulli_naive_bayes'
-                - 'neural_nets'
-                - 'linear_svm'
-                - 'qda'
-                - 'decision_trees'
-                - 'logistic_regression'
-                - 'hist_gradient_boosting'
-                - 'extra_tree_classifier'
-                - 'bagging'
-                - 'gradient_boosting'
-                - 'ridge_classifier'
-                - 'gaussian_process'
-                - 'perceptron'
-                - 'lgbm'
-                - 'catboost'
-                - 'random_forest'
-                - 'tabnet'
-                - 'multinomial_naive_bayes'
-                - 'lda'
-                - 'gaussian_naive_bayes'
-                - 'knn'
-                - 'xgboost'
-        imputers: list.
-            Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
-            Available plugins, retrieved using `Imputers().list_available()`:
-                - 'sinkhorn'
-                - 'EM'
-                - 'mice'
-                - 'ice'
-                - 'hyperimpute'
-                - 'most_frequent'
-                - 'median'
-                - 'missforest'
-                - 'softimpute'
-                - 'nop'
-                - 'mean'
-                - 'gain'
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"]
+                - 'cnn'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
         random_state: int:
