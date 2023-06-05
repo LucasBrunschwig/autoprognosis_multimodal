@@ -7,9 +7,9 @@ import numpy
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import TABULAR_KEY
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.base_plugin as plugin
+from autoprognosis.utils.default_modalities import TABULAR_KEY
 
 
 class PredictionPlugin(plugin.Plugin):
