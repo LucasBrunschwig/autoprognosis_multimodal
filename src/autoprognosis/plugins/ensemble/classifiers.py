@@ -37,10 +37,10 @@ class BaseEnsemble(BaseEstimator, metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def predict_proba(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
+    def predict_proba(self, X: Union[pd.DataFrame, dict], *args: Any) -> pd.DataFrame:
         ...
 
-    def predict(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
+    def predict(self, X: Union[pd.DataFrame, dict], *args: Any) -> pd.DataFrame:
         preds = self.predict_proba(X, *args)
         res = np.argmax(preds.values, axis=1)
 
@@ -58,7 +58,9 @@ class BaseEnsemble(BaseEstimator, metaclass=ABCMeta):
         self.explainer_plugins = explainer_plugins
         self.explanations_nepoch = explanations_nepoch
 
-    def score(self, X: pd.DataFrame, y: pd.DataFrame, metric: str = "aucroc") -> float:
+    def score(
+        self, X: Union[pd.DataFrame, dict], y: pd.DataFrame, metric: str = "aucroc"
+    ) -> float:
         ev = classifier_metrics()
         preds = self.predict_proba(X)
         return ev.score_proba(y, preds)[metric]
@@ -451,7 +453,7 @@ class StackingEnsemble(BaseEnsemble):
             )
         return self
 
-    def predict_proba(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
+    def predict_proba(self, X: Union[pd.DataFrame, dict], *args: Any) -> pd.DataFrame:
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
 

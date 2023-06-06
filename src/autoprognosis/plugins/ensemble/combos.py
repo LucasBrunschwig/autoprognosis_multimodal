@@ -35,7 +35,7 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.validation import check_is_fitted
 
 # autoprognosis absolute
-import autoprognosis.logger as log
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 
 
 class BaseAggregator(ABC):
@@ -501,7 +501,7 @@ class Stacking(BaseAggregator):
             warnings.warn("Stacking does not support pre_fitted option.")
 
     def fit(self, X, y):
-        """Overloading of fit method for multimodal and unimodal"""
+        """Overloading of fit method for multimodal and unimodal data type"""
         if isinstance(X, dict):
             return self.fit_multimodal(X, y)
         elif isinstance(X, pd.DataFrame):
@@ -527,7 +527,7 @@ class Stacking(BaseAggregator):
             for col in X.columns:
                 if (
                     X[col].dtype.name not in ["object", "category"]
-                    and not X[col]
+                    or not X[col]
                     .apply(lambda x: isinstance(x, (str, int, float)))
                     .sum()
                 ):
@@ -540,9 +540,13 @@ class Stacking(BaseAggregator):
 
                 self._backup_encoders[col] = encoder
 
+            if mod_ == TABULAR_KEY:
                 # Validate inputs X and y
                 X, y = check_X_y(X, y, force_all_finite=False)
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
+
+            elif mod_ == IMAGE_KEY:
+                X_modalities[mod_] = X.to_numpy()
 
             n_samples = X.shape[0]
 
@@ -583,24 +587,15 @@ class Stacking(BaseAggregator):
                 full_idx = list(range(n_samples))
                 test_idx = index_lists[modality][j]
                 train_idx = list_diff(full_idx, test_idx)
-                if modality == "img":
-                    X_train, y_train = (
-                        X_new_modalities[modality].iloc[train_idx],
-                        y_new_modalities[modality][train_idx],
-                    )
-                    X_test, _ = (
-                        X_new_modalities[modality].iloc[test_idx],
-                        y_new_modalities[modality][test_idx],
-                    )
-                else:
-                    X_train, y_train = (
-                        X_new_modalities[modality][train_idx, :],
-                        y_new_modalities[modality][train_idx],
-                    )
-                    X_test, _ = (
-                        X_new_modalities[modality][test_idx, :],
-                        y_new_modalities[modality][test_idx],
-                    )
+
+                X_train, y_train = (
+                    X_new_modalities[modality][train_idx, :],
+                    y_new_modalities[modality][train_idx],
+                )
+                X_test, _ = (
+                    X_new_modalities[modality][test_idx, :],
+                    y_new_modalities[modality][test_idx],
+                )
 
                 # train the classifier
                 clf = copy.deepcopy(raw_clf)
@@ -724,20 +719,19 @@ class Stacking(BaseAggregator):
         check_is_fitted(self, ["fitted_"])
 
         for mod_, X in X_modalities.items():
-            if mod_ == "tab":
-                for col in self._backup_encoders:
-                    eval_data = X[col][X[col].notna()]
-                    inf_values = [
-                        x if x in self._backup_encoders[col].classes_ else "unknown"
-                        for x in eval_data
-                    ]
+            for col in self._backup_encoders:
+                eval_data = X[col][X[col].notna()]
+                inf_values = [
+                    x if x in self._backup_encoders[col].classes_ else "unknown"
+                    for x in eval_data
+                ]
 
-                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                        inf_values
-                    )
-
-                    X_modalities[mod_] = check_array(X, force_all_finite=False)
-            elif mod_ == "img":
+                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                    inf_values
+                )
+            if mod_ == TABULAR_KEY:
+                X_modalities[mod_] = check_array(X, force_all_finite=False)
+            elif mod_ == IMAGE_KEY:
                 X_modalities[mod_] = X.to_numpy()
 
         n_samples = X_modalities[list(X_modalities.keys())[0]].shape[0]
@@ -968,11 +962,11 @@ class SimpleClassifierAggregator(BaseAggregator):
         self._set_n_classes(y)
         self._backup_encoders = {}
 
-        for X_mod, X in X_modalities.items():
+        for mod_, X in X_modalities.items():
             for col in X.columns:
                 if (
                     X[col].dtype.name not in ["object", "category"]
-                    and not X[col]
+                    or not X[col]
                     .apply(lambda x: isinstance(x, (str, int, float)))
                     .sum()
                 ):
@@ -984,9 +978,13 @@ class SimpleClassifierAggregator(BaseAggregator):
                 encoder = LabelEncoder().fit(values)
                 X.loc[X[col].notna(), col] = encoder.transform(X[col][X[col].notna()])
                 self._backup_encoders[col] = encoder
+
+            if mod_ == IMAGE_KEY:
+                X_modalities[mod_] = X.to_numpy()
+            elif mod_ == TABULAR_KEY:
                 # Validate inputs X and y
                 X, y = check_X_y(X, y, force_all_finite=False)
-                X_modalities[X_mod] = check_array(X, force_all_finite=False)
+                X_modalities[mod_] = check_array(X, force_all_finite=False)
 
         if self.pre_fitted:
             return
@@ -1000,9 +998,9 @@ class SimpleClassifierAggregator(BaseAggregator):
     def fit(self, X, y):
         """This method will fit data based on its data type"""
         if isinstance(X, dict):
-            self.fit_multimodal(X, y)
+            return self.fit_multimodal(X, y)
         else:
-            self.fit_unimodal(X, y)
+            return self.fit_unimodal(X, y)
 
     def predict(self, X):
         if isinstance(X, dict):
@@ -1014,13 +1012,6 @@ class SimpleClassifierAggregator(BaseAggregator):
 
         for mod_, X in X_modalities.items():
             for col in self._backup_encoders:
-                if (
-                    X[col].dtype.name not in ["object", "category"]
-                    and not X[col]
-                    .apply(lambda x: isinstance(x, (str, int, float)))
-                    .sum()
-                ):
-                    continue
                 eval_data = X[col][X[col].notna()]
                 inf_values = [
                     x if x in self._backup_encoders[col].classes_ else "unknown"
@@ -1126,22 +1117,20 @@ class SimpleClassifierAggregator(BaseAggregator):
         """
 
         for mod_, X in X_modalities.items():
-            try:
-                for col in self._backup_encoders:
-                    eval_data = X[col][X[col].notna()]
-                    inf_values = [
-                        x if x in self._backup_encoders[col].classes_ else "unknown"
-                        for x in eval_data
-                    ]
+            for col in self._backup_encoders:
+                eval_data = X[col][X[col].notna()]
+                inf_values = [
+                    x if x in self._backup_encoders[col].classes_ else "unknown"
+                    for x in eval_data
+                ]
 
-                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                        inf_values
-                    )
-
+                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                    inf_values
+                )
+            if mod_ == TABULAR_KEY:
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
-
-            except Exception as e:
-                log.error(f"could not preprocess: {e}")
+            elif mod_ == IMAGE_KEY:
+                X_modalities[mod_] = X.to_numpy()
 
             all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
 
