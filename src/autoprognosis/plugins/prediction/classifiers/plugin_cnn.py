@@ -180,7 +180,7 @@ class ConvNetPredefined(nn.Module):
                 if "fc" in name:
                     params.append({"params": param, "lr": lr})
                 elif param.requires_grad:
-                    params.append({"params": param, "lr": 1e-7})
+                    params.append({"params": param, "lr": 1e-6})
 
         elif self.model_name in ["alexnet", "vgg19"]:
             self.model.classifier[6] = nn.Sequential(*additional_layers)
@@ -191,7 +191,7 @@ class ConvNetPredefined(nn.Module):
                     )
                 elif param.requires_grad:
                     params.append(
-                        {"params": param, "lr": 1e-7, "weight_decay": weight_decay}
+                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
                     )
 
         self.optimizer = torch.optim.Adam(params)
@@ -392,7 +392,7 @@ class CNNPlugin(base.ClassifierPlugin):
         non_linear: str = "relu",
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        n_iter: int = 10,
+        n_iter: int = 1000,
         batch_size: int = 64,
         n_iter_print: int = 1,
         patience: int = 5,
@@ -439,7 +439,7 @@ class CNNPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
             params.Integer("n_layer", 1, 2),
             params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
             params.Integer("n_unfrozen_layer", 0, 3),
@@ -450,6 +450,9 @@ class CNNPlugin(base.ClassifierPlugin):
             raise RuntimeError("Please provide the labels for training")
 
         y = args[0]
+
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
 
         # Preprocess Data
         n_classes = np.unique(y).shape[0]
@@ -474,6 +477,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
         if self.use_pretrained:
             X = self.model.preprocess_images(X.squeeze())
+
         else:
             X = torch.stack(
                 [
@@ -487,6 +491,8 @@ class CNNPlugin(base.ClassifierPlugin):
         return self
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
         with torch.no_grad():
             if self.use_pretrained:
                 X = self.model.preprocess_images(X.squeeze()).to(DEVICE)
@@ -503,6 +509,9 @@ class CNNPlugin(base.ClassifierPlugin):
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+
         with torch.no_grad():
             if self.use_pretrained:
                 X = self.model.preprocess_images(X.squeeze())
