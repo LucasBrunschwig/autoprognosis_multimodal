@@ -176,6 +176,7 @@ class ConvNetPredefined(nn.Module):
         params = []
         if "resnet" in self.model_name:
             self.model.fc = nn.Sequential(*additional_layers)
+            self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if "fc" in name:
                     params.append({"params": param, "lr": lr})
@@ -184,6 +185,7 @@ class ConvNetPredefined(nn.Module):
 
         elif self.model_name in ["alexnet", "vgg19"]:
             self.model.classifier[6] = nn.Sequential(*additional_layers)
+            self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if "classifier.6" in name:
                     params.append(
@@ -270,8 +272,8 @@ class ConvNetPredefined(nn.Module):
         return self.model(x)
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefined":
-        X = self._check_tensor(X).float()
-        y = self._check_tensor(y).squeeze().long()
+        X = self._check_tensor(X).float().to(DEVICE)
+        y = self._check_tensor(y).squeeze().long().to(DEVICE)
 
         dataset = TensorDataset(X, y)
 
@@ -341,6 +343,7 @@ class ConvNetPredefined(nn.Module):
             self.model.classifier[-1] = nn.Identity()
         else:
             self.model.fc = nn.Identity()
+            self.model.to(DEVICE)
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
@@ -502,9 +505,9 @@ class CNNPlugin(base.ClassifierPlugin):
                         torchvision.transforms.ToTensor()(img[0])
                         for img in X.squeeze().values
                     ]
-                ).to(DEVICE)
+                )
 
-            return self.model(X).argmax(dim=-1).detach().cpu().numpy()
+            return self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
@@ -521,9 +524,9 @@ class CNNPlugin(base.ClassifierPlugin):
                         torchvision.transforms.ToTensor()(img[0])
                         for img in X.squeeze().values
                     ]
-                ).to(DEVICE)
+                )
 
-            return self.model(X).detach().cpu().numpy()
+            return self.model(X.to(DEVICE)).detach().cpu().numpy()
 
     def save(self) -> bytes:
         return save_model(self)
