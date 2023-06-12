@@ -156,8 +156,8 @@ class BasicNet(nn.Module):
         return self.model(X)
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "BasicNet":
-        X = self._check_tensor(X).float()
-        y = self._check_tensor(y).squeeze().long()
+        X = self._check_tensor(X).float().to(DEVICE)
+        y = self._check_tensor(y).squeeze().long().to(DEVICE)
 
         dataset = TensorDataset(X, y)
 
