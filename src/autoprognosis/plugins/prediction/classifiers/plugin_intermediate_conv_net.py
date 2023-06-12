@@ -131,6 +131,7 @@ class ConvIntermediateNet(nn.Module):
             tab_layer = [nn.Identity()]
 
         self.tab_model = nn.Sequential(*tab_layer).to(DEVICE)
+        self.tab_model.to(DEVICE)
 
         for name, param in self.tab_model.named_parameters():
             params.append({"params": param, "lr": lr, "weight_decay": weight_decay})
@@ -139,6 +140,7 @@ class ConvIntermediateNet(nn.Module):
         self.image_model = models.get_model(
             CNN[conv_name.lower()], weights=WEIGHTS[conv_name.lower()]
         ).to(DEVICE)
+        self.image_model.to(DEVICE)
 
         weights = models.get_weight(WEIGHTS[conv_name.lower()])
         self.preprocess = weights.transforms
@@ -336,7 +338,7 @@ class ConvIntermediateNet(nn.Module):
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(
             img_.squeeze().apply(lambda d: self.preprocess()(d)).tolist()
-        )
+        ).to(DEVICE)
 
     def set_parameter_requires_grad(
         self,
@@ -556,13 +558,13 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_img = self.model.preprocess_images(X["img"]).float()
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_img = self.model.preprocess_images(X["img"]).float()
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).detach().cpu().numpy()
 

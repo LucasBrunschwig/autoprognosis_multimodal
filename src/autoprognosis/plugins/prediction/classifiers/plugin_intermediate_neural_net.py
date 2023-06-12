@@ -438,13 +438,13 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_img = self.model.preprocess_images(X["img"]).float().to(DEVICE)
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = torch.from_numpy(np.asarray(X["img"])).float().to(DEVICE)
+            X_img = self.model.preprocess_images(X["img"]).float().to(DEVICE)
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).detach().cpu().numpy()
 
