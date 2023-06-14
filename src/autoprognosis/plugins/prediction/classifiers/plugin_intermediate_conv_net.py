@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
-from autoprognosis.plugins.prediction.classifiers.plugin_cnn import CNN, WEIGHTS
 from autoprognosis.plugins.prediction.classifiers.plugin_neural_nets import NONLIN
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
@@ -131,16 +131,14 @@ class ConvIntermediateNet(nn.Module):
             tab_layer = [nn.Identity()]
 
         self.tab_model = nn.Sequential(*tab_layer).to(DEVICE)
-        self.tab_model.to(DEVICE)
 
         for name, param in self.tab_model.named_parameters():
             params.append({"params": param, "lr": lr, "weight_decay": weight_decay})
 
         # Image Net
         self.image_model = models.get_model(
-            CNN[conv_name.lower()], weights=WEIGHTS[conv_name.lower()]
-        ).to(DEVICE)
-        self.image_model.to(DEVICE)
+            conv_name.lower(), weights=WEIGHTS[conv_name.lower()]
+        )
 
         weights = models.get_weight(WEIGHTS[conv_name.lower()])
         self.preprocess = weights.transforms
@@ -149,10 +147,10 @@ class ConvIntermediateNet(nn.Module):
         self.set_parameter_requires_grad(n_unfrozen_layer)
 
         # Replace the output layer by the given number of classes
-        if conv_name == "resnet":
+        if conv_name in ["resnet18", "resnet50"]:
             n_features_in = self.image_model.fc.in_features
 
-        elif conv_name == "alexnet":
+        elif conv_name in ["alexnet", "vgg19", "vgg16"]:
             n_features_in = self.image_model.classifier[6].in_features
 
         # The first intermediate layer depends on the last output
@@ -170,16 +168,18 @@ class ConvIntermediateNet(nn.Module):
             additional_layers.append(NL())
             n_intermediate = int(n_intermediate / 2)
 
-        if conv_name == "resnet":
+        if conv_name in ["resnet18", "resnet50"]:
             self.image_model.fc = nn.Sequential(*additional_layers)
+            self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
                 if "fc" in name:
                     params.append({"params": param, "lr": lr})
                 elif param.requires_grad:
                     params.append({"params": param, "lr": 1e-7})
 
-        elif conv_name == "alexnet":
+        elif conv_name in ["alexnet", "vgg19", "vgg16"]:
             self.image_model.classifier[6] = nn.Sequential(*additional_layers)
+            self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
                 if "classifier.6" in name:
                     params.append(
@@ -231,7 +231,8 @@ class ConvIntermediateNet(nn.Module):
         layers.append(nn.Softmax(dim=-1))
 
         # return final architecture
-        self.classifier_model = nn.Sequential(*layers).to(DEVICE)
+        self.classifier_model = nn.Sequential(*layers)
+        self.classifier_model.to(DEVICE)
 
         for name, param in self.classifier_model.named_parameters():
             params.append({"params": param, "lr": lr, "weight_decay": weight_decay})
@@ -338,7 +339,7 @@ class ConvIntermediateNet(nn.Module):
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(
             img_.squeeze().apply(lambda d: self.preprocess()(d)).tolist()
-        ).to(DEVICE)
+        )
 
     def set_parameter_requires_grad(
         self,
@@ -442,7 +443,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_tab_layer: int = 2,
         nonlin="relu",
         n_img_layer: int = 2,
-        conv_name: str = "alexnet",
+        conv_name: str = "vgg16",
         n_neurons: int = 64,
         ratio: float = 0.8,
         n_layers_hidden: int = 1,
@@ -505,7 +506,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             params.Categorical("tab_reduction_ratio", [0.5, 0.6, 0.7]),
             params.Integer("n_tab_layer", 0, 2),
             params.Integer("n_img_layer", 1, 3),
-            params.Categorical("conv_name", ["alexnet", "resnet"]),
+            params.Categorical("conv_name", CNN),
             params.Integer("n_layers_hidden", 1, 3),
             params.Integer("n_units_hidden", 10, 100),
             params.Categorical("lr", [1e-4, 1e-5]),
@@ -558,13 +559,15 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"]).float()
+            X_img = self.model.preprocess_images(X["img"].squeeze())
+            X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"]).float()
+            X_img = self.model.preprocess_images(X["img"].squeeze())
+            X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
             X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
             return self.model(X_tab, X_img).detach().cpu().numpy()
 
