@@ -3,7 +3,7 @@ import time
 from typing import Any, List, Optional, Tuple
 
 # third party
-from joblib import Parallel, delayed
+from joblib import Parallel
 import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
@@ -248,6 +248,8 @@ class MultimodalClassifierSeeker:
                     group_ids=group_ids,
                 )
             except BaseException as e:
+                # TMP LUCAS
+                print(f"evaluate_estimator failed: {e}")
                 log.error(f"evaluate_estimator failed: {e}")
 
                 if self.strict:
@@ -303,10 +305,16 @@ class MultimodalClassifierSeeker:
         """
         self._should_continue()
 
-        search_results = dispatcher(
-            delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
+        # TMP LUCAS
+        # search_results = dispatcher(
+        #    delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
+        #    for estimator in self.estimators
+        # )
+
+        search_results = [
+            self.search_best_args_for_estimator(estimator, X, Y, group_ids)
             for estimator in self.estimators
-        )
+        ]
 
         all_scores = []
         all_args = []
