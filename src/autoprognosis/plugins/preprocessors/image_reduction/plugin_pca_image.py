@@ -36,7 +36,7 @@ class PCAImagePlugin(base.PreprocessorPlugin):
     """
 
     def __init__(
-        self, random_state: int = 0, model: Any = None, ratio_pca=2, **kwargs
+        self, random_state: int = 0, model: Any = None, ratio_pca=1, **kwargs
     ) -> None:
         super().__init__()
         self.random_state = random_state
