@@ -131,6 +131,8 @@ def _generate_intermediate_fusion_fit() -> Callable:
                     local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
                 )
 
+        # TODO: if image is transformed into tabular for tabular conv_net -> needs to apply clean up?
+
         # combine data
         local_X = {"tab": local_X_tab, "img": local_X_img}
 
