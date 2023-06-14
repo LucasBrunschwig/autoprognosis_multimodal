@@ -39,7 +39,7 @@ def worker_dataloader(state):
 if __name__ == "__main__":
 
     subprocess = False
-    n = 1000
+    n = 600
 
     logger.info(
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
@@ -63,7 +63,7 @@ if __name__ == "__main__":
             format_="PIL",
         )
         df = DL.load_dataset()
-        # df = DL.sample_dataset(n)
+        df = DL.sample_dataset(n)
         # Sample Dataset for Testing Purpose
 
     logger.info("Image Loaded")
@@ -78,11 +78,12 @@ if __name__ == "__main__":
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
-        multimodal_type="early_fusion",
+        multimodal_type="late_fusion",
         sample_for_search=False,  # no Sampling
+        classifiers=["neural_nets", "random_forest", "lgbm"],
         n_folds_cv=5,
-        num_iter=5,
-        timeout=360,
+        num_iter=1,
+        timeout=3600,
         num_study_iter=10,
     )
 
