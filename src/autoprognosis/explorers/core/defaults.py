@@ -11,7 +11,7 @@ default_classifiers_names = [
 
 default_image_classsifiers_names = ["cnn"]
 
-default_multimodal_names = ["intermediate_neural_net", "intermediate_conv_net"]
+default_multimodal_names = ["intermediate_conv_net", "intermediate_neural_net"]
 
 default_conv_models = [
     "AlexNet",
@@ -32,9 +32,9 @@ default_regressors_names = [
 default_imputers_names = ["mean", "ice", "missforest", "hyperimpute"]
 default_image_processing = ["normalizer"]
 default_image_dimensionality_reduction = [
+    "predefined_cnn",
     "pca_image",
     "fast_ica_image",
-    "predefined_cnn",
 ]
 default_fusion = ["concatenate"]
 
@@ -56,12 +56,19 @@ default_risk_estimation_names = [
     "coxnet",
 ]
 
-CNN = ["alexnet", "resnet18", "resnet50", "vgg19"]
+CNN = [
+    "alexnet",
+    "resnet18",
+    "resnet50",
+    "vgg16",
+    "vgg19",
+]
 
 WEIGHTS = {
     "alexnet": "AlexNet_Weights.DEFAULT",
     "resnet18": "ResNet18_Weights.DEFAULT",
     "resnet50": "ResNet50_Weights.DEFAULT",
+    "vgg16": "VGG16_Weights.DEFAULT",
     "vgg19": "VGG19_Weights.DEFAULT",
 }
 
