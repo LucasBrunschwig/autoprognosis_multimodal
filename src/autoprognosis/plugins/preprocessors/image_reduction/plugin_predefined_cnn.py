@@ -2,6 +2,7 @@
 from typing import Any, List
 
 # third party
+import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
@@ -53,7 +54,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         conv_net: str = "AlexNet",
         nonlin: str = "relu",
         lr: float = 1e-5,
-        ratio_cnn: int = 2,
+        ratio_cnn: int = 1,
         batch_size: int = 32,
         n_iter: int = 200,
         n_iter_min: int = 10,
@@ -61,6 +62,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         patience: int = 5,
         early_stopping: bool = True,
         weight_decay: float = 1e-3,
+        n_additional_layer_dim=2,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -76,6 +78,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.weight_decay = weight_decay
+        self.n_additional_layer = n_additional_layer_dim
 
     @staticmethod
     def name() -> str:
@@ -94,7 +97,8 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-            params.Integer("ratio_cnn", 1, 4),
+            params.Integer("ratio_cnn", 1, 3),
+            params.Categorical("n_additional_layer_dim", [1, 3]),
         ]
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
@@ -121,7 +125,8 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             early_stopping=self.early_stopping,
             n_iter_print=self.n_iter_print,
             patience=self.patience,
-            n_last_layer=self.ratio * n_tab,
+            n_last_layer=int(self.ratio * n_tab),
+            n_additional_layer=self.n_additional_layer,
         )
 
         X_tensor = self.model.preprocess_images(X.squeeze())
@@ -133,8 +138,11 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         return self
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_preprocess = self.model.preprocess_images(X.squeeze())
-        return pd.DataFrame(self.model(X_preprocess).detach())
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+        with torch.no_grad():
+            X = self.model.preprocess_images(X.squeeze())
+            return self.model(X.to(DEVICE)).detach().cpu().numpy()
 
     def save(self) -> bytes:
         return save_model(self)
