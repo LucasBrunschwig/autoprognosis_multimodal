@@ -11,6 +11,7 @@ import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.plugins.prediction.classifiers.plugin_neural_nets import NONLIN
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
@@ -575,7 +576,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
         )
 
-        X_img = self.model.preprocess_images(X["img"])
+        X_img = self.model.preprocess_images(X[IMAGE_KEY])
 
         # Step 2: fit the newly obtained vector with the selected classifier
         self.model.train(X_tab, X_img, y)
@@ -584,16 +585,16 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"].squeeze())
+            X_img = self.model.preprocess_images(X[IMAGE_KEY].squeeze())
             X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
             return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"].squeeze())
+            X_img = self.model.preprocess_images(X[IMAGE_KEY].squeeze())
             X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
             return self.model(X_tab, X_img).detach().cpu().numpy()
 
     def save(self) -> bytes:

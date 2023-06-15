@@ -10,6 +10,7 @@ import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.plugins.prediction.classifiers.plugin_neural_nets import NONLIN
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
@@ -208,8 +209,8 @@ class BasicIntermediateNet(nn.Module):
 
     def train(self, X: dict, y: torch.Tensor) -> "BasicIntermediateNet":
 
-        X_img = self._check_tensor(X["img"]).float()
-        X_tab = self._check_tensor(X["tab"]).float()
+        X_img = self._check_tensor(X[IMAGE_KEY]).float()
+        X_tab = self._check_tensor(X[TABULAR_KEY]).float()
         y = self._check_tensor(y).squeeze().long()
 
         dataset = TensorDataset(X_tab, X_img, y)
@@ -394,8 +395,8 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
         self, X: dict, *args: Any, **kwargs: Any
     ) -> "IntermediateFusionNeuralNetPlugin":
 
-        X_img = torch.from_numpy(np.asarray(X["img"]))
-        X_tab = torch.from_numpy(np.asarray(X["tab"]))
+        X_img = torch.from_numpy(np.asarray(X[IMAGE_KEY]))
+        X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY]))
         y = args[0]
         cat = len(np.unique(y))
         y = torch.from_numpy(np.asarray(y))
@@ -438,14 +439,14 @@ class IntermediateFusionNeuralNetPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"]).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            X_img = torch.from_numpy(np.asarray(X[IMAGE_KEY])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
             return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X["img"]).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X["tab"])).float().to(DEVICE)
+            X_img = torch.from_numpy(np.asarray(X[IMAGE_KEY])).float().to(DEVICE)
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
             return self.model(X_tab, X_img).detach().cpu().numpy()
 
     def save(self) -> bytes:
