@@ -469,7 +469,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_tab_layer: int = 2,
         nonlin="relu",
         n_img_layer: int = 2,
-        conv_name: str = "mobilenet_v3_large",
+        conv_name: str = "densenet121",
         n_neurons: int = 64,
         ratio: float = 0.8,
         n_layers_hidden: int = 1,
