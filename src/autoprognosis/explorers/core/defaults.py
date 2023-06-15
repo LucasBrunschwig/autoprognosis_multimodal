@@ -58,18 +58,21 @@ default_risk_estimation_names = [
 
 CNN = [
     "alexnet",
-    "resnet18",
-    "resnet50",
-    "vgg16",
-    "vgg19",
+    "resnet34",
+    #    "vgg16",
+    #    "vgg19",
+    "mobilenet_v3_large",
+    "densenet121",
 ]
 
 WEIGHTS = {
     "alexnet": "AlexNet_Weights.DEFAULT",
     "resnet18": "ResNet18_Weights.DEFAULT",
-    "resnet50": "ResNet50_Weights.DEFAULT",
-    "vgg16": "VGG16_Weights.DEFAULT",
-    "vgg19": "VGG19_Weights.DEFAULT",
+    "resnet34": "ResNet34_Weights.DEFAULT",
+    "mobilenet_v3_large": "MobileNet_V3_Large_Weights.DEFAULT",
+    "densenet121": "DenseNet121_Weights.DEFAULT",
+    #    "vgg16": "VGG16_Weights.DEFAULT",
+    #    "vgg19": "VGG19_Weights.DEFAULT",
 }
 
 

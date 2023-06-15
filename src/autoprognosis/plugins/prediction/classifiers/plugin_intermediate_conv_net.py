@@ -147,11 +147,20 @@ class ConvIntermediateNet(nn.Module):
         self.set_parameter_requires_grad(n_unfrozen_layer)
 
         # Replace the output layer by the given number of classes
-        if conv_name in ["resnet18", "resnet50"]:
+        if "resnet" in conv_name:
             n_features_in = self.image_model.fc.in_features
 
-        elif conv_name in ["alexnet", "vgg19", "vgg16"]:
-            n_features_in = self.image_model.classifier[6].in_features
+        elif conv_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
+            if isinstance(self.image_model.classifier, torch.nn.Sequential):
+                n_features_in = self.image_model.classifier[-1].in_features
+            else:
+                n_features_in = self.image_model.classifier.in_features
 
         # The first intermediate layer depends on the last output
         n_intermediate = n_img_out
@@ -168,7 +177,7 @@ class ConvIntermediateNet(nn.Module):
             additional_layers.append(NL())
             n_intermediate = int(n_intermediate / 2)
 
-        if conv_name in ["resnet18", "resnet50"]:
+        if "resnet" in conv_name:
             self.image_model.fc = nn.Sequential(*additional_layers)
             self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
@@ -177,11 +186,27 @@ class ConvIntermediateNet(nn.Module):
                 elif param.requires_grad:
                     params.append({"params": param, "lr": 1e-7})
 
-        elif conv_name in ["alexnet", "vgg19", "vgg16"]:
-            self.image_model.classifier[6] = nn.Sequential(*additional_layers)
+        elif conv_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
+
+            name_match = None
+            if isinstance(self.image_model.classifier, torch.nn.modules.Sequential):
+                self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
+                name_match = "classifier." + str(len(self.image_model.classifier) - 1)
+            else:
+                self.image_model.classifier = nn.Sequential(*additional_layers)
+                name_match = "classifier"
+
             self.image_model.to(DEVICE)
+
             for name, param in self.image_model.named_parameters():
-                if "classifier.6" in name:
+
+                if name_match in name:
                     params.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
@@ -443,7 +468,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_tab_layer: int = 2,
         nonlin="relu",
         n_img_layer: int = 2,
-        conv_name: str = "vgg16",
+        conv_name: str = "mobilenet_v3_large",
         n_neurons: int = 64,
         ratio: float = 0.8,
         n_layers_hidden: int = 1,

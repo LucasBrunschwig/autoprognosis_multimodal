@@ -54,7 +54,10 @@ N_INTERMEDIATE = {
     "alexnet": {1: 256, 2: 512, 3: 2048},  # last layer is 4096
     "resnet18": {1: 128, 2: 256, 3: 512},  # last layer is 1024
     "resnet50": {1: 128, 2: 256, 3: 512},  # last layer is 1024
+    "resnet34": {1: 128, 2: 256, 3: 512},  # last layer is 1024
     "vgg19": {1: 128, 2: 256, 3: 512},  # last layer is 1024
+    "mobilenet_v3_large": {1: 128, 2: 256, 3: 512},  # last layer is 1280
+    "densenet121": {1: 128, 2: 256, 3: 512},
 }
 
 
@@ -145,9 +148,17 @@ class ConvNetPredefined(nn.Module):
         if "resnet" in self.model_name:
             n_features_in = self.model.fc.in_features
 
-        elif self.model_name in ["alexnet", "vgg19"]:
-            n_features_in = self.model.classifier[6].in_features
-
+        elif self.model_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
+            if isinstance(self.model.classifier, torch.nn.Sequential):
+                n_features_in = self.model.classifier[-1].in_features
+            else:
+                n_features_in = self.model.classifier.in_features
         NL = NONLIN[non_linear]
 
         if n_additional_layer > 0:
@@ -182,12 +193,25 @@ class ConvNetPredefined(nn.Module):
                     params.append({"params": param, "lr": lr})
                 elif param.requires_grad:
                     params.append({"params": param, "lr": 1e-6})
+        elif self.model_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
 
-        elif self.model_name in ["alexnet", "vgg19"]:
-            self.model.classifier[6] = nn.Sequential(*additional_layers)
+            name_match = None
+            if isinstance(self.model.classifier, torch.nn.modules.Sequential):
+                self.model.classifier[-1] = nn.Sequential(*additional_layers)
+                name_match = "classifier." + str(len(self.model.classifier) - 1)
+            else:
+                self.model.classifier = nn.Sequential(*additional_layers)
+                name_match = "classifier"
+
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
-                if "classifier.6" in name:
+                if name_match in name:
                     params.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
@@ -387,7 +411,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
-        conv_net: str = "alexnet",
+        conv_net: str = "resnet34",
         use_pretrained: bool = True,
         n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
