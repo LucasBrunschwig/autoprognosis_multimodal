@@ -90,7 +90,7 @@ class PipelineSelector:
         if "intermediate" in classifier:
             self.fusion = []
 
-        if classifier in ["intermediate_conv_net", "cnn"]:
+        if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn_imagenet"]:
             self.image_dimensionality_reduction = []
             self.image_processing = []
 
@@ -396,17 +396,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        estimator = Pipeline(model_list)(pipeline_args)
-
-        if (
-            self.image_processing
-            and self.preprocess_image
-            and not estimator.preprocess_image()
-        ):
-            self.preprocess_image = False
-            return self.get_image_pipeline_from_named_args(**kwargs)
-
-        return estimator
+        return Pipeline(model_list)(pipeline_args)
 
     def get_multimodal_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()

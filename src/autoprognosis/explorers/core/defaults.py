@@ -9,7 +9,7 @@ default_classifiers_names = [
     "logistic_regression",
 ]
 
-default_image_classsifiers_names = ["cnn"]
+default_image_classsifiers_names = ["cnn", "cnn_fine_tune"]
 
 default_multimodal_names = ["intermediate_conv_net", "intermediate_neural_net"]
 
