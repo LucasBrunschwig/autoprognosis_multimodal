@@ -254,7 +254,7 @@ class CNNPlugin(base.ClassifierPlugin):
         self,
         conv_net: str = "alexnet",
         n_classes: Optional[int] = None,
-        lr: float = 1e-4,
+        lr: float = 1e-5,
         weight_decay: float = 1e-3,
         n_iter: int = 1000,
         batch_size: int = 64,
@@ -299,6 +299,7 @@ class CNNPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", CNN),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
         ]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNPlugin":

@@ -63,7 +63,7 @@ def create_log_and_print_function(level: str) -> Callable:
             method = getattr(logger.opt(lazy=True), level, None)
             if method is not None:
                 method(*args, **kwargs)
-                if level == "info":
+                if level in ["info", "error"]:
                     print(*args)
             else:
                 logger.debug(*args, **kwargs)
