@@ -216,6 +216,25 @@ class ConvNetPredefined(nn.Module):
         else:
             return torch.from_numpy(np.asarray(X)).to(DEVICE)
 
+    def remove_classification_layer(self):
+        if "resnet" in self.model_name:
+            self.model.fc = nn.Identity()
+        elif self.model_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
+            if isinstance(self.model.classifier, torch.nn.Sequential):
+                self.model.classifier[-1] = nn.Identity()
+            elif isinstance(self.model.classifier, torch.nn.Linear):
+                self.model.classifier = nn.Identity()
+            else:
+                raise ValueError(
+                    f"Unknown classification layer type - {self.model_name}"
+                )
+
 
 class CNNPlugin(base.ClassifierPlugin):
     """Classification plugin using predefined Convolutional Neural Networks
@@ -256,7 +275,7 @@ class CNNPlugin(base.ClassifierPlugin):
         n_classes: Optional[int] = None,
         lr: float = 1e-5,
         weight_decay: float = 1e-3,
-        n_iter: int = 1000,
+        n_iter: int = 5,
         batch_size: int = 64,
         n_iter_print: int = 1,
         patience: int = 5,

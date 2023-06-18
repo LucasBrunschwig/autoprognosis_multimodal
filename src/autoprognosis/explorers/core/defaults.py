@@ -9,18 +9,9 @@ default_classifiers_names = [
     "logistic_regression",
 ]
 
-default_image_classsifiers_names = ["cnn", "cnn_fine_tune"]
+default_image_classsifiers_names = ["cnn_fine_tune", "cnn"]
 
 default_multimodal_names = ["intermediate_conv_net", "intermediate_neural_net"]
-
-default_conv_models = [
-    "AlexNet",
-    "ResNet",
-    "InceptionNet",
-    "ZfNet",
-    "VGG",
-    "MobileNet",
-]
 
 default_regressors_names = [
     "random_forest_regressor",
@@ -34,7 +25,6 @@ default_image_processing = ["normalizer"]
 default_image_dimensionality_reduction = [
     "predefined_cnn",
     "pca_image",
-    "fast_ica_image",
 ]
 default_fusion = ["concatenate"]
 
@@ -61,8 +51,8 @@ CNN = [
     "resnet34",
     #    "vgg16",
     #    "vgg19",
-    "mobilenet_v3_large",
-    "densenet121",
+    #   "mobilenet_v3_large",
+    #   "densenet121",
 ]
 
 WEIGHTS = {

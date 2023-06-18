@@ -36,11 +36,11 @@ class PCAImagePlugin(base.PreprocessorPlugin):
     """
 
     def __init__(
-        self, random_state: int = 0, model: Any = None, ratio_pca=1, **kwargs
+        self, random_state: int = 0, model: Any = None, threshold_pca=1, **kwargs
     ) -> None:
         super().__init__()
         self.random_state = random_state
-        self.ratio = ratio_pca
+        self.threshold = threshold_pca
         self.model: Optional[PCA] = None
 
         if model:
@@ -60,24 +60,16 @@ class PCAImagePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        # return [params.Categorical("threshold", [0.8, 0.85, 0.9, 0.95])]
-        return [params.Categorical("ratio_pca", [1, 2, 3])]
+        return [params.Categorical("threshold_pca", [0.8, 0.85, 0.9])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "PCAImagePlugin":
-
-        if kwargs.get("n_tab", None):
-            n_tab = kwargs["n_tab"]
-        else:
-            n_tab = 60
 
         X_images = X.squeeze().apply(
             lambda img_: ToTensor()(img_).flatten().detach().cpu().numpy()
         )
         X_images = pd.DataFrame(np.stack(X_images.to_numpy().squeeze()))
 
-        self.model = PCA(
-            n_components=int(self.ratio * n_tab), random_state=self.random_state
-        )
+        self.model = PCA(n_components=self.threshold, random_state=self.random_state)
 
         self.model.fit(X_images)
 
@@ -92,7 +84,7 @@ class PCAImagePlugin(base.PreprocessorPlugin):
 
     def save(self) -> bytes:
         return serialization.save_model(
-            {"model": self.model, "n_components": self.n_components}
+            {"model": self.model, "threshold": self.threshold}
         )
 
     @classmethod

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
@@ -216,6 +217,12 @@ class EnsembleSeeker:
         group_ids: Optional[pd.Series] = None,
     ) -> Tuple[WeightedEnsemble, float]:
         self._should_continue()
+
+        Y = (
+            pd.DataFrame(LabelEncoder().fit_transform(Y))
+            .reset_index(drop=True)
+            .squeeze()
+        )
 
         pretrained_models = self.pretrain_for_cv(ensemble, X, Y, group_ids=group_ids)
 

@@ -103,8 +103,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         n_iter_min: int,
         patience: int,
         n_unfrozen_layer: int = 0,
-        n_additional_layer: int = 2,
-        n_last_layer: Optional[int] = None,
+        n_hidden_units: int = 60,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
@@ -148,30 +147,27 @@ class ConvNetPredefinedFineTune(nn.Module):
                 n_features_in = self.model.classifier[-1].in_features
             else:
                 n_features_in = self.model.classifier.in_features
+        else:
+            raise ValueError(f"Model not implemented: {self.model_name}")
+
+        for i in range(2):
+            n_hidden_units *= 2
+
         NL = NONLIN[non_linear]
 
-        if n_additional_layer > 0:
+        additional_layers = [nn.Linear(n_features_in, n_hidden_units), NL()]
 
-            if n_last_layer:
-                n_intermediate = n_last_layer
-                for i in range(n_additional_layer - 1):
-                    n_intermediate *= 2
-            else:
-                n_intermediate = N_INTERMEDIATE[self.model_name][n_additional_layer]
-            additional_layers = [
-                nn.Linear(n_features_in, n_intermediate),
-                NL(),
-            ]
-            for i in range(n_additional_layer - 1):
-                additional_layers.append(
-                    nn.Linear(n_intermediate, int(n_intermediate / 2))
-                )
-                additional_layers.append(NL())
-                n_intermediate = int(n_intermediate / 2)
-            # Classification layer
-            additional_layers.append(nn.Linear(n_intermediate, n_classes))
-        else:
-            additional_layers = [nn.Linear(n_features_in, n_classes)]
+        additional_layers.extend(
+            [nn.Linear(n_hidden_units, int(n_hidden_units / 2)), NL()]
+        )
+        n_hidden_units /= 2
+
+        additional_layers.extend(
+            [nn.Linear(int(n_hidden_units), int(n_hidden_units / 2)), NL()]
+        )
+        n_hidden_units /= 2
+
+        additional_layers.append(nn.Linear(int(n_hidden_units), n_classes))
 
         params = []
         if "resnet" in self.model_name:
@@ -190,7 +186,6 @@ class ConvNetPredefinedFineTune(nn.Module):
             "densenet121",
         ]:
 
-            name_match = None
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
                 name_match = "classifier." + str(len(self.model.classifier) - 1)
@@ -224,6 +219,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         if num_layers_to_unfreeze > 0:
             unfrozen_layers = 0
             skip = True
+
             # Iterate over the model modules in reverse order and unfreeze the desired number of layers
             for module in reversed(list(self.model.modules())):
                 if isinstance(
@@ -285,8 +281,18 @@ class ConvNetPredefinedFineTune(nn.Module):
         return self.model(x)
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
-        X = self._check_tensor(X).float().to(DEVICE)
-        y = self._check_tensor(y).squeeze().long().to(DEVICE)
+        X = self._check_tensor(X).float()
+        y = self._check_tensor(y).squeeze().long()
+
+        if self.model_name in [
+            "vgg16",
+            "vgg19",
+            "resnet50",
+            "densenet121",
+            "mobilenet_v3_large",
+        ]:
+            X.to.cpu()
+            y.to.cpu()
 
         dataset = TensorDataset(X, y)
 
@@ -315,6 +321,16 @@ class ConvNetPredefinedFineTune(nn.Module):
 
                 X_next, y_next = sample
 
+                if self.model_name in [
+                    "vgg16",
+                    "vgg19",
+                    "resnet50",
+                    "densenet121",
+                    "mobilenet_v3_large",
+                ]:
+                    X_next = X_next.to(DEVICE)
+                    y_next = y_next.to(DEVICE)
+
                 preds = self.forward(X_next).squeeze()
 
                 batch_loss = loss(preds, y_next)
@@ -330,6 +346,16 @@ class ConvNetPredefinedFineTune(nn.Module):
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
                     X_val, y_val = test_dataset.dataset[test_dataset.indices]
+
+                    if self.model_name in [
+                        "vgg16",
+                        "vgg19",
+                        "resnet50",
+                        "densenet121",
+                        "mobilenet_v3_large",
+                    ]:
+                        X_val.to(DEVICE)
+                        y_val.to(DEVICE)
 
                     preds = self.forward(X_val).squeeze()
                     val_loss = loss(preds, y_val)
@@ -352,11 +378,23 @@ class ConvNetPredefinedFineTune(nn.Module):
         return self
 
     def remove_classification_layer(self):
-        if self.model_name == "alexnet":
-            self.model.classifier[-1] = nn.Identity()
-        else:
+        if "resnet" in self.model_name:
             self.model.fc = nn.Identity()
-            self.model.to(DEVICE)
+        elif self.model_name in [
+            "alexnet",
+            "vgg19",
+            "vgg16",
+            "mobilenet_v3_large",
+            "densenet121",
+        ]:
+            if isinstance(self.model.classifier, torch.nn.Sequential):
+                self.model.classifier[-1] = nn.Identity()
+            elif isinstance(self.model.classifier, torch.nn.Linear):
+                self.model.classifier = nn.Identity()
+            else:
+                raise ValueError(
+                    f"Unknown classification layer type - {self.model_name}"
+                )
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
@@ -403,11 +441,11 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         conv_net: str = "resnet34",
         n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
-        n_layer: int = 1,
+        n_hidden_units: int = 30,
         non_linear: str = "relu",
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        n_iter: int = 1000,
+        n_iter: int = 5,
         batch_size: int = 64,
         n_iter_print: int = 1,
         patience: int = 5,
@@ -439,7 +477,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.conv_net = conv_net
         self.n_unfrozen_layer = n_unfrozen_layer
         self.n_classes = n_classes
-        self.n_additional_layer = n_layer
+        self.n_hidden_units = n_hidden_units
 
     @staticmethod
     def name() -> str:
@@ -454,7 +492,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
-            params.Integer("n_layer", 1, 2),
+            params.Categorical("n_hidden_units", [30, 60, 120]),
             params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
             params.Integer("n_unfrozen_layer", 0, 3),
         ]
@@ -475,7 +513,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.model = ConvNetPredefinedFineTune(
             model_name=self.conv_net,
             n_classes=n_classes,
-            n_additional_layer=self.n_additional_layer,
+            n_hidden_units=self.n_hidden_units,
             n_unfrozen_layer=self.n_unfrozen_layer,
             lr=self.lr,
             non_linear=self.non_linear,

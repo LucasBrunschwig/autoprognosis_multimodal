@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
@@ -17,12 +18,7 @@ from autoprognosis.explorers.core.defaults import (
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
-from autoprognosis.plugins.ensemble.classifiers import (
-    AggregatingEnsemble,
-    BaseEnsemble,
-    StackingEnsemble,
-    WeightedEnsemble,
-)
+from autoprognosis.plugins.ensemble.classifiers import BaseEnsemble, WeightedEnsemble
 from autoprognosis.utils.tester import evaluate_estimator
 
 # autoprognosis relative
@@ -154,6 +150,12 @@ class ImageEnsembleSeeker:
     ) -> Tuple[WeightedEnsemble, float]:
         self._should_continue()
 
+        Y = (
+            pd.DataFrame(LabelEncoder().fit_transform(Y))
+            .reset_index(drop=True)
+            .squeeze()
+        )
+
         pretrained_models = self.pretrain_for_cv(ensemble, X, Y, group_ids=group_ids)
 
         def evaluate(weights: List) -> float:
@@ -206,56 +208,9 @@ class ImageEnsembleSeeker:
     ) -> BaseEnsemble:
         self._should_continue()
 
-        best_models = self.seeker.search(X, Y, group_ids=group_ids)
+        best_model = self.seeker.search(X, Y, group_ids=group_ids)
 
         if self.hooks.cancel():
             raise StudyCancelled("Classifier search cancelled")
 
-        scores = []
-        ensembles: list = []
-
-        # TODO: we only want to make ensemble between different pretrained models
-        try:
-            stacking_ensemble = StackingEnsemble(best_models, meta_model=best_models[0])
-            stacking_ens_score = evaluate_estimator(
-                stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
-            )["raw"][self.metric][0]
-            log.info(
-                f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
-            )
-            scores.append(stacking_ens_score)
-            ensembles.append(stacking_ensemble)
-        except BaseException as e:
-            log.info(f"StackingEnsemble failed {e}")
-
-        if self.hooks.cancel():
-            raise StudyCancelled("Classifier search cancelled")
-
-        try:
-            aggr_ensemble = AggregatingEnsemble(best_models)
-            aggr_ens_score = evaluate_estimator(
-                aggr_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
-            )["raw"][self.metric][0]
-            log.info(
-                f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
-            )
-
-            scores.append(aggr_ens_score)
-            ensembles.append(aggr_ensemble)
-        except BaseException as e:
-            log.info(f"AggregatingEnsemble failed {e}")
-
-        if self.hooks.cancel():
-            raise StudyCancelled("Classifier search cancelled")
-
-        weighted_ensemble, weighted_ens_score = self.search_weights(
-            best_models, X, Y, group_ids=group_ids
-        )
-        log.info(
-            f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
-        )
-
-        scores.append(weighted_ens_score)
-        ensembles.append(weighted_ensemble)
-
-        return ensembles[np.argmax(scores)]
+        return best_model

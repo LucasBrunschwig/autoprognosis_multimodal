@@ -209,7 +209,6 @@ class ImageClassifierSeeker:
                 The labels
             group_ids: Optional str
                 Optional Group labels for the samples used while splitting the dataset into train/test set.
-
         """
         self._should_continue()
 
@@ -237,19 +236,13 @@ class ImageClassifierSeeker:
             )
 
         all_scores_np = np.array(all_scores)
-        selected_points = min(self.top_k, len(all_scores))
-        best_scores = np.sort(np.unique(all_scores_np.ravel()))[-selected_points:]
-
-        result = []
-        for score in reversed(best_scores):
-            pos = np.argwhere(all_scores_np == score)[0]
-            pos_est = pos[0]
-            log.info(
-                f"Selected score {score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
-            )
-            model = all_estimators[pos_est].get_image_pipeline_from_named_args(
-                **all_args[pos_est]
-            )
-            result.append(model)
-
-        return result
+        best_score = np.sort(np.unique(all_scores_np.ravel()))[-1]
+        pos = np.argwhere(all_scores_np == best_score)[0]
+        pos_est = pos[0]
+        log.info(
+            f"Selected score {best_score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
+        )
+        model = all_estimators[pos_est].get_image_pipeline_from_named_args(
+            **all_args[pos_est]
+        )
+        return model

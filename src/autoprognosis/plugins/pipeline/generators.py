@@ -154,9 +154,7 @@ def _generate_early_fusion_fit() -> Callable:
         for stage in self.stages[:-2]:
             if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
                 local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.fit_transform(
-                    local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
-                )
+                local_X_img = stage.fit_transform(local_X_img)
 
         local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 

@@ -263,8 +263,6 @@ class MultimodalEnsembleSeeker:
     ) -> List:
         self._should_continue()
 
-        Y = pd.DataFrame(LabelEncoder().fit_transform(Y)).reset_index(drop=True)
-
         for X_mod, X_df in X.items():
             X[X_mod] = X_df.reset_index(drop=True)
 
@@ -302,6 +300,12 @@ class MultimodalEnsembleSeeker:
         group_ids: Optional[pd.Series] = None,
     ) -> Tuple[WeightedEnsemble, float]:
         self._should_continue()
+
+        Y = (
+            pd.DataFrame(LabelEncoder().fit_transform(Y))
+            .reset_index(drop=True)
+            .squeeze()
+        )
 
         pretrained_models = self.pretrain_for_cv(ensemble, X, Y, group_ids=group_ids)
 

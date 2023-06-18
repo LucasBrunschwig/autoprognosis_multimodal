@@ -24,7 +24,6 @@ for retry in range(2):
         depends = ["torch"]
         install(depends)
 
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
@@ -105,18 +104,11 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFeaturesPlugin":
-
         y = args[0]
-        if kwargs.get("n_tab", None):
-            n_tab = kwargs["n_tab"]
-        else:
-            n_tab = 60
 
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
-            use_pretrained=True,
             n_classes=len(y.value_counts()),
-            non_linear=self.non_lin,
             weight_decay=self.weight_decay,
             batch_size=self.batch_size,
             lr=self.lr,
@@ -125,13 +117,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             early_stopping=self.early_stopping,
             n_iter_print=self.n_iter_print,
             patience=self.patience,
-            n_last_layer=int(self.ratio * n_tab),
-            n_additional_layer=self.n_additional_layer,
         )
-
-        X_tensor = self.model.preprocess_images(X.squeeze())
-
-        self.model.train(X_tensor, y)
 
         self.model.remove_classification_layer()
 
