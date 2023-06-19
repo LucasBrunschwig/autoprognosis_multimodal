@@ -1,3 +1,14 @@
+# third party
+from torchvision.models import (
+    alexnet,
+    densenet121,
+    mobilenet_v3_large,
+    resnet34,
+    resnet50,
+    vgg16,
+    vgg16_bn,
+)
+
 # autoprognosis absolute
 from autoprognosis.plugins.preprocessors import Preprocessors
 
@@ -9,7 +20,7 @@ default_classifiers_names = [
     "logistic_regression",
 ]
 
-default_image_classsifiers_names = ["cnn_fine_tune", "cnn"]
+default_image_classsifiers_names = ["cnn", "cnn_fine_tune"]
 
 default_multimodal_names = ["intermediate_conv_net", "intermediate_neural_net"]
 
@@ -23,7 +34,9 @@ default_regressors_names = [
 default_imputers_names = ["mean", "ice", "missforest", "hyperimpute"]
 default_image_processing = ["normalizer"]
 default_image_dimensionality_reduction = [
-    "predefined_cnn",
+    "cnn",
+    "cnn_fine_tune",
+    "cnn_imagenet",
     "pca_image",
 ]
 default_fusion = ["concatenate"]
@@ -49,20 +62,41 @@ default_risk_estimation_names = [
 CNN = [
     "alexnet",
     "resnet34",
-    #    "vgg16",
-    #    "vgg19",
-    #   "mobilenet_v3_large",
-    #   "densenet121",
+    "resnet50",
+    "vgg16",
+    "vgg16_bn",
+    "mobilenet_v3_large",
+    "densenet121",
 ]
+
+LARGE_CNN = [
+    "resnet50",
+    "vgg16",
+    "vgg16_bn",
+    "mobilenet_v3_large",
+    "densenet121",
+]
+
+
+CNN_MODEL = {
+    "alexnet": alexnet,
+    "resnet34": resnet34,
+    "resnet50": resnet50,
+    "vgg16": vgg16,
+    "vgg16_bn": vgg16_bn,
+    "mobilenet_v3_large": mobilenet_v3_large,
+    "densenet121": densenet121,
+}
 
 WEIGHTS = {
     "alexnet": "AlexNet_Weights.DEFAULT",
-    "resnet18": "ResNet18_Weights.DEFAULT",
     "resnet34": "ResNet34_Weights.DEFAULT",
+    "resnet50": "ResNet50_Weights.DEFAULT",
     "mobilenet_v3_large": "MobileNet_V3_Large_Weights.DEFAULT",
     "densenet121": "DenseNet121_Weights.DEFAULT",
-    #    "vgg16": "VGG16_Weights.DEFAULT",
-    #    "vgg19": "VGG19_Weights.DEFAULT",
+    "vgg16": "VGG16_Weights.DEFAULT",
+    "vgg16_bn": "VGG16_BN_Weights.DEFAULT",
+    "vgg19": "VGG19_Weights.DEFAULT",
 }
 
 
