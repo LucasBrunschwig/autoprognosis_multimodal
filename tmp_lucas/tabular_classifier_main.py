@@ -6,6 +6,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
 """
 # stdlib
+from datetime import datetime
 import os
 
 # third party
@@ -47,7 +48,7 @@ if __name__ == "__main__":
     )
 
     # Study Name
-    study_name = "first test tabular classifier"
+    study_name = f"tabular_classifier_{datetime.now().strftime('%Y-%m-%H')}"
     study = ClassifierStudy(
         study_name=study_name,
         dataset=df,  # pandas DataFrame

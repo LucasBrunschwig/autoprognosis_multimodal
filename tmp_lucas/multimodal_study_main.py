@@ -6,7 +6,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
 """
 # stdlib
-import multiprocessing
+from datetime import datetime
 import os
 
 # third party
@@ -45,26 +45,12 @@ if __name__ == "__main__":
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
-    # Use a subprocess to free memory
-    if subprocess:
-
-        manager = multiprocessing.Manager()
-
-        state = manager.dict(n=n)
-        p = multiprocessing.Process(target=worker_dataloader, args=(state,))
-        p.start()
-        p.join()
-        df = state["df"]
-
-    else:
-        DL = DataLoader(
-            path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
-            data_src_="PAD-UFES",
-            format_="PIL",
-        )
-        df = DL.load_dataset()
-        df = DL.sample_dataset(n)
-        # Sample Dataset for Testing Purpose
+    DL = DataLoader(
+        path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
+        data_src_="PAD-UFES",
+        format_="PIL",
+    )
+    df = DL.load_dataset()
 
     logger.info("Image Loaded")
     logger.info(
@@ -72,13 +58,14 @@ if __name__ == "__main__":
     )
 
     # Study Name
-    study_name = "first test"
+    multimodal_type = "late_fusion"
+    study_name = multimodal_type + f"_{datetime.now().strftime('%Y-%m-%H')}"
     study = MultimodalStudy(
         study_name=study_name,
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
-        multimodal_type="late_fusion",
+        multimodal_type=multimodal_type,
         sample_for_search=False,  # no Sampling
         classifiers=["neural_nets", "random_forest", "lgbm"],
         n_folds_cv=5,

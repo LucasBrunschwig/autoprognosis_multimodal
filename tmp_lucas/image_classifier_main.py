@@ -6,6 +6,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
 """
 # stdlib
+from datetime import datetime
 import os
 
 # third party
@@ -37,26 +38,25 @@ if __name__ == "__main__":
         format_="PIL",
     )
 
-    DL.load_dataset()
-    df = DL.sample_dataset(n)
-    # Sample Dataset for Testing Purpose
+    df = DL.load_dataset()
     df = df[["image", "label"]]
+
     logger.info("Image Loaded")
     logger.info(
         f"GB available after loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
     # Study Name
-    study_name = "first test image classifier"
+    study_name = f"image_classifier_{datetime.now().strftime('%Y-%m-%H')}"
     study = ImageClassifierStudy(
         study_name=study_name,
         dataset=df,  # pandas DataFrame
         target="label",  # the label column in the dataset
         sample_for_search=False,  # no Sampling
         n_folds_cv=5,
-        num_iter=2,
-        timeout=3600,
-        num_study_iter=2,
+        num_iter=10,
+        timeout=36000,
+        num_study_iter=10,
     )
 
     model = study.fit()
