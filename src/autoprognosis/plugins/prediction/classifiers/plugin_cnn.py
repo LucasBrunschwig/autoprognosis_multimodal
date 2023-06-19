@@ -8,7 +8,7 @@ import torchvision
 
 # autoprognosis absolute
 # autoprognosis absolut
-from autoprognosis.explorers.core.defaults import CNN
+from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, LARGE_CNN
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -28,19 +28,17 @@ for retry in range(2):
     except ImportError:
         depends = ["torch"]
         install(depends)
-for retry in range(2):
-    try:
-        # third party
-        import torchvision.models as models
-
-        break
-    except ImportError:
-        depends = ["torchvision"]
-        install(depends)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
+
+
+def initialize_weights(module):
+    if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+        torch.nn.init.kaiming_normal_(module.weight)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
 
 
 class ConvNetPredefined(nn.Module):
@@ -99,7 +97,10 @@ class ConvNetPredefined(nn.Module):
         self.patience = patience
 
         # Load predefined CNN without weights
-        self.model = models.get_model(self.model_name, weights=None).to(DEVICE)
+        self.model = CNN_MODEL[self.model_name](weights=None)
+
+        # Initialize weights
+        self.model.apply(initialize_weights)
 
         if n_classes is None:
             raise RuntimeError(
@@ -107,18 +108,12 @@ class ConvNetPredefined(nn.Module):
             )
 
         # Replace the output layer by the given number of classes
-        if "resnet" in self.model_name:
+        if hasattr(self.model, "fc"):
             n_features_in = self.model.fc.in_features
             classification_layer = nn.Linear(n_features_in, n_classes)
             self.model.fc = classification_layer
 
-        elif self.model_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
+        elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
                 n_features_in = self.model.classifier[-1].in_features
                 classification_layer = nn.Linear(n_features_in, n_classes)
@@ -144,8 +139,8 @@ class ConvNetPredefined(nn.Module):
         return self.model(x)
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefined":
-        X = self._check_tensor(X).float().to(DEVICE)
-        y = self._check_tensor(y).squeeze().long().to(DEVICE)
+        X = self._check_tensor(X).float()
+        y = self._check_tensor(y).squeeze().long()
 
         dataset = TensorDataset(X, y)
 
@@ -159,6 +154,9 @@ class ConvNetPredefined(nn.Module):
         )
 
         loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        val_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, pin_memory=False
+        )
 
         # do training
         val_loss_best = 999999
@@ -174,6 +172,10 @@ class ConvNetPredefined(nn.Module):
 
                 X_next, y_next = sample
 
+                if self.model_name in LARGE_CNN:
+                    X_next = X_next.to(DEVICE)
+                    y_next = y_next.to(DEVICE)
+
                 preds = self.forward(X_next).squeeze()
 
                 batch_loss = loss(preds, y_next)
@@ -188,10 +190,21 @@ class ConvNetPredefined(nn.Module):
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
-                    X_val, y_val = test_dataset.dataset[test_dataset.indices]
 
-                    preds = self.forward(X_val).squeeze()
-                    val_loss = loss(preds, y_val)
+                    val_loss = []
+
+                    for batch_val_ndx, sample in enumerate(val_loader):
+
+                        X_val_next, y_val_next = sample
+
+                        if self.model_name in LARGE_CNN:
+                            X_val_next = X_val_next.to(DEVICE)
+                            y_val_next = y_val_next.to(DEVICE)
+
+                        preds = self.forward(X_val_next).squeeze()
+                        val_loss.append(loss(preds, y_val_next).detach())
+
+                    val_loss = torch.mean(torch.Tensor(val_loss))
 
                     if self.early_stopping:
                         if val_loss_best > val_loss:
@@ -212,9 +225,15 @@ class ConvNetPredefined(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            return X.to(DEVICE)
+            if self.model_name in LARGE_CNN:
+                return X
+            else:
+                return X.to(DEVICE)
         else:
-            return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            if self.model_name in LARGE_CNN:
+                return torch.from_numpy(np.asarray(X))
+            else:
+                return torch.from_numpy(np.asarray(X)).to(DEVICE)
 
     def remove_classification_layer(self):
         if "resnet" in self.model_name:
@@ -273,10 +292,10 @@ class CNNPlugin(base.ClassifierPlugin):
         self,
         conv_net: str = "alexnet",
         n_classes: Optional[int] = None,
-        lr: float = 1e-5,
+        lr: float = 1e-3,
         weight_decay: float = 1e-3,
-        n_iter: int = 5,
-        batch_size: int = 64,
+        n_iter: int = 1000,
+        batch_size: int = 100,
         n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
@@ -331,12 +350,12 @@ class CNNPlugin(base.ClassifierPlugin):
             X = pd.DataFrame(X)
 
         # Preprocess Data
-        n_classes = np.unique(y).shape[0]
+        self.n_classes = np.unique(y).shape[0]
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
-            n_classes=n_classes,
+            n_classes=self.n_classes,
             lr=self.lr,
             n_iter=self.n_iter,
             n_iter_min=self.n_iter_min,
@@ -356,19 +375,52 @@ class CNNPlugin(base.ClassifierPlugin):
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze()).to(DEVICE)
-            return self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_loader = DataLoader(
+                    TensorDataset(X), batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE))
+                            .argmax(dim=-1)
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                        )
+                    )
+            else:
+                results = self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+            return pd.DataFrame(results)
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze())
-            return self.model(X.to(DEVICE)).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_dataset = TensorDataset(X)
+                test_loader = DataLoader(
+                    test_dataset, batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        )
+                    )
+            else:
+                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+
+            return pd.DataFrame(results)
 
     def save(self) -> bytes:
         return save_model(self)
