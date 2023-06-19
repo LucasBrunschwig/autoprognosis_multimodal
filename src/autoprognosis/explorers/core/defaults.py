@@ -69,13 +69,7 @@ CNN = [
     "densenet121",
 ]
 
-LARGE_CNN = [
-    "resnet50",
-    "vgg16",
-    "vgg16_bn",
-    "mobilenet_v3_large",
-    "densenet121",
-]
+LARGE_CNN = []
 
 
 CNN_MODEL = {

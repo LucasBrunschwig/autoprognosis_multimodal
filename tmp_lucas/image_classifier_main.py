@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # Use a subprocess to free memory
 
     DL = DataLoader(
-        path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
+        path_="../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )

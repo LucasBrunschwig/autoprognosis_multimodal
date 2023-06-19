@@ -46,11 +46,12 @@ if __name__ == "__main__":
     )
 
     DL = DataLoader(
-        path_="/home/enwoute/Documents/master-thesis/data/pad-ufe-20",
+        path_="../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
     df = DL.load_dataset()
+    df = DL.sample_dataset(n)
 
     logger.info("Image Loaded")
     logger.info(

@@ -227,7 +227,7 @@ class MultimodalEnsembleSeeker:
                 timeout=timeout,
                 preprocess_images=preprocess_images,
                 image_processing=image_processing,
-                image_dimensionality_reduction=image_dimensionality_reduction,
+                image_dimensionality_reduction=[],
                 classifiers=image_classifiers,
                 hooks=hooks,
                 optimizer_type=optimizer_type,
