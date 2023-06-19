@@ -7,7 +7,7 @@ import pandas as pd
 
 # autoprognosis absolute
 # autoprognosis absolut
-from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
+from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, LARGE_CNN, WEIGHTS
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -117,10 +117,9 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.patience = patience
-
-        self.model = models.get_model(
-            self.model_name, weights=WEIGHTS[self.model_name]
-        ).to(DEVICE)
+        self.model = CNN_MODEL[self.model_name](weights=WEIGHTS[self.model_name]).to(
+            DEVICE
+        )
 
         weights = models.get_weight(WEIGHTS[self.model_name])
         self.preprocess = weights.transforms
@@ -133,16 +132,10 @@ class ConvNetPredefinedFineTune(nn.Module):
             )
 
         # Replace the output layer by the given number of classes
-        if "resnet" in self.model_name:
+        if hasattr(self.model, "fc"):
             n_features_in = self.model.fc.in_features
 
-        elif self.model_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
+        elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
                 n_features_in = self.model.classifier[-1].in_features
             else:
@@ -150,42 +143,31 @@ class ConvNetPredefinedFineTune(nn.Module):
         else:
             raise ValueError(f"Model not implemented: {self.model_name}")
 
+        # Add 3 layers on top of the net
         for i in range(2):
             n_hidden_units *= 2
-
         NL = NONLIN[non_linear]
-
         additional_layers = [nn.Linear(n_features_in, n_hidden_units), NL()]
-
         additional_layers.extend(
             [nn.Linear(n_hidden_units, int(n_hidden_units / 2)), NL()]
         )
         n_hidden_units /= 2
-
         additional_layers.extend(
             [nn.Linear(int(n_hidden_units), int(n_hidden_units / 2)), NL()]
         )
         n_hidden_units /= 2
-
         additional_layers.append(nn.Linear(int(n_hidden_units), n_classes))
 
-        params = []
-        if "resnet" in self.model_name:
+        params_ = []
+        if hasattr(self.model, "fc"):
             self.model.fc = nn.Sequential(*additional_layers)
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if "fc" in name:
-                    params.append({"params": param, "lr": lr})
+                    params_.append({"params": param, "lr": lr})
                 elif param.requires_grad:
-                    params.append({"params": param, "lr": 1e-6})
-        elif self.model_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
-
+                    params_.append({"params": param, "lr": 1e-5})
+        elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
                 name_match = "classifier." + str(len(self.model.classifier) - 1)
@@ -196,15 +178,15 @@ class ConvNetPredefinedFineTune(nn.Module):
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if name_match in name:
-                    params.append(
+                    params_.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
                 elif param.requires_grad:
-                    params.append(
-                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
+                    params_.append(
+                        {"params": param, "lr": 1e-5, "weight_decay": weight_decay}
                     )
 
-        self.optimizer = torch.optim.Adam(params)
+        self.optimizer = torch.optim.Adam(params_)
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
@@ -218,7 +200,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         if num_layers_to_unfreeze > 0:
             unfrozen_layers = 0
-            skip = True
+            skip = True  # skip the first layer which will be replaced by other
 
             # Iterate over the model modules in reverse order and unfreeze the desired number of layers
             for module in reversed(list(self.model.modules())):
@@ -284,16 +266,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
-        if self.model_name in [
-            "vgg16",
-            "vgg19",
-            "resnet50",
-            "densenet121",
-            "mobilenet_v3_large",
-        ]:
-            X.to.cpu()
-            y.to.cpu()
-
         dataset = TensorDataset(X, y)
 
         train_size = int(0.8 * len(dataset))
@@ -306,6 +278,9 @@ class ConvNetPredefinedFineTune(nn.Module):
         )
 
         loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        val_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, pin_memory=False
+        )
 
         # do training
         val_loss_best = 999999
@@ -345,20 +320,21 @@ class ConvNetPredefinedFineTune(nn.Module):
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
-                    X_val, y_val = test_dataset.dataset[test_dataset.indices]
 
-                    if self.model_name in [
-                        "vgg16",
-                        "vgg19",
-                        "resnet50",
-                        "densenet121",
-                        "mobilenet_v3_large",
-                    ]:
-                        X_val.to(DEVICE)
-                        y_val.to(DEVICE)
+                    val_loss = []
 
-                    preds = self.forward(X_val).squeeze()
-                    val_loss = loss(preds, y_val)
+                    for batch_val_ndx, sample in enumerate(val_loader):
+
+                        X_val_next, y_val_next = sample
+
+                        if self.model_name in LARGE_CNN:
+                            X_val_next = X_val_next.to(DEVICE)
+                            y_val_next = y_val_next.to(DEVICE)
+
+                        preds = self.forward(X_val_next).squeeze()
+                        val_loss.append(loss(preds, y_val_next).detach())
+
+                    val_loss = torch.mean(torch.Tensor(val_loss))
 
                     if self.early_stopping:
                         if val_loss_best > val_loss:
@@ -398,9 +374,15 @@ class ConvNetPredefinedFineTune(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            return X.to(DEVICE)
+            if self.model_name in LARGE_CNN:
+                return X
+            else:
+                return X.to(DEVICE)
         else:
-            return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            if self.model_name in LARGE_CNN:
+                return torch.from_numpy(np.asarray(X))
+            else:
+                return torch.from_numpy(np.asarray(X)).to(DEVICE)
 
 
 class CNNFineTunePlugin(base.ClassifierPlugin):
@@ -438,15 +420,15 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
-        conv_net: str = "resnet34",
+        conv_net: str = "alexnet",
         n_unfrozen_layer: int = 1,
         n_classes: Optional[int] = None,
         n_hidden_units: int = 30,
         non_linear: str = "relu",
-        lr: float = 1e-4,
+        lr: float = 1e-3,
         weight_decay: float = 1e-3,
-        n_iter: int = 5,
-        batch_size: int = 64,
+        n_iter: int = 1000,
+        batch_size: int = 100,
         n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
@@ -508,6 +490,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
         # Preprocess Data
         n_classes = np.unique(y).shape[0]
+        self.n_classes = n_classes
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefinedFineTune(
@@ -535,19 +518,55 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze()).to(DEVICE)
-            return self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_loader = DataLoader(
+                    TensorDataset(X), batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE))
+                            .argmax(dim=-1)
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                        )
+                    )
+
+            else:
+                results = self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+
+            return pd.DataFrame(results)
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze())
-            return self.model(X.to(DEVICE)).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_dataset = TensorDataset(X)
+                test_loader = DataLoader(
+                    test_dataset, batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        )
+                    )
+
+            else:
+                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+
+            return pd.DataFrame(results)
 
     def save(self) -> bytes:
         return save_model(self)
