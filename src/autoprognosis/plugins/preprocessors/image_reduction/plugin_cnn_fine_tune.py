@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN
+from autoprognosis.explorers.core.defaults import CNN, LARGE_CNN
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.plugin_cnn_fine_tune import (
     ConvNetPredefinedFineTune,
@@ -20,6 +20,7 @@ for retry in range(2):
     try:
         # third party
         import torch
+        from torch.utils.data import DataLoader, TensorDataset
 
         break
     except ImportError:
@@ -135,9 +136,25 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze())
-            return self.model(X.to(DEVICE)).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_dataset = TensorDataset(X)
+                test_loader = DataLoader(
+                    test_dataset, batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        )
+                    )
+            else:
+                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+
+            return pd.DataFrame(results)
 
     def save(self) -> bytes:
         return save_model(self)

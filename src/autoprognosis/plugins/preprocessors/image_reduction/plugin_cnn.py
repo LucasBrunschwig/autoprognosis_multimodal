@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN
+from autoprognosis.explorers.core.defaults import CNN, LARGE_CNN
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.plugin_cnn import ConvNetPredefined
 import autoprognosis.plugins.preprocessors.base as base
@@ -18,6 +18,7 @@ for retry in range(2):
     try:
         # third party
         import torch
+        from torch.utils.data import DataLoader, TensorDataset
 
         break
     except ImportError:
@@ -62,7 +63,6 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         patience: int = 5,
         early_stopping: bool = True,
         weight_decay: float = 1e-3,
-        n_additional_layer_dim=2,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -78,11 +78,10 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.weight_decay = weight_decay
-        self.n_additional_layer = n_additional_layer_dim
 
     @staticmethod
     def name() -> str:
-        return "predefined_cnn"
+        return "cnn"
 
     @staticmethod
     def subtype() -> str:
@@ -97,20 +96,16 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-            params.Integer("ratio_cnn", 1, 3),
-            params.Categorical("n_additional_layer_dim", [1, 3]),
         ]
-
-    def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFeaturesPlugin":
 
         y = args[0]
+        self.n_classes = len(y.value_counts())
 
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
-            n_classes=len(y.value_counts()),
+            n_classes=self.n_classes,
             weight_decay=self.weight_decay,
             batch_size=self.batch_size,
             lr=self.lr,
@@ -132,9 +127,25 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+        X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            X = self.model.preprocess_images(X.squeeze())
-            return self.model(X.to(DEVICE)).detach().cpu().numpy()
+            if self.conv_net in LARGE_CNN:
+                results = np.empty((0, self.n_classes))
+                test_dataset = TensorDataset(X)
+                test_loader = DataLoader(
+                    test_dataset, batch_size=self.batch_size, pin_memory=False
+                )
+                for batch_test_ndx, X_test in enumerate(test_loader):
+                    results = np.vstack(
+                        (
+                            results,
+                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        )
+                    )
+            else:
+                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+
+            return pd.DataFrame(results)
 
     def save(self) -> bytes:
         return save_model(self)
