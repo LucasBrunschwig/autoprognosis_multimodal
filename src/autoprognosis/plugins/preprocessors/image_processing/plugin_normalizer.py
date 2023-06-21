@@ -50,7 +50,7 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("apply", ["pixel-wise", "channel-wise"])]
+        return [params.Categorical("apply", ["pixel-wise", "channel-wise", "nop"])]
 
     def _fit(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
@@ -70,6 +70,9 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
         elif self.apply == "pixel-wise":
             mean = X_images.mean()
             std = X_images.std()
+        elif self.apply == "nop":
+            mean = 0
+            std = 0
         else:
             raise ValueError("The apply parameters is either pixel- or channel-wise")
         self.model = Normalize(mean=mean, std=std)
@@ -77,11 +80,16 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
         return self
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            X.squeeze().apply(
-                lambda d: transforms.ToPILImage()(self.model(transforms.ToTensor()(d)))
+        if self.apply != "nop":
+            return pd.DataFrame(
+                X.squeeze().apply(
+                    lambda d: transforms.ToPILImage()(
+                        self.model(transforms.ToTensor()(d))
+                    )
+                )
             )
-        )
+        else:
+            return X
 
     def save(self) -> bytes:
         return serialization.save_model(self.model)
