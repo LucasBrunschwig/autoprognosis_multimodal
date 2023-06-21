@@ -6,6 +6,7 @@ from typing import Any, List, Optional, Tuple
 # third party
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
@@ -390,6 +391,10 @@ class ClassifierStudy(Study):
     def fit(self) -> Any:
         """Run the study and train the model. The call returns the fitted model."""
         model = self.run()
+
+        self.Y = LabelEncoder().fit_transform(self.Y)
+        self.Y = pd.Series(self.Y).reset_index(drop=True)
+
         model.fit(self.X, self.Y)
 
         return model
