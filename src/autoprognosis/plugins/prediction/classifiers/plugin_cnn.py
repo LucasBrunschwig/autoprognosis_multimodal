@@ -4,7 +4,6 @@ from typing import Any, List, Optional
 # third party
 import numpy as np
 import pandas as pd
-import torchvision
 
 # autoprognosis absolute
 # autoprognosis absolut
@@ -131,9 +130,7 @@ class ConvNetPredefined(nn.Module):
         )
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(
-            img_.apply(lambda d: torchvision.transforms.ToTensor()(d)).tolist()
-        )
+        return torch.stack(img_.tolist())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
