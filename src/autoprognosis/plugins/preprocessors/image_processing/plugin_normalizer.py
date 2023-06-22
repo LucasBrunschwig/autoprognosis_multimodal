@@ -82,14 +82,10 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self.apply != "nop":
             return pd.DataFrame(
-                X.squeeze().apply(
-                    lambda d: transforms.ToPILImage()(
-                        self.model(transforms.ToTensor()(d))
-                    )
-                )
+                X.squeeze().apply(lambda d: self.model(transforms.ToTensor()(d)))
             )
         else:
-            return X
+            return pd.DataFrame(X.squeeze().apply(lambda d: transforms.ToTensor()(d)))
 
     def save(self) -> bytes:
         return serialization.save_model(self.model)

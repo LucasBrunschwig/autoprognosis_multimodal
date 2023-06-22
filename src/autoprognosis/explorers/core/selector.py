@@ -374,13 +374,11 @@ class PipelineSelector:
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
-            for step in self.image_processing:
-                key = self._generate_dist_name("image_processing_step", step.name())
-                if key in kwargs:
-                    idx = kwargs[key]
-                    selected = Preprocessors(category="image_processing").get_type(idx)
-                    model_list.append(selected.fqdn())
-                    add_stage_hp(selected)
+            normalizer = Preprocessors(category="image_processing").get_type(
+                "normalizer"
+            )
+            model_list.append(normalizer.fqdn())
+            add_stage_hp(normalizer)
 
         img_reduction_key = self._generate_dist_name("image_reduction_candidate")
         if img_reduction_key in kwargs:
