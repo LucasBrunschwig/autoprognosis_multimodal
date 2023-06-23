@@ -47,7 +47,7 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
         for img_name in files:
             if img_name.endswith(".png"):
                 img_ = Image.open(os.path.join(dirpath, img_name))
-                img_ = img_.convert("RGB").resize((300, 300))
+                img_ = img_.convert("RGB").resize((500, 500))
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
@@ -114,7 +114,7 @@ class DataLoader:
         self.labels = None
 
     def load_dataset(
-        self, split_images=True, classes: list = None, sample: bool = False
+        self, split_images=True, classes: list = None, sample: bool = False, raw=False
     ):
         """Returns the loaded dataset based on the source input
 
@@ -130,12 +130,14 @@ class DataLoader:
         # Different loaders for different sources
         if self.SOURCE == "PAD-UFES":
             self._load_pad_ufes_dataset(
-                split_images=split_images, classes=classes, sample=sample
+                split_images=split_images, classes=classes, sample=sample, raw=raw
             )
 
         return self.df
 
-    def _load_pad_ufes_dataset(self, split_images: bool, classes: list, sample):
+    def _load_pad_ufes_dataset(
+        self, split_images: bool, classes: list, sample: bool, raw: bool
+    ):
         """This loader will load the zipped images and metadata and returns 3 lists
 
         Args:
@@ -150,6 +152,8 @@ class DataLoader:
                 data point and others treat them separately
 
         """
+
+        # either drop missing features or drop incomplete rows
 
         # Load Metadata as DataFrame
         metadata_df = pd.read_csv(self.PATH / "metadata.csv")
@@ -184,24 +188,67 @@ class DataLoader:
         # Reset index
         df["img_id"] = df["img_id"].apply(lambda t: t[:-4])
         df.set_index("img_id", inplace=True)
-        df.drop(columns=["patient_id", "lesion_id", "index"], inplace=True)
+        df.drop(
+            columns=["patient_id", "lesion_id", "index", "biopsed"],
+            axis=1,
+            inplace=True,
+        )
         df.rename(columns={"diagnostic": "label"}, inplace=True)
 
+        # Remove features only present in cancerous patients
+
         # Transform df into suitable numeric values
+        one_hot_encoding = False
+        drop_features = True
+        drop_rows = False
 
-        categorical_var = ["background_father", "background_mother", "gender", "region"]
-        for col in df.columns:
-            if col in categorical_var:
-                tmp_one_hot = pd.get_dummies(df[col], prefix=col)
-                df.drop(col, axis=1, inplace=True)
-                df = df.join(tmp_one_hot)
+        if not raw:
+            if one_hot_encoding:
+                categorical_var = [
+                    "background_father",
+                    "background_mother",
+                    "gender",
+                    "region",
+                ]
+                for col in df.columns:
+                    if col in categorical_var:
+                        tmp_one_hot = pd.get_dummies(df[col], prefix=col)
+                        df.drop(col, axis=1, inplace=True)
+                        df = df.join(tmp_one_hot)
 
-        # Remove Unknown and convert False True to integers
-        df.replace("UNK", np.nan, inplace=True)
-        df_images = df.image.to_frame()
-        df.drop("image", axis=1, inplace=True)
-        df.replace({False: 0, True: 1, "False": 0, "True": 0}, inplace=True)
-        df = df_images.join(df)
+                # Remove Unknown and convert False True to integers
+                df.replace("UNK", np.nan, inplace=True)
+                df_images = df.image.to_frame()
+                df.drop("image", axis=1, inplace=True)
+                df.replace({False: 0, True: 1, "False": 0, "True": 0}, inplace=True)
+                df = df_images.join(df)
+
+            # Pacheto paper
+            elif drop_features:
+                incomplete_features = []
+                for column in df.columns:
+                    if sum(df[column].isna()):
+                        incomplete_features.append(column)
+                df.drop(incomplete_features, axis=1, inplace=True)
+
+                categorical_features = [
+                    "region",
+                    "itch",
+                    "grew",
+                    "hurt",
+                    "changed",
+                    "bleed",
+                    "elevation",
+                ]
+                for column in categorical_features:
+                    tmp = pd.get_dummies(df[column], prefix=column)
+                    if column + "_UNK" in tmp.columns:
+                        tmp.drop([column + "_UNK"], axis=1, inplace=True)
+
+            # drop incomplete rows
+            elif drop_rows:
+                for ix, row in df.iterrows():
+                    pass
 
         if classes is not None:
             df = df[df["label"].isin(classes)]
