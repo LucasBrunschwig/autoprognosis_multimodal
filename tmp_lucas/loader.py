@@ -244,6 +244,8 @@ class DataLoader:
                     tmp = pd.get_dummies(df[column], prefix=column)
                     if column + "_UNK" in tmp.columns:
                         tmp.drop([column + "_UNK"], axis=1, inplace=True)
+                    df.drop(column, axis=1, inplace=True)
+                    df = df.join(tmp)
 
             # drop incomplete rows
             elif drop_rows:
