@@ -32,7 +32,7 @@ default_regressors_names = [
 ]
 
 default_imputers_names = ["mean", "ice", "missforest", "hyperimpute"]
-default_image_processing = ["normalizer"]
+default_image_processing = ["resizer", "normalizer"]
 default_image_dimensionality_reduction = [
     "cnn",
     "cnn_fine_tune",

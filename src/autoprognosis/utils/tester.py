@@ -8,6 +8,7 @@ import pandas as pd
 from pydantic import validate_arguments
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     cohen_kappa_score,
     f1_score,
     matthews_corrcoef,
@@ -42,6 +43,7 @@ clf_supported_metrics = [
     "aucroc",
     "aucprc",
     "accuracy",
+    "balanced_accuracy",
     "f1_score_micro",
     "f1_score_macro",
     "f1_score_weighted",
@@ -78,6 +80,7 @@ class classifier_metrics:
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy": Balanced Accuracy classification score.
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -115,6 +118,8 @@ class classifier_metrics:
                 results[metric] = self.roc_auc_score(y_test, y_pred_proba)
             elif metric == "accuracy":
                 results[metric] = accuracy_score(y_test, y_pred)
+            elif metric == "balanced_accuracy":
+                results[metric] = balanced_accuracy_score(y_test, y_pred)
             elif metric == "f1_score_micro":
                 results[metric] = f1_score(
                     y_test, y_pred, average="micro", zero_division=0
