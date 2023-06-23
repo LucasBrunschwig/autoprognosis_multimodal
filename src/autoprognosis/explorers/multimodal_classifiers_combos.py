@@ -377,6 +377,11 @@ class MultimodalEnsembleSeeker:
                 X["tab"], Y, group_ids=group_ids
             )
 
+            if not isinstance(best_image_models, list):
+                best_image_models = [best_image_models]
+            if not isinstance(best_tabular_models, list):
+                best_tabular_models = [best_tabular_models]
+
             best_models = best_tabular_models + best_image_models
 
             scores = []
