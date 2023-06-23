@@ -83,7 +83,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def name() -> str:
-        return "predefined_cnn"
+        return "cnn_fine_tune"
 
     @staticmethod
     def subtype() -> str:

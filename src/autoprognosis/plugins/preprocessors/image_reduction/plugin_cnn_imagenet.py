@@ -30,7 +30,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-8
 
 
-class CNNFeaturesPlugin(base.PreprocessorPlugin):
+class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
     """Classification plugin using predefined Convolutional Neural Networks
 
     Parameters
@@ -80,7 +80,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def name() -> str:
-        return "predefined_cnn"
+        return "cnn_imagenet"
 
     @staticmethod
     def subtype() -> str:
@@ -97,7 +97,9 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
         ]
 
-    def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFeaturesPlugin":
+    def _fit(
+        self, X: pd.DataFrame, *args: Any, **kwargs: Any
+    ) -> "CNNFeaturesImageNetPlugin":
         y = args[0]
         self.n_classes = len(y.value_counts())
         self.model = ConvNetPredefined(
@@ -144,8 +146,8 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         return save_model(self)
 
     @classmethod
-    def load(cls, buff: bytes) -> "CNNFeaturesPlugin":
+    def load(cls, buff: bytes) -> "CNNFeaturesImageNetPlugin":
         return load_model(buff)
 
 
-plugin = CNNFeaturesPlugin
+plugin = CNNFeaturesImageNetPlugin

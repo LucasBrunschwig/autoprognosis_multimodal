@@ -444,19 +444,24 @@ class PipelineSelector:
         )
         model_list.append(cleaner.fqdn())
 
-        # TODO: TEST THIS
-        pre_cnn = self._generate_dist_name("image_processing_step", "predefined_cnn")
-        if self.preprocess_image and pre_cnn not in kwargs:
+        # Feature extraction through pretrained fine-tuning or imagenet pretrained network does not need preprocessing
+        cnn_fine_tune = self._generate_dist_name(
+            "image_processing_step", "cnn_fine_tune"
+        )
+        cnn_imagenet = self._generate_dist_name("image_processing_step", "cnn_imagenet")
+        if (
+            self.preprocess_image
+            and cnn_fine_tune not in kwargs
+            and cnn_imagenet not in kwargs
+        ):
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
-            for step in self.image_processing:
-                key = self._generate_dist_name("image_processing_step", step.name())
-                if key in kwargs:
-                    idx = kwargs[key]
-                    selected = Preprocessors(category="image_processing").get_type(idx)
-                    model_list.append(selected.fqdn())
-                    add_stage_hp(selected)
+            normalizer = Preprocessors(category="image_processing").get_type(
+                "normalizer"
+            )
+            model_list.append(normalizer.fqdn())
+            add_stage_hp(normalizer)
 
         img_reduction_key = self._generate_dist_name("image_reduction_candidate")
         if img_reduction_key in kwargs:
