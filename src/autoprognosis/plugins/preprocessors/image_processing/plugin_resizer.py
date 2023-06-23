@@ -29,12 +29,12 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
         >>> plugin.fit_transform(X, y)
     """
 
-    def __init__(self, size: tuple = (224, 224)) -> None:
+    def __init__(self, size: int = 224) -> None:
         super().__init__()
         self.model = Compose(
             [
                 ToTensor(),
-                Resize(size=size, antialias=True),
+                Resize(size=(size, size), antialias=True),
                 ToPILImage(),
             ]
         )
@@ -53,7 +53,7 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("size", [(224, 224), (256, 256), (512, 512)])]
+        return [params.Categorical("size", [224, 256, 512])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "ImageResizerPlugin":
 
