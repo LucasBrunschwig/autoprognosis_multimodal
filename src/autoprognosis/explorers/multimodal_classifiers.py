@@ -170,7 +170,7 @@ class MultimodalClassifierSeeker:
             "aucroc",
             "aucprc",
             "accuracy",
-            "kappa",
+            "balanced_accuracy" "kappa",
             "f1_score_micro",
             "f1_score_macro",
             "f1_score_weighted",

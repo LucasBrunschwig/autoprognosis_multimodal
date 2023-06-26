@@ -102,6 +102,7 @@ class ImageClassifierSeeker:
             "aucroc",
             "aucprc",
             "accuracy",
+            "balanced_accuracy",
             "kappa",
             "f1_score_micro",
             "f1_score_macro",
