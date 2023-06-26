@@ -92,7 +92,8 @@ class PipelineSelector:
 
         if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn"]:
             self.image_dimensionality_reduction = []
-            self.preprocess_image = False
+            if classifier in ["intermediate_conv_net", "cnn_fine_tune"]:
+                self.preprocess_image = False
 
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
@@ -451,8 +452,8 @@ class PipelineSelector:
         if self.preprocess_image and (
             (
                 kwargs.get(img_reduction_key, None)
-                and kwargs.get(img_reduction_key)
-                in ["cnn_fine_tune", "cnn_imagenet", "simsiam"]
+                and not kwargs.get(img_reduction_key)
+                in ["cnn_fine_tune", "cnn_imagenet"]
             )
             or (
                 len(self.image_dimensionality_reduction) > 0
@@ -461,7 +462,7 @@ class PipelineSelector:
                 )
                 and not (
                     self.image_dimensionality_reduction[0].fqdn().split(".")[-1]
-                    in ["cnn_fine_tune", "cnn_imagenet", "simsiam"]
+                    in ["cnn_fine_tune", "cnn_imagenet"]
                 )
             )
         ):
