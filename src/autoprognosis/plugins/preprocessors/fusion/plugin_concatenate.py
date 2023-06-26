@@ -31,14 +31,8 @@ class ConcatenatePlugin(base.PreprocessorPlugin):
 
     def __init__(
         self,
-        weight_tab: float = 1.0,
-        weight_img: float = 1.0,
     ) -> None:
         super().__init__()
-
-        self.other_modalities = {}
-        self.weight_tab = weight_tab
-        self.weight_img = weight_img
 
     @staticmethod
     def name() -> str:
@@ -54,10 +48,7 @@ class ConcatenatePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [
-            params.Categorical("weight_tab", [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]),
-            params.Categorical("weight_img", [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]),
-        ]
+        return []
 
     def fit_transform(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         """Fit the model and transform the training data. Used by imputers and preprocessors."""

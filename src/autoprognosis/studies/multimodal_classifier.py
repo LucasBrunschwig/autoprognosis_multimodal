@@ -525,6 +525,11 @@ class MultimodalStudy(Study):
         self.Y = LabelEncoder().fit_transform(self.Y)
         self.Y = pd.Series(self.Y).reset_index(drop=True)
 
-        model.fit(self.multimodal_X, self.Y)
+        if self.multimodal_type == "early_fusion":
+            model.early_fusion_fit(self.multimodal_X, self.Y)
+        elif self.multimodal_type == "intermediate_fusion":
+            model.intermediate_fusion_fit(self.multimodal_X, self.Y)
+        else:
+            model.fit(self.multimodal_X, self.Y)
 
         return model
