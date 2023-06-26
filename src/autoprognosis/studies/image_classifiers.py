@@ -231,10 +231,15 @@ class ImageClassifierStudy(Study):
                 n_folds=self.n_folds_cv,
             )
             best_score = metrics["raw"][self.metric][0]
+
             eval_metrics = {}
             for metric in metrics["raw"]:
                 eval_metrics[metric] = metrics["raw"][metric][0]
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
+
+            # TMP LUCAS
+            for metric, score in metrics["str"].items():
+                log.info(f"{metric} {score}")
 
             self.hooks.heartbeat(
                 topic="classification_study",

@@ -465,6 +465,10 @@ class MultimodalStudy(Study):
                 eval_metrics[metric] = metrics["raw"][metric][0]
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
 
+            # TMP LUCAS
+            for metric, score in metrics["str"].items():
+                log.info(f"{metric} {score}")
+
             self.hooks.heartbeat(
                 topic="classification_study",
                 subtopic="candidate",
