@@ -90,9 +90,9 @@ class PipelineSelector:
         if "intermediate" in classifier:
             self.fusion = []
 
-        if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn_imagenet"]:
+        if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn"]:
             self.image_dimensionality_reduction = []
-            self.image_processing = []
+            self.preprocess_image = False
 
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
@@ -369,8 +369,10 @@ class PipelineSelector:
 
                 pipeline_args[plugin.name()][param.name.split(".")[-1]] = param_val
 
-        # if image preprocessing is optimized
         if self.preprocess_image:
+            # grayscale = Preprocessors(category="image_processing").get_type("grayscale")
+            # model_list.append(grayscale.fqdn())
+            # add_stage_hp(grayscale)
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
@@ -445,15 +447,27 @@ class PipelineSelector:
         model_list.append(cleaner.fqdn())
 
         # Feature extraction through pretrained fine-tuning or imagenet pretrained network does not need preprocessing
-        cnn_fine_tune = self._generate_dist_name(
-            "image_processing_step", "cnn_fine_tune"
-        )
-        cnn_imagenet = self._generate_dist_name("image_processing_step", "cnn_imagenet")
-        if (
-            self.preprocess_image
-            and cnn_fine_tune not in kwargs
-            and cnn_imagenet not in kwargs
+        img_reduction_key = self._generate_dist_name("image_reduction_candidate")
+        if self.preprocess_image and (
+            (
+                kwargs.get(img_reduction_key, None)
+                and kwargs.get(img_reduction_key)
+                in ["cnn_fine_tune", "cnn_imagenet", "simsiam"]
+            )
+            or (
+                len(self.image_dimensionality_reduction) > 0
+                and not kwargs.get(  # if the default dimensionality reduction
+                    img_reduction_key, None
+                )
+                and not (
+                    self.image_dimensionality_reduction[0].fqdn().split(".")[-1]
+                    in ["cnn_fine_tune", "cnn_imagenet", "simsiam"]
+                )
+            )
         ):
+            # grayscale = Preprocessors(category="image_processing").get_type("grayscale")
+            # model_list.append(grayscale.fqdn())
+            # add_stage_hp(grayscale)
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
@@ -463,7 +477,6 @@ class PipelineSelector:
             model_list.append(normalizer.fqdn())
             add_stage_hp(normalizer)
 
-        img_reduction_key = self._generate_dist_name("image_reduction_candidate")
         if img_reduction_key in kwargs:
             idx = kwargs[img_reduction_key]
             selected = Preprocessors(category="image_reduction").get_type(idx)
