@@ -122,7 +122,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         )
 
         weights = models.get_weight(WEIGHTS[self.model_name])
-        self.preprocess = weights.transforms
+        self.preprocess = weights.transforms(antialias=True)
 
         self.set_parameter_requires_grad(n_unfrozen_layer)
 
@@ -189,7 +189,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.optimizer = torch.optim.Adam(params_)
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
+        return torch.stack(img_.apply(lambda d: self.preprocess(d)).tolist())
 
     def set_parameter_requires_grad(
         self,
@@ -355,7 +355,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                 self.model.fc = nn.Identity()
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
-                self.model.classifier[-1] = nn.Identity()
+                self.model.classifier[-1][-1] = nn.Identity()
             elif isinstance(self.model.classifier, torch.nn.Linear):
                 self.model.classifier = nn.Identity()
             else:
