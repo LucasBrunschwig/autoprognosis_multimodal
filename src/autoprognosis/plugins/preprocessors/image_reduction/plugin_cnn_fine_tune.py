@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, LARGE_CNN
+from autoprognosis.explorers.core.defaults import CNN
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.plugin_cnn_fine_tune import (
     ConvNetPredefinedFineTune,
@@ -110,9 +110,11 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
         y = args[0]
 
+        self.n_classes = len(y.value_counts())
+
         self.model = ConvNetPredefinedFineTune(
             model_name=self.conv_net,
-            n_classes=len(y.value_counts()),
+            n_classes=self.n_classes,
             n_hidden_units=self.n_hidden_units,
             non_linear=self.non_lin,
             weight_decay=self.weight_decay,
@@ -138,22 +140,20 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             X = pd.DataFrame(X)
         X = self.model.preprocess_images(X.squeeze())
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_dataset = TensorDataset(X)
-                test_loader = DataLoader(
-                    test_dataset, batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
-                        )
+            results = np.empty(
+                (0, self.model(torch.unsqueeze(X[0], 0).to(DEVICE)).shape[1])
+            )
+            test_dataset = TensorDataset(X)
+            test_loader = DataLoader(
+                test_dataset, batch_size=self.batch_size, pin_memory=False
+            )
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
                     )
-            else:
-                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
-
+                )
             return pd.DataFrame(results)
 
     def save(self) -> bytes:
