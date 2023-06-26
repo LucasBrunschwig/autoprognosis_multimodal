@@ -156,16 +156,16 @@ def _generate_early_fusion_fit() -> Callable:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.fit_transform(local_X_img, *args)
 
+        # Process tabular
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.fit_transform(local_X_tab)
+
         local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
         # Modalities Fusion
         local_X = self.stages[-2].fit_transform(local_X)
-
-        # Preprocess Multimodal vector
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
-                local_X = pd.DataFrame(local_X)
-                local_X = stage.fit_transform(local_X)
 
         # Fit the classifier
         self.stages[-1].fit(local_X, *args, **kwargs)
@@ -229,16 +229,16 @@ def _generate_early_fusion_predict() -> Callable:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img, *args)
 
+        # Process tabular
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.transform(local_X_tab)
+
         local_X = {IMAGE_KEY: local_X_tab, TABULAR_KEY: local_X_img}
 
         # Fusion
         local_X = self.stages[-2].transform(local_X)
-
-        # Process tabular
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
-                local_X = pd.DataFrame(local_X)
-                local_X = stage.transform(local_X)
 
         # Fit classifier
         self.stages[-1].predict(local_X, *args, **kwargs)
@@ -288,16 +288,16 @@ def _generate_early_fusion_predict_proba() -> Callable:
                 local_X_img = pd.DataFrame(local_X_img)
                 local_X_img = stage.transform(local_X_img, *args)
 
+        # Process tabular
+        for stage in self.stages[:-2]:
+            if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_tab = stage.transform(local_X_tab)
+
         local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
         # Fusion
         local_X = self.stages[-2].transform(local_X)
-
-        # Process tabular
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == TABULAR_KEY and not local_X.empty:
-                local_X = pd.DataFrame(local_X)
-                local_X = stage.transform(local_X)
 
         # Predict Proba
         result = self.stages[-1].predict_proba(local_X, *args, **kwargs)
