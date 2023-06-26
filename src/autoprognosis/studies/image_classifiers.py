@@ -238,8 +238,8 @@ class ImageClassifierStudy(Study):
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
 
             # TMP LUCAS
-            for metric, score in metrics["str"].items():
-                log.info(f"{metric} {score}")
+            for metric, score_ in metrics["str"].items():
+                log.info(f"{metric} {score_}")
 
             self.hooks.heartbeat(
                 topic="classification_study",
