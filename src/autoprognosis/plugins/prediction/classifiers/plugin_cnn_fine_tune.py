@@ -296,13 +296,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
                 X_next, y_next = sample
 
-                if self.model_name in [
-                    "vgg16",
-                    "vgg19",
-                    "resnet50",
-                    "densenet121",
-                    "mobilenet_v3_large",
-                ]:
+                if self.model_name in LARGE_CNN:
                     X_next = X_next.to(DEVICE)
                     y_next = y_next.to(DEVICE)
 
@@ -354,15 +348,12 @@ class ConvNetPredefinedFineTune(nn.Module):
         return self
 
     def remove_classification_layer(self):
-        if "resnet" in self.model_name:
-            self.model.fc = nn.Identity()
-        elif self.model_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
+        if hasattr(self.model, "fc"):
+            if isinstance(self.model.fc, nn.Sequential):
+                self.model.fc[-1] = nn.Identity()
+            else:
+                self.model.fc = nn.Identity()
+        elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
                 self.model.classifier[-1] = nn.Identity()
             elif isinstance(self.model.classifier, torch.nn.Linear):
