@@ -6,9 +6,8 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, LARGE_CNN
+from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, WEIGHTS
 import autoprognosis.plugins.core.params as params
-from autoprognosis.plugins.prediction.classifiers.plugin_cnn import ConvNetPredefined
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.pip import install
@@ -18,6 +17,7 @@ for retry in range(2):
     try:
         # third party
         import torch
+        import torch.nn as nn
         from torch.utils.data import DataLoader, TensorDataset
 
         break
@@ -25,6 +25,15 @@ for retry in range(2):
         depends = ["torch"]
         install(depends)
 
+for retry in range(2):
+    try:
+        # third party
+        from torchvision import models
+
+        break
+    except ImportError:
+        depends = ["torchvision"]
+        install(depends)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
@@ -100,45 +109,44 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
     def _fit(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> "CNNFeaturesImageNetPlugin":
-        y = args[0]
-        self.n_classes = len(y.value_counts())
-        self.model = ConvNetPredefined(
-            model_name=self.conv_net,
-            n_classes=self.n_classes,
-            weight_decay=self.weight_decay,
-            batch_size=self.batch_size,
-            lr=self.lr,
-            n_iter_min=self.n_iter_min,
-            n_iter=self.n_iter,
-            early_stopping=self.early_stopping,
-            n_iter_print=self.n_iter_print,
-            patience=self.patience,
-        )
 
-        self.model.remove_classification_layer()
+        self.model = CNN_MODEL[self.conv_net](weights=WEIGHTS[self.conv_net]).to(DEVICE)
+
+        if hasattr(self.model, "fc"):
+            self.model.fc[-1] = nn.Identity()
+        elif hasattr(self.model, "classifier"):
+            if isinstance(self.model.classifier, nn.Linear):
+                self.model.classifier = nn.Identity()
+            else:
+                self.model.classifier[-1] = nn.Identity()
+
+        weights = models.get_weight(WEIGHTS[self.conv_net])
+        self.preprocess = weights.transforms
 
         return self
+
+    def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
+        return torch.stack(img_.apply(lambda d: self.preprocess()(d)).tolist())
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.preprocess_images(X.squeeze())
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_dataset = TensorDataset(X)
-                test_loader = DataLoader(
-                    test_dataset, batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
-                        )
+            results = np.empty(
+                (0, self.model(torch.unsqueeze(X[0], 0).to(DEVICE)).shape[1])
+            )
+            test_dataset = TensorDataset(X)
+            test_loader = DataLoader(
+                test_dataset, batch_size=self.batch_size, pin_memory=False
+            )
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
                     )
-            else:
-                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+                )
 
             return pd.DataFrame(results)
 
