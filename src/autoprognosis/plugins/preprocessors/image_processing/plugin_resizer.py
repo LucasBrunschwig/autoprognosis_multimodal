@@ -29,7 +29,7 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
         >>> plugin.fit_transform(X, y)
     """
 
-    def __init__(self, size: int = 224) -> None:
+    def __init__(self, size: int = 256) -> None:
         super().__init__()
         self.model = Compose(
             [
@@ -53,7 +53,7 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("size", [224, 256, 512])]
+        return [params.Categorical("size", [32, 124, 256])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "ImageResizerPlugin":
 
