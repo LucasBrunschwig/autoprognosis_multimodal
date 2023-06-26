@@ -98,7 +98,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-            params.Categorical("n_hidden_units", [30, 60, 120]),
+            params.Categorical("n_hidden_units", [128, 256, 512]),
         ]
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
