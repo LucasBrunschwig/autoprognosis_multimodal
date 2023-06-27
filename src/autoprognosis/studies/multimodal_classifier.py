@@ -335,9 +335,10 @@ class MultimodalStudy(Study):
             self.search_group_ids = self.group_ids
 
         self.search_multimodal_X = {}
+        self.multimodal_X = {}
         for key, columns in self.multimodal_key.items():
             self.search_multimodal_X[key] = self.search_X[columns]
-            self.multimodal_X = self.X[columns]
+            self.multimodal_X[key] = self.X[columns]
 
         for img_key in image:
             dataset["hash_" + img_key] = np.array(
