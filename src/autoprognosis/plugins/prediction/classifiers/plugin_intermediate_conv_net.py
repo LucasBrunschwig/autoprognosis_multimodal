@@ -111,23 +111,37 @@ class ConvIntermediateNet(nn.Module):
 
         params = []
 
-        # Tab Net
-        if n_tab_layer == 3:
-            tab_layer = [
-                nn.Linear(n_tab_in, n_inter_hidden),
-                NL(),
-                nn.Linear(n_inter_hidden, n_inter_hidden),
-                NL(),
-                nn.Linear(n_inter_hidden, n_tab_out),
-            ]
-        elif n_tab_layer == 2:
-            tab_layer = [
-                nn.Linear(n_tab_in, n_inter_hidden),
-                NL(),
-                nn.Linear(n_inter_hidden, n_tab_out),
-            ]
-        elif n_tab_layer == 1:
-            tab_layer = [nn.Linear(n_tab_in, n_tab_out), NL()]
+        # Build the tab layer
+        if n_tab_layer > 0:
+            if batch_norm:
+                tab_layer = [
+                    nn.Linear(n_tab_in, n_inter_hidden),
+                    nn.BatchNorm1d(n_inter_hidden),
+                ]
+            else:
+                tab_layer = [nn.Linear(n_tab_in, n_inter_hidden)]
+
+            for i in range(n_tab_layer - 1):
+                if batch_norm:
+                    tab_layer.extend(
+                        [
+                            nn.Dropout(dropout),
+                            nn.Linear(n_inter_hidden, n_inter_hidden),
+                            nn.BatchNorm1d(n_inter_hidden),
+                            NL(),
+                        ]
+                    )
+                else:
+                    tab_layer.extend(
+                        [
+                            nn.Dropout(dropout),
+                            nn.Linear(n_inter_hidden, n_inter_hidden),
+                            NL(),
+                        ]
+                    )
+                    # add final layers
+            tab_layer.append(nn.Linear(n_inter_hidden, n_tab_out))
+
         else:
             tab_layer = [nn.Identity()]
 
@@ -142,26 +156,25 @@ class ConvIntermediateNet(nn.Module):
         )
 
         weights = models.get_weight(WEIGHTS[conv_name.lower()])
-        self.preprocess = weights.transforms
+        self.preprocess = weights.transforms(antialias=True)
 
         # Unfroze specified layer
         self.set_parameter_requires_grad(n_unfrozen_layer)
 
         # Replace the output layer by the given number of classes
-        if "resnet" in conv_name:
-            n_features_in = self.image_model.fc.in_features
+        if hasattr(self.image_model, "fc"):
+            if isinstance(self.image_model.fc, torch.nn.Sequential):
+                n_features_in = self.image_model.fc[-1].in_features
+            else:
+                n_features_in = self.image_model.fc.in_features
 
-        elif conv_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
+        elif hasattr(self.image_model, "classifier"):
             if isinstance(self.image_model.classifier, torch.nn.Sequential):
                 n_features_in = self.image_model.classifier[-1].in_features
             else:
                 n_features_in = self.image_model.classifier.in_features
+        else:
+            raise ValueError(f"Unknown last layer type for: {conv_name}")
 
         # The first intermediate layer depends on the last output
         n_intermediate = n_img_out
@@ -171,40 +184,41 @@ class ConvIntermediateNet(nn.Module):
         additional_layers = [
             nn.Linear(n_features_in, n_intermediate),
             NL(),
+            nn.Dropout(p=dropout, inplace=False),
         ]
 
-        for i in range(n_img_layer):
-            additional_layers.append(nn.Linear(n_intermediate, int(n_intermediate / 2)))
-            additional_layers.append(NL())
+        for i in range(n_img_layer - 1):
+            additional_layers.extend(
+                [
+                    nn.Linear(n_intermediate, int(n_intermediate / 2)),
+                    NL(),
+                    nn.Dropout(p=dropout, inplace=False),
+                ]
+            )
             n_intermediate = int(n_intermediate / 2)
+        additional_layers.append(nn.Linear(n_intermediate, n_img_out))
 
-        if "resnet" in conv_name:
+        if hasattr(self.image_model, "fc"):
             self.image_model.fc = nn.Sequential(*additional_layers)
             self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
                 if "fc" in name:
-                    params.append({"params": param, "lr": lr})
+                    params.append(
+                        {"params": param, "lr": lr, "weight_decay": weight_decay}
+                    )
                 elif param.requires_grad:
-                    params.append({"params": param, "lr": 1e-7})
+                    params.append(
+                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
+                    )
 
-        elif conv_name in [
-            "alexnet",
-            "vgg19",
-            "vgg16",
-            "mobilenet_v3_large",
-            "densenet121",
-        ]:
-
-            name_match = None
+        elif hasattr(self.image_model, "classifier"):
             if isinstance(self.image_model.classifier, torch.nn.modules.Sequential):
                 self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
                 name_match = "classifier." + str(len(self.image_model.classifier) - 1)
             else:
                 self.image_model.classifier = nn.Sequential(*additional_layers)
                 name_match = "classifier"
-
             self.image_model.to(DEVICE)
-
             for name, param in self.image_model.named_parameters():
 
                 if name_match in name:
@@ -213,7 +227,7 @@ class ConvIntermediateNet(nn.Module):
                     )
                 elif param.requires_grad:
                     params.append(
-                        {"params": param, "lr": 1e-7, "weight_decay": weight_decay}
+                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
                     )
 
         n_unit_in = n_tab_out + n_img_out
@@ -282,7 +296,7 @@ class ConvIntermediateNet(nn.Module):
         return self.classifier_model(x_combined)
 
     def train(
-        self, X_tab: pd.DataFrame, X_img: pd.DataFrame, y: torch.Tensor
+        self, X_tab: torch.Tensor, X_img: torch.Tensor, y: torch.Tensor
     ) -> "ConvIntermediateNet":
 
         X_img = self._check_tensor(X_img).float()
@@ -297,7 +311,12 @@ class ConvIntermediateNet(nn.Module):
             dataset, [train_size, test_size]
         )
 
-        loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        train_loader = DataLoader(
+            train_dataset, batch_size=self.batch_size, pin_memory=False
+        )
+        test_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, pin_memory=False
+        )
 
         # do training
         val_loss_best = 999999
@@ -308,10 +327,14 @@ class ConvIntermediateNet(nn.Module):
         for i in range(self.n_iter):
             train_loss = []
 
-            for batch_ndx, sample in enumerate(loader):
+            for batch_ndx, sample in enumerate(train_loader):
                 self.optimizer.zero_grad()
 
                 X_tab_next, X_img_next, y_next = sample
+                if torch.cuda.is_available():
+                    X_tab_next = X_tab_next.to(DEVICE)
+                    X_img_next = X_img_next.to(DEVICE)
+                    y_next = y_next.to(DEVICE)
 
                 preds = self.forward(X_tab_next, X_img_next).squeeze()
 
@@ -334,10 +357,19 @@ class ConvIntermediateNet(nn.Module):
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
-                    X_tab_val, X_img_val, y_val = test_dataset.dataset.tensors
+                    val_loss = []
+                    for batch_test_ndx, val_sample in enumerate(test_loader):
+                        X_tab_val, X_img_val, y_val = val_sample
 
-                    preds = self.forward(X_tab_val, X_img_val).squeeze()
-                    val_loss = loss(preds, y_val)
+                        if torch.cuda.is_available():
+                            X_tab_val = X_tab_val.to(DEVICE)
+                            X_img_val = X_img_val.to(DEVICE)
+                            y_val = y_val.to(DEVICE)
+
+                        preds = self.forward(X_tab_val, X_img_val).squeeze()
+                        val_loss.append(loss(preds, y_val).detach())
+
+                    val_loss = torch.mean(torch.Tensor(val_loss).to(DEVICE))
 
                     if self.early_stopping:
                         if val_loss_best > val_loss:
@@ -358,14 +390,12 @@ class ConvIntermediateNet(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            return X.to(DEVICE)
+            return X.cpu()
         else:
-            return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            return torch.from_numpy(np.asarray(X)).cpu()
 
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(
-            img_.squeeze().apply(lambda d: self.preprocess()(d)).tolist()
-        )
+        return torch.stack(img_.squeeze().apply(lambda d: self.preprocess(d)).tolist())
 
     def set_parameter_requires_grad(
         self,
@@ -468,23 +498,23 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         model: Any = None,
         n_tab_layer: int = 2,
         nonlin="relu",
-        n_img_layer: int = 2,
-        conv_name: str = "densenet121",
+        n_img_layer: int = 3,
+        conv_name: str = "mobilenet_v3_large",
         n_neurons: int = 64,
-        ratio: float = 0.8,
-        n_layers_hidden: int = 1,
+        ratio: float = 0.96,
+        n_layers_hidden: int = 3,
         n_units_hidden: int = 100,
-        lr: float = 1e-3,
+        lr: float = 1e-4,
         weight_decay: float = 1e-3,
         dropout: float = 0.1,
-        clipping_value: int = 1,
+        clipping_value: int = 0,
         random_state: int = 0,
-        tab_reduction_ratio=0.6,
-        n_iter_print: int = 10,
-        patience: int = 5,
+        tab_reduction_ratio=1.0,
+        n_iter_print: int = 1,
+        patience: int = 20,
         n_iter_min: int = 10,
         n_iter: int = 1000,
-        batch_norm: bool = False,
+        batch_norm: bool = True,
         early_stopping: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -528,13 +558,16 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
     @classmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
-            params.Categorical("ratio", [0.5, 0.6, 0.7, 0.8]),
-            params.Categorical("tab_reduction_ratio", [0.5, 0.6, 0.7]),
+            # Network for Tabular and Image network
+            params.Categorical("ratio", [0.6, 0.8, 0.9, 0.95]),
+            params.Categorical("tab_reduction_ratio", [0.7, 0.8, 0.9]),
             params.Integer("n_tab_layer", 0, 2),
             params.Integer("n_img_layer", 1, 3),
             params.Categorical("conv_name", CNN),
+            # Final Classifiers
             params.Integer("n_layers_hidden", 1, 3),
             params.Integer("n_units_hidden", 10, 100),
+            # Training and global parameters
             params.Categorical("lr", [1e-4, 1e-5]),
             params.Categorical("weight_decay", [1e-3, 1e-4]),
             params.Categorical("dropout", [0, 0.1, 0.2]),
@@ -545,7 +578,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self, X: dict, *args: Any, **kwargs: Any
     ) -> "IntermediateFusionConvNetPlugin":
 
-        X_tab = torch.from_numpy(np.asarray(X["tab"]))
+        X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY]))
         y = args[0]
         cat = len(np.unique(y))
         y = torch.from_numpy(np.asarray(y))
