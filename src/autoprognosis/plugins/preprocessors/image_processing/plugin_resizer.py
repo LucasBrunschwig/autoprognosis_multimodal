@@ -53,7 +53,7 @@ class ImageResizerPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [params.Categorical("size", [32, 124, 256])]
+        return [params.Categorical("size", [124, 256, 356])]
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "ImageResizerPlugin":
 
