@@ -499,9 +499,9 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_tab_layer: int = 2,
         nonlin="relu",
         n_img_layer: int = 3,
-        conv_name: str = "mobilenet_v3_large",
+        conv_name: str = "alexnet",
         n_neurons: int = 64,
-        ratio: float = 0.96,
+        img_out: int = 256,
         n_layers_hidden: int = 3,
         n_units_hidden: int = 100,
         lr: float = 1e-4,
@@ -525,7 +525,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.n_tab_layer = n_tab_layer
         self.n_img_layer = n_img_layer
         self.n_neurons = n_neurons
-        self.ratio = ratio
+        self.img_out = img_out
         self.non_linear = nonlin
         self.n_layers_hidden = n_layers_hidden
         self.n_units_hidden = n_units_hidden
@@ -559,16 +559,16 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             # Network for Tabular and Image network
-            params.Categorical("ratio", [0.6, 0.8, 0.9, 0.95]),
-            params.Categorical("tab_reduction_ratio", [0.7, 0.8, 0.9]),
+            params.Categorical("img_out", [128, 256, 512]),
+            params.Categorical("tab_reduction_ratio", [0.8, 0.9, 1.0]),
             params.Integer("n_tab_layer", 0, 2),
             params.Integer("n_img_layer", 1, 3),
             params.Categorical("conv_name", CNN),
             # Final Classifiers
             params.Integer("n_layers_hidden", 1, 3),
-            params.Integer("n_units_hidden", 10, 100),
+            params.Integer("n_units_hidden", 50, 100),
             # Training and global parameters
-            params.Categorical("lr", [1e-4, 1e-5]),
+            params.Categorical("lr", [1e-3, 1e-4]),
             params.Categorical("weight_decay", [1e-3, 1e-4]),
             params.Categorical("dropout", [0, 0.1, 0.2]),
             params.Categorical("clipping_value", [0, 1]),
@@ -584,14 +584,15 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         y = torch.from_numpy(np.asarray(y))
 
         n_tab_out = int(self.tab_reduction_ratio * X_tab.shape[1])
-        n_img_out = int(n_tab_out / (1 - self.ratio) - n_tab_out)
+        if self.n_tab_layer == 0:
+            n_tab_out = X_tab.shape[1]
 
         self.model = ConvIntermediateNet(
             categories_cnt=cat,
             n_tab_in=X_tab.shape[1],
             conv_name=self.conv_name,
             n_tab_out=n_tab_out,
-            n_img_out=n_img_out,
+            n_img_out=self.img_out,
             n_tab_layer=self.n_tab_layer,
             n_img_layer=self.n_img_layer,
             n_inter_hidden=self.n_neurons,
