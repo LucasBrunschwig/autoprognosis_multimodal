@@ -509,7 +509,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         dropout: float = 0.1,
         clipping_value: int = 0,
         random_state: int = 0,
-        tab_reduction_ratio=1.0,
+        tab_reduction_ratio=0.9,
         n_iter_print: int = 1,
         patience: int = 20,
         n_iter_min: int = 10,
