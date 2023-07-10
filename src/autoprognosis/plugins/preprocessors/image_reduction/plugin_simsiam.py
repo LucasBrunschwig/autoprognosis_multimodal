@@ -358,7 +358,12 @@ class SimSiamPlugin(base.PreprocessorPlugin):
         X = torch.stack(X.squeeze().tolist())
         with torch.no_grad():
             results = np.empty(
-                (0, self.predict(torch.unsqueeze(X[0], 0).to(DEVICE)).shape[1])
+                (
+                    0,
+                    self.model.predict(
+                        torch.stack((X[0], X[0])).squeeze().to(DEVICE)
+                    ).shape[1],
+                )
             )
             test_dataset = TensorDataset(X)
             test_loader = DataLoader(
@@ -368,7 +373,7 @@ class SimSiamPlugin(base.PreprocessorPlugin):
                 results = np.vstack(
                     (
                         results,
-                        self.predict(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        self.model.predict(X_test[0].to(DEVICE)).detach().cpu().numpy(),
                     )
                 )
             return pd.DataFrame(results)
