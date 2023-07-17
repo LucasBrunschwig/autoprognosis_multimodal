@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, WEIGHTS
+from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -507,7 +507,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
         dropout: float = 0.1,
-        clipping_value: int = 0,
+        clipping_value: int = 1,
         random_state: int = 0,
         tab_reduction_ratio=0.9,
         n_iter_print: int = 1,
@@ -557,21 +557,26 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     @classmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
+        if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
+            CNN = kwargs["predefined_cnn"]
+        else:
+            CNN = PREDEFINED_CNN
+
         return [
             # Network for Tabular and Image network
-            params.Categorical("img_out", [128, 256, 512]),
-            params.Categorical("tab_reduction_ratio", [0.8, 0.9, 1.0]),
-            params.Integer("n_tab_layer", 0, 2),
+            params.Categorical("img_out", [128, 256, 320, 512]),
+            params.Categorical("tab_reduction_ratio", [0.8, 1.0, 1.5, 2.0, 4.0]),
+            params.Integer("n_tab_layer", 0, 3),
             params.Integer("n_img_layer", 1, 3),
             params.Categorical("conv_name", CNN),
             # Final Classifiers
-            params.Integer("n_layers_hidden", 1, 3),
+            params.Integer("n_layers_hidden", 1, 4),
             params.Integer("n_units_hidden", 50, 100),
             # Training and global parameters
-            params.Categorical("lr", [1e-3, 1e-4]),
-            params.Categorical("weight_decay", [1e-3, 1e-4]),
-            params.Categorical("dropout", [0, 0.1, 0.2]),
-            params.Categorical("clipping_value", [0, 1]),
+            params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
+            params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
+            params.Categorical("dropout", [0, 0.1, 0.2, 0.3]),
+            # params.Categorical("clipping_value", [0, 1]),
         ]
 
     def _fit(

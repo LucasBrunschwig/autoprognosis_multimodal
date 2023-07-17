@@ -20,6 +20,7 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
     default_multimodal_names,
 )
+from autoprognosis.explorers.core.selector import predefined_args
 from autoprognosis.explorers.multimodal_classifiers_combos import (
     MultimodalEnsembleSeeker,
 )
@@ -200,6 +201,7 @@ class MultimodalStudy(Study):
         target: str,
         multimodal_type: str,
         preprocess_images: bool = True,
+        predefined_cnn: list = [],
         num_iter: int = 20,
         num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
@@ -275,6 +277,9 @@ class MultimodalStudy(Study):
                 log.warning(
                     "Image dimensionality reduction plugin is not used in late fusion"
                 )
+
+        if predefined_cnn:
+            predefined_args["predefined_cnn"] = predefined_cnn
 
         if not classifiers:
             if multimodal_type == "early_fusion":

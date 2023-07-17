@@ -15,6 +15,7 @@ from autoprognosis.plugins.preprocessors import Preprocessors
 
 predefined_args = {
     "features_count": 10,
+    "predefined_cnn": [],
 }
 
 
