@@ -81,8 +81,6 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self.apply != "nop":
-
-            print("test")
             return pd.DataFrame(
                 X.squeeze(axis=1).apply(lambda d: self.model(transforms.ToTensor()(d)))
             )
