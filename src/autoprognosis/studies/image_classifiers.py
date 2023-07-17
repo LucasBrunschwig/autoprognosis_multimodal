@@ -188,6 +188,9 @@ class ImageClassifierStudy(Study):
 
         self.output_file = self.output_folder / "model.p"
 
+        # TMP: LUCAS
+        self.output_train_file = self.output_folder / "model_trained.p"
+
         self.num_study_iter = num_study_iter
 
         self.metric = metric
@@ -348,5 +351,7 @@ class ImageClassifierStudy(Study):
         self.Y = pd.Series(self.Y).reset_index(drop=True)
 
         model.fit(self.X, self.Y)
+
+        save_model_to_file(self.output_train_file, model)
 
         return model
