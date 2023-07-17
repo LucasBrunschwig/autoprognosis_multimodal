@@ -25,7 +25,7 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
 
     Example:
         >>> from autoprognosis.plugins.preprocessors import Preprocessors
-        >>> plugin = Preprocessors().get("image_normalizer")
+        >>> plugin = Preprocessors().get("normalizer")
         >>> from sklearn.datasets import load_iris
         >>> X, y = load_iris(return_X_y=True)
         >>> plugin.fit_transform(X, y)
@@ -81,9 +81,12 @@ class ImageNormalizerPlugin(base.PreprocessorPlugin):
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self.apply != "nop":
+
+            print("test")
             return pd.DataFrame(
-                X.squeeze().apply(lambda d: self.model(transforms.ToTensor()(d)))
+                X.squeeze(axis=1).apply(lambda d: self.model(transforms.ToTensor()(d)))
             )
+
         else:
             return pd.DataFrame(X.squeeze().apply(lambda d: transforms.ToTensor()(d)))
 
