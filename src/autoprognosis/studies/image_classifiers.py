@@ -14,6 +14,7 @@ from autoprognosis.explorers.core.defaults import (
     default_image_classsifiers_names,
     default_image_processing,
 )
+from autoprognosis.explorers.core.selector import predefined_args
 from autoprognosis.explorers.image_classifiers_combos import ImageEnsembleSeeker
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
@@ -123,6 +124,7 @@ class ImageClassifierStudy(Study):
         metric: str = "aucroc",
         study_name: Optional[str] = None,
         image_processing: List[str] = default_image_processing,
+        predefined_cnn: list = [],
         classifiers: List[str] = default_image_classsifiers_names,
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
@@ -146,6 +148,11 @@ class ImageClassifierStudy(Study):
 
         if dataset.isnull().values.any():
             raise RuntimeError("Image classifiers does not handle missing features")
+
+        if predefined_cnn:
+            if not isinstance(predefined_cnn, list):
+                predefined_cnn = [predefined_cnn]
+            predefined_args["predefined_cnn"] = predefined_cnn
 
         drop_cols = [target]
         self.group_ids = None

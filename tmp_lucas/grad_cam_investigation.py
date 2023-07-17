@@ -54,12 +54,13 @@ if __name__ == "__main__":
             dataset=df,  # pandas DataFrame
             target="label",  # the label column in the dataset
             sample_for_search=False,  # no Sampling
+            predefined_cnn=["alexnet"],
             n_folds_cv=5,
             num_iter=1,
             timeout=36000,
             num_study_iter=1,
             classifiers=["cnn"],
-            workspace=r"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\autoprognosis_multimodal\tmp_lucas",
+            workspace="/home/enwoute/Desktop/results/",
         )
 
         model = study.fit()
@@ -68,7 +69,7 @@ if __name__ == "__main__":
 
     if explain:
         best_model = load_model_from_file(
-            r"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\autoprognosis_multimodal\tmp_lucas\test_gradcam_alexnet\model_trained.p"
+            "/home/enwoute/Desktop/results/test_gradcam_alexnet/trained_model.p"
         )
 
         explainers = Explainers().get(

@@ -7,7 +7,11 @@ import pandas as pd
 
 # autoprognosis absolute
 # autoprognosis absolut
-from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, LARGE_CNN
+from autoprognosis.explorers.core.defaults import (
+    CNN as PREDEFINED_CNN,
+    CNN_MODEL,
+    LARGE_CNN,
+)
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -329,6 +333,11 @@ class CNNPlugin(base.ClassifierPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
+        if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
+            CNN = kwargs["predefined_cnn"]
+        else:
+            CNN = PREDEFINED_CNN
+
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
