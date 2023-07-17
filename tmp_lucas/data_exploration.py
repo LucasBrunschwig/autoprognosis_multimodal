@@ -389,6 +389,70 @@ def correlation_simsiam(df):
     plt.savefig(SAVE_RESULTS + r"\cnn_scratch_feature_extraction_correlations.png")
 
 
+def correlation_contrastive_learning(df):
+    cnn_simsiam = Preprocessors(category="image_reduction").get("contrastive_learning")
+    labels = df.label.value_counts().index.tolist()
+
+    resizer = Preprocessors(category="image_processing").get("resizer")
+    df["image"] = resizer.fit_transform(df[["image"]]).squeeze().values
+    normalizer = Preprocessors(category="image_processing").get("normalizer")
+    df["image"] = normalizer.fit_transform(df[["image"]]).squeeze().values
+
+    df_list = []
+    label_list = []
+    for label in labels:
+        df_label = df[df.label == label].sample(n=min(len(df[df.label == label]), 50))
+        label_list.append(df_label.label)
+        df_label.drop(["label"], axis=1, inplace=True)
+        df_list.append(df_label[["image"]])
+
+    df_label = df["label"]
+    df_label = pd.DataFrame(LabelEncoder().fit_transform(df_label))
+    cnn_simsiam.fit(df[["image"]], df_label)
+
+    label_extraction_features = []
+
+    for df, label in zip(df_list, label_list):
+        result = cnn_simsiam.transform(df)
+        label_extraction_features.append([result])
+
+    label_extraction_features = np.asarray(label_extraction_features).squeeze()
+
+    num_groups = label_extraction_features.shape[0]
+
+    inter_correlations = np.zeros((num_groups, num_groups))
+
+    for i in range(num_groups):
+        group1 = label_extraction_features[i]
+        intra_correlations = []
+
+        # intra correlation
+        for m in range(len(group1)):
+            for n in range(m + 1, len(group1)):
+                intra_correlations.append(np.corrcoef(group1[m], group1[n])[0, 1])
+        inter_correlations[i][i] = np.mean(intra_correlations)
+
+        # Intergroup correlation
+        for j in range(i + 1, num_groups):
+            group2 = label_extraction_features[j]
+
+            corr_sum = []
+            for feature1 in group1:
+                intra_correlations.append([])
+                for feature2 in group2:
+
+                    corr = np.corrcoef(feature1, feature2)[0, 1]
+                    corr_sum.append(corr)
+
+            average_corr = np.mean(corr_sum)
+            inter_correlations[i][j] = average_corr
+
+    correlation_df = pd.DataFrame(inter_correlations, index=labels, columns=labels)
+    plt.figure()
+    sns.heatmap(correlation_df, cmap="coolwarm", annot=True, cbar=False)
+    plt.savefig(SAVE_RESULTS + r"\cnn_scratch_feature_extraction_correlations.png")
+
+
 if __name__ == "__main__":
 
     if EXPLORATORY_ANALYSIS:
@@ -404,4 +468,5 @@ if __name__ == "__main__":
         # correlation_cnn_imagenet(df)
         # correlation_cnn_fine_tune(df)
         # correlation_cnn(df)
-        correlation_simsiam(df)
+        # correlation_simsiam(df)
+        correlation_contrastive_learning(df)
