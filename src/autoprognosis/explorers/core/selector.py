@@ -70,10 +70,6 @@ class PipelineSelector:
             Preprocessors(category="dimensionality_reduction").get_type(plugin)
             for plugin in feature_selection
         ]
-        self.image_processing = [
-            Preprocessors(category="image_processing").get_type(plugin)
-            for plugin in image_processing
-        ]
         self.image_dimensionality_reduction = [
             Preprocessors(category="image_reduction").get_type(plugin)
             for plugin in image_dimensionality_reduction
@@ -91,10 +87,16 @@ class PipelineSelector:
         if "intermediate" in classifier:
             self.fusion = []
 
+        if self.preprocess_image:
+            self.image_processing = [
+                Preprocessors(category="image_processing").get_type(plugin)
+                for plugin in image_processing
+            ]
+
         if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn"]:
             self.image_dimensionality_reduction = []
-            if classifier in ["intermediate_conv_net", "cnn_fine_tune"]:
-                self.preprocess_image = False
+            self.preprocess_image = False
+            self.image_processing = []
 
         self.classifier = Predictions(category=classifier_category).get_type(classifier)
 
@@ -161,7 +163,6 @@ class PipelineSelector:
                 hp.extend(plugin.hyperparameter_space_fqdn(**predefined_args))
 
         if len(self.image_processing) > 0:
-            # force to add all image processing steps as the only choice
             for fs in self.image_processing:
                 hp.append(
                     params.Categorical(
@@ -372,9 +373,7 @@ class PipelineSelector:
                 pipeline_args[plugin.name()][param.name.split(".")[-1]] = param_val
 
         if self.preprocess_image:
-            # grayscale = Preprocessors(category="image_processing").get_type("grayscale")
-            # model_list.append(grayscale.fqdn())
-            # add_stage_hp(grayscale)
+
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
@@ -451,25 +450,20 @@ class PipelineSelector:
         # Feature extraction through pretrained fine-tuning or imagenet pretrained network does not need preprocessing
         img_reduction_key = self._generate_dist_name("image_reduction_candidate")
         if self.preprocess_image and (
-            (
+            (  # Check if the dimensionality reduction plugin uses predefined weights
                 kwargs.get(img_reduction_key, None)
                 and not kwargs.get(img_reduction_key)
-                in ["cnn_fine_tune", "cnn_imagenet"]
+                in ["cnn_fine_tune", "cnn_imagenet", "cnn"]
             )
-            or (
-                len(self.image_dimensionality_reduction) > 0
-                and not kwargs.get(  # if the default dimensionality reduction
-                    img_reduction_key, None
-                )
+            or (  # Check if the default dimensionality reduction plugin uses predefined weights
+                not kwargs.get(img_reduction_key, None)
+                and len(self.image_dimensionality_reduction) > 0
                 and not (
                     self.image_dimensionality_reduction[0].fqdn().split(".")[-1]
-                    in ["cnn_fine_tune", "cnn_imagenet"]
+                    in ["cnn_fine_tune", "cnn_imagenet", "cnn"]
                 )
             )
         ):
-            # grayscale = Preprocessors(category="image_processing").get_type("grayscale")
-            # model_list.append(grayscale.fqdn())
-            # add_stage_hp(grayscale)
             resizer = Preprocessors(category="image_processing").get_type("resizer")
             model_list.append(resizer.fqdn())
             add_stage_hp(resizer)
