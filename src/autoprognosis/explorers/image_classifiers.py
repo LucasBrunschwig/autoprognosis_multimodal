@@ -27,7 +27,7 @@ dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
 
 class ImageClassifierSeeker:
     """
-    AutoML core logic for classification tasks.
+    AutoML core logic for classification tasks with biomedical images.
 
     Args:
         study_name: str.
@@ -40,6 +40,7 @@ class ImageClassifierSeeker:
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -218,6 +219,7 @@ class ImageClassifierSeeker:
         #    delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
         #    for estimator in self.estimators
         # )
+
         search_results = [
             self.search_best_args_for_estimator(estimator, X, Y, group_ids)
             for estimator in self.estimators

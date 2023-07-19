@@ -29,7 +29,7 @@ EPS = 1e-8
 
 class ImageEnsembleSeeker:
     """
-    AutoML core logic for classification ensemble search.
+    AutoML core logic for classification ensemble search for biomedical images.
 
     Args:
         study_name: str.
@@ -50,12 +50,24 @@ class ImageEnsembleSeeker:
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
                 - "mcc": The Matthews correlation coefficient is used in machine learning as a measure of the quality of binary and multiclass classifications. It takes into account true and false positives and negatives and is generally regarded as a balanced measure which can be used even if the classes are of very different sizes.
                 - "kappa":  computes Cohen’s kappa, a score that expresses the level of agreement between two annotators on a classification problem.
-        # TODO: add comments
+        preprocess_images: bool.
+            Specify if you require image preprocessing optimization
+        classifiers: list.
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+                - 'cnn'
+                - 'cnn_fine_tune
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal image preprocessing. If you don't require image
+            preprocessing you can specify preprocessing = False in the argument
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                1. 'resizer'
+                2. 'normalizer'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
         random_state: int:
@@ -72,6 +84,7 @@ class ImageEnsembleSeeker:
         n_folds_cv: int = 5,
         ensemble_size: int = 3,
         metric: str = "aucroc",
+        preprocess_images: bool = True,
         classifiers: List[str] = default_image_classsifiers_names,
         image_processing: List[str] = default_image_processing,
         hooks: Hooks = DefaultHooks(),
@@ -98,6 +111,7 @@ class ImageEnsembleSeeker:
             top_k=ensemble_size,
             timeout=timeout,
             image_processing=image_processing,
+            preprocess_images=preprocess_images,
             image_dimensionality_reduction=[],
             classifiers=classifiers,
             hooks=hooks,

@@ -43,6 +43,10 @@ class ImageClassifierStudy(Study):
             The dataset to analyze.
         target: str.
             The target column in the dataset.
+        preprocess_images: bool.
+            Specify if you require image preprocessing optimization
+        predefined_cnn: list[str].
+            Optional: specify which predefined architectures the pipeline will optimize.
         num_iter: int.
             Maximum Number of optimization trials. This is the limit of trials for each base estimator in the "classifiers" list, used in combination with the "timeout" parameter. For each estimator, the search will end after "num_iter" trials or "timeout" seconds.
         num_study_iter: int.
@@ -55,6 +59,7 @@ class ImageClassifierStudy(Study):
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -62,14 +67,16 @@ class ImageClassifierStudy(Study):
                 - "kappa", "kappa_quadratic":  computes Cohen’s kappa, a score that expresses the level of agreement between two annotators on a classification problem.
         study_name: str.
             The name of the study, to be used in the caches.
-        preprocessors pipeline:
-            Plugin pipeline to use in the pipeline for image preprocessings
-                - 'resizer'
-                - 'normalizer'
+        image_processing: list.
+            Plugin search pipeline to use in the pipeline for optimal image preprocessing. If you don't require image
+            preprocessing you can specify preprocessing = False in the argument
+            Available retrieved using `Preprocessors(category="image_processing").list_available()`
+                1. 'resizer'
+                2. 'normalizer'
         classifiers: list.
-            Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
-            Available plugins, retrieved using `Classifiers().list_available()`:
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
                 - 'cnn'
+                - 'cnn_fine_tune
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
         workspace: Path.
@@ -117,14 +124,15 @@ class ImageClassifierStudy(Study):
         self,
         dataset: pd.DataFrame,
         target: str,
+        preprocess_images: bool = True,
+        predefined_cnn: list = ["resnet34"],
         num_iter: int = 20,
         num_study_iter: int = 5,
         num_ensemble_iter: int = 15,
-        timeout: int = 360,
+        timeout: int = 3600,
         metric: str = "aucroc",
         study_name: Optional[str] = None,
         image_processing: List[str] = default_image_processing,
-        predefined_cnn: list = [],
         classifiers: List[str] = default_image_classsifiers_names,
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
@@ -148,6 +156,9 @@ class ImageClassifierStudy(Study):
 
         if dataset.isnull().values.any():
             raise RuntimeError("Image classifiers does not handle missing features")
+
+        if not preprocess_images:
+            image_processing = []
 
         if predefined_cnn:
             if not isinstance(predefined_cnn, list):
@@ -209,6 +220,7 @@ class ImageClassifierStudy(Study):
             self.internal_name,
             num_iter=num_iter,
             num_ensemble_iter=num_ensemble_iter,
+            preprocess_images=preprocess_images,
             timeout=timeout,
             metric=metric,
             image_processing=image_processing,
@@ -359,6 +371,7 @@ class ImageClassifierStudy(Study):
 
         model.fit(self.X, self.Y)
 
+        # TMP LUCAS
         save_model_to_file(self.output_train_file, model)
 
         return model
