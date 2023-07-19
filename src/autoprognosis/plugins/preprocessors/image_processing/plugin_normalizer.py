@@ -15,13 +15,13 @@ import autoprognosis.utils.serialization as serialization
 
 
 class ImageNormalizerPlugin(base.PreprocessorPlugin):
-    """Preprocessing plugin for sample normalization based on L2 normalization.
+    """Preprocessing plugin for sample normalization based for images based on mean and standard deviation
 
     Method:
-        Normalization is the process of scaling individual samples to have unit norm.
+        Normalization is the process of scaling individual images
 
     Reference:
-        https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.Normalizer.html
+        https://pytorch.org/vision/main/generated/torchvision.transforms.Normalize.html
 
     Example:
         >>> from autoprognosis.plugins.preprocessors import Preprocessors

@@ -13,13 +13,14 @@ import autoprognosis.utils.serialization as serialization
 
 
 class ImageResizerPlugin(base.PreprocessorPlugin):
-    """Preprocessing plugin for sample normalization based on L2 normalization.
+    """Preprocessing plugin for image resizing.
 
     Method:
-        Normalization is the process of scaling individual samples to have unit norm.
+        Resizing is the process of transforming all images to a standard size for training
+        by default it uses bilinear interpolation
 
     Reference:
-        https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.Normalizer.html
+        https://pytorch.org/vision/main/generated/torchvision.transforms.Resize.html
 
     Example:
         >>> from autoprognosis.plugins.preprocessors import Preprocessors
