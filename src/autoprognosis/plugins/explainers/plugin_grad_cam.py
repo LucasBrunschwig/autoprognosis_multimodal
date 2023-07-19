@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 import cv2
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.plugins.explainers.base import ExplainerPlugin
@@ -29,9 +30,8 @@ class GradCAM:
         estimator: Any,
         target_layer: str,
     ):
-
         # if estimator.is_fitted:
-        self.model = estimator.stages[-1].model.model
+        self.model = estimator.stages[-1].model.model.cpu()
         self.target_layer = target_layer
 
         self.gradient = None
@@ -47,6 +47,7 @@ class GradCAM:
             self.gradient = grad_output[0]
 
         def forward_hook(module, input, output_):
+            print("It passes through here")
             self.activations = output_
 
         target_layer = self.target_layer
@@ -62,7 +63,7 @@ class GradCAM:
 
     def generate_cam(self, input_image, target_class):
         self.model.zero_grad()
-        output = self.model(input_image)
+        output = self.model(input_image.unsqueeze(0))
         target = output[:, target_class]
 
         target.backward()
@@ -76,7 +77,7 @@ class GradCAM:
         cam = nn.functional.relu(cam)
 
         cam = cam.detach().cpu().numpy()
-        cam = cv2.resize(cam, (input_image.shape[3], input_image.shape[2]))
+        cam = cv2.resize(cam, (input_image.shape[1], input_image.shape[2]))
         cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))
 
         return cam
@@ -84,7 +85,7 @@ class GradCAM:
 
 class GradCAMPlugin(ExplainerPlugin):
     """
-    Interpretability plugin based on LIME.
+    Interpretability plugin based on grad-CAM
 
     Args:
         estimator: model. The model to explain.
@@ -129,11 +130,9 @@ class GradCAMPlugin(ExplainerPlugin):
         images: Optional[List] = None,
         task_type: str = "classification",
         prefit: bool = False,
-        n_epoch: int = 10000,
         # Risk estimation
         time_to_event: Optional[pd.DataFrame] = None,  # for survival analysis
         eval_times: Optional[List] = None,  # for survival analysis
-        random_state: int = 0,
         **kwargs: Any,
     ) -> None:
         if task_type not in ["classification", "risk_estimation"]:
@@ -160,10 +159,26 @@ class GradCAMPlugin(ExplainerPlugin):
             raise ValueError("Not Implemented")
 
     def explain(self, X: pd.DataFrame, label: pd.DataFrame) -> pd.DataFrame:
+
+        label = pd.DataFrame(LabelEncoder().fit_transform(label))
+
+        results = []
+
         for (_, img_), (_, label_) in zip(X.iterrows(), label.iterrows()):
-            outputs = self.estimator.predict_proba(pd.DataFrame(img_))
-        return outputs
-        # cam = self.explainer.generate_cam()
+            local_X = img_.copy()
+            for stage in self.estimator.stages[:-1]:
+                local_X = pd.DataFrame(local_X)
+                local_X = stage.transform(local_X)
+            cam_normalized = self.explainer.generate_cam(
+                local_X.squeeze(), label_.squeeze()
+            )
+            img_array = local_X.squeeze().cpu().numpy()
+            alpha = 0.7
+            img_array[:, (cam_normalized < 0.8)] = 0
+            superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
+            results.append(superposed_image)
+
+        return pd.DataFrame(results)
 
     @staticmethod
     def name() -> str:
