@@ -29,6 +29,7 @@ from autoprognosis.plugins.ensemble.classifiers import (
     StackingEnsemble,
     WeightedEnsemble,
 )
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 # autoprognosis relative
@@ -41,7 +42,7 @@ EPS = 1e-8
 
 class MultimodalEnsembleSeeker:
     """
-    AutoML core logic for classification ensemble search.
+    AutoML core logic for classification ensemble search in multimodal settings.
 
     Args:
         study_name: str.
@@ -62,6 +63,7 @@ class MultimodalEnsembleSeeker:
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -369,12 +371,12 @@ class MultimodalEnsembleSeeker:
 
             # Optimal Image Models
             best_image_models = self.image_seeker.search(
-                X["img"], Y, group_ids=group_ids
+                X[IMAGE_KEY], Y, group_ids=group_ids
             )
 
             # Optimal Tabular Models
             best_tabular_models = self.tabular_seeker.search(
-                X["tab"], Y, group_ids=group_ids
+                X[TABULAR_KEY], Y, group_ids=group_ids
             )
 
             if not isinstance(best_image_models, list):
@@ -446,6 +448,7 @@ class MultimodalEnsembleSeeker:
 
             return ensembles[np.argmax(scores)]
 
+        # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
             scores = []
@@ -471,7 +474,7 @@ class MultimodalEnsembleSeeker:
 
             return best_models[np.argmax(scores)]
 
-            # Intermediate fusion: implemented with the early fusion plugin
+        # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 

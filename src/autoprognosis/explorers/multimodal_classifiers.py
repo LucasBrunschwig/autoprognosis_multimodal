@@ -161,7 +161,7 @@ class MultimodalClassifierSeeker:
         multimodal_key: dict = {},
         multimodal_type: str = "early_fusion",
     ) -> None:
-        for int_val in [num_iter, n_folds_cv, top_k]:
+        for int_val in [num_iter, n_folds_cv, top_k, timeout]:
             if int_val <= 0 or type(int_val) != int:
                 raise ValueError(
                     f"invalid input number {int_val}. Should be a positive integer"

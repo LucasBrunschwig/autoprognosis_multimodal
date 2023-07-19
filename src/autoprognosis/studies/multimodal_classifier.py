@@ -52,6 +52,12 @@ class MultimodalStudy(Study):
             The image column in the dataset
         target: str.
             The target column in the dataset.
+        multimodal_type: str.
+            Which type of fusion [early, intermediate, late]
+        preprocess_images: bool.
+            Specify if you require image preprocessing optimization
+        predefined_cnn: list[str].
+            Optional: specify which predefined architectures the pipeline will optimize.
         num_iter: int.
             Maximum Number of optimization trials. This is the limit of trials for each base estimator in the "classifiers" list, used in combination with the "timeout" parameter. For each estimator, the search will end after "num_iter" trials or "timeout" seconds.
         num_study_iter: int.
@@ -64,6 +70,7 @@ class MultimodalStudy(Study):
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
+                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -91,17 +98,18 @@ class MultimodalStudy(Study):
                 - 'pca'
                 - 'nop' # no operation
         image_processing: list.
-            Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
-            assumes that you preprocessed the images yourself.
+            Plugin search pipeline to use in the pipeline for optimal image preprocessing. If you don't require image
+            preprocessing you can specify preprocessing = False in the argument
             Available retrieved using `Preprocessors(category="image_processing").list_available()`
-                - 'normalizer'
-                - 'resizer'
+                1. 'resizer'
+                2. 'normalizer'
         image_processing: list.
             Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
-                - 'fast_ica_image'
-                - 'pca_image'
-                - 'predefined_cnn'
+                - 'cnn'
+                - 'cnn_fine_tune' # predefined architecture with fine tuning
+                - 'cnn_imagenet' # use the weight of imagenet
+                - 'simsiam' # simple siamese networks
         fusion: list.
             Plugin search pool to use in the pipeline for optimal early modality fusion.
             Available retrieved using `Preprocessors(category="fusion").list_available()`
@@ -135,6 +143,7 @@ class MultimodalStudy(Study):
         image_classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
                 - 'cnn'
+                - 'cnn_fine_tune'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -205,7 +214,7 @@ class MultimodalStudy(Study):
         num_iter: int = 20,
         num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
-        timeout: Optional[int] = 360,
+        timeout: Optional[int] = 3600,
         metric: str = "aucroc",
         study_name: Optional[str] = None,
         feature_scaling: List[str] = default_feature_scaling_names,
@@ -242,7 +251,7 @@ class MultimodalStudy(Study):
             "late_fusion",
         ]:
             raise ValueError(
-                "multimodal_type expect one of the three values "
+                "multimodal_type expect one of the three categories "
                 "(early_fusion, intermediate_fusion, late_fusion)"
             )
         self.multimodal_type = multimodal_type
@@ -267,7 +276,7 @@ class MultimodalStudy(Study):
             if fusion:
                 fusion = []
                 log.warning(
-                    "Fusion plugin are only included in early fusion - multimodal_type"
+                    "Fusion plugin search pool are only included with early fusion"
                 )
             if (
                 multimodal_type != "intermediate_fusion"
@@ -275,19 +284,20 @@ class MultimodalStudy(Study):
             ):
                 image_dimensionality_reduction = []
                 log.warning(
-                    "Image dimensionality reduction plugin is not used in late fusion"
+                    "Image dimensionality reduction plugins are not included with late fusion pipeline"
                 )
 
+        # Specify a subset of architecture
         if predefined_cnn:
+            if not isinstance(predefined_cnn, list):
+                predefined_cnn = [predefined_cnn]
             predefined_args["predefined_cnn"] = predefined_cnn
 
         if not classifiers:
-            if multimodal_type == "early_fusion":
+            if multimodal_type in ["early_fusion", "late_fusion"]:
                 classifiers = default_classifiers_names
             elif multimodal_type == "intermediate_fusion":
                 classifiers = default_multimodal_names
-            elif multimodal_type == "late_fusion":
-                classifiers = default_classifiers_names
         if multimodal_type == "late_fusion" and not image_classifiers:
             image_classifiers = default_image_classsifiers_names
 
@@ -374,9 +384,9 @@ class MultimodalStudy(Study):
             timeout=timeout,
             metric=metric,
             multimodal_type=multimodal_type,
+            preprocess_images=preprocess_images,
             feature_scaling=feature_scaling,
             feature_selection=feature_selection,
-            preprocess_images=preprocess_images,
             image_processing=image_processing,
             image_dimensionality_reduction=image_dimensionality_reduction,
             imputers=imputers,
@@ -535,7 +545,7 @@ class MultimodalStudy(Study):
             model.early_fusion_fit(self.multimodal_X, self.Y)
         elif self.multimodal_type == "intermediate_fusion":
             model.intermediate_fusion_fit(self.multimodal_X, self.Y)
-        else:
+        else:  # late fusion
             model.fit(self.multimodal_X, self.Y)
 
         return model
