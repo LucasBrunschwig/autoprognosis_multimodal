@@ -237,10 +237,10 @@ def _generate_early_fusion_predict() -> Callable:
 
         local_X = {IMAGE_KEY: local_X_tab, TABULAR_KEY: local_X_img}
 
-        # Fusion
+        # Fusion plugin
         local_X = self.stages[-2].transform(local_X)
 
-        # Fit classifier
+        # Fit the model
         self.stages[-1].predict(local_X, *args, **kwargs)
 
         return self
@@ -265,7 +265,7 @@ def _generate_intermediate_fusion_predict() -> Callable:
 
         local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
-        # Fit  classifier
+        # Fit the model
         self.stages[-1].predict(local_X, *args, **kwargs)
 
         return self
@@ -296,7 +296,7 @@ def _generate_early_fusion_predict_proba() -> Callable:
 
         local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
-        # Fusion
+        # Fusion plugin
         local_X = self.stages[-2].transform(local_X)
 
         # Predict Proba
