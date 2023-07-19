@@ -1,3 +1,4 @@
+# third party - pytorch predefined architecture
 # third party
 from torchvision.models import (
     alexnet,
@@ -22,7 +23,7 @@ default_classifiers_names = [
 
 default_image_classsifiers_names = ["cnn", "cnn_fine_tune"]
 
-default_multimodal_names = ["intermediate_conv_net", "intermediate_neural_net"]
+default_multimodal_names = ["intermediate_conv_net"]
 
 default_regressors_names = [
     "random_forest_regressor",
@@ -37,7 +38,7 @@ default_image_dimensionality_reduction = [
     "cnn",
     "cnn_fine_tune",
     "cnn_imagenet",
-    "pca_image",
+    "simsiam" "pca_image",
 ]
 default_fusion = ["concatenate"]
 
@@ -69,9 +70,6 @@ CNN = [
     "densenet121",
 ]
 
-LARGE_CNN = []
-
-
 CNN_MODEL = {
     "alexnet": alexnet,
     "resnet34": resnet34,
@@ -92,6 +90,5 @@ WEIGHTS = {
     "vgg16_bn": "VGG16_BN_Weights.DEFAULT",
     "vgg19": "VGG19_Weights.DEFAULT",
 }
-
 
 percentile_val = 1.96
