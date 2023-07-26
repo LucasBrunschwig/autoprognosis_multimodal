@@ -120,9 +120,9 @@ class KernelSHAPPlugin(ExplainerPlugin):
                 model_fn, X_summary, feature_names=self.feature_names
             )
 
-    def plot(self, X: pd.DataFrame) -> None:  # type: ignore
+    def plot(self, X: pd.DataFrame, class_names=None) -> None:  # type: ignore
         shap_values = self.explainer.shap_values(X)
-        shap.summary_plot(shap_values, X)
+        shap.summary_plot(shap_values, X, class_names=class_names)
 
     def explain(self, X: pd.DataFrame) -> np.ndarray:
         X = pd.DataFrame(X, columns=self.feature_names)
