@@ -6,12 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-# autoprognosis absolut
-from autoprognosis.explorers.core.defaults import (
-    CNN as PREDEFINED_CNN,
-    CNN_MODEL,
-    LARGE_CNN,
-)
+from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, CNN_MODEL
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
@@ -25,16 +20,57 @@ for retry in range(2):
         # third party
         import torch
         from torch import nn
-        from torch.utils.data import DataLoader, TensorDataset
+        from torch.utils.data import DataLoader, Dataset
 
         break
     except ImportError:
         depends = ["torch"]
         install(depends)
 
+for retry in range(2):
+    try:
+        # third party
+        from torchvision import transforms
+
+        break
+    except ImportError:
+        depends = ["torchvision"]
+        install(depends)
+
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
+
+
+class CustomDataset(Dataset):
+    def __init__(self, images, labels=None, transform=None):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.images = images
+        self.labels = labels
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, index):
+        image = self.images[index]
+        if self.transform is not None:
+            image = self.transform(image)
+
+        # When predicting there is no labels
+        if self.labels is None:
+            return image
+        label = self.labels[index]
+
+        return image, label
 
 
 def initialize_weights(module):
@@ -69,7 +105,7 @@ class ConvNetPredefined(nn.Module):
         define if the weights optimization operates only on the new layer or the whole models
 
     TODO:
-    - allow user to use their own weight for a given model.
+    - allow user to use predefined weight for a given model.
 
     """
 
@@ -85,6 +121,7 @@ class ConvNetPredefined(nn.Module):
         n_iter_print: int,
         n_iter_min: int,
         patience: int,
+        transformation: transforms.Compose = None,
     ):
 
         super(ConvNetPredefined, self).__init__()
@@ -98,6 +135,7 @@ class ConvNetPredefined(nn.Module):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.patience = patience
+        self.transforms = transformation
 
         # Load predefined CNN without weights
         self.model = CNN_MODEL[self.model_name](weights=None)
@@ -133,9 +171,6 @@ class ConvNetPredefined(nn.Module):
             self.model.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-    def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(img_.tolist())
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
@@ -143,7 +178,7 @@ class ConvNetPredefined(nn.Module):
         X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TensorDataset(X, y)
+        dataset = CustomDataset(X, y, transform=self.transforms)
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -172,10 +207,8 @@ class ConvNetPredefined(nn.Module):
                 self.optimizer.zero_grad()
 
                 X_next, y_next = sample
-
-                if self.model_name in LARGE_CNN:
-                    X_next = X_next.to(DEVICE)
-                    y_next = y_next.to(DEVICE)
+                X_next = X_next.to(DEVICE)
+                y_next = y_next.to(DEVICE)
 
                 preds = self.forward(X_next).squeeze()
 
@@ -197,10 +230,8 @@ class ConvNetPredefined(nn.Module):
                     for batch_val_ndx, sample in enumerate(val_loader):
 
                         X_val_next, y_val_next = sample
-
-                        if self.model_name in LARGE_CNN:
-                            X_val_next = X_val_next.to(DEVICE)
-                            y_val_next = y_val_next.to(DEVICE)
+                        X_val_next = X_val_next.to(DEVICE)
+                        y_val_next = y_val_next.to(DEVICE)
 
                         preds = self.forward(X_val_next).squeeze()
                         val_loss.append(loss(preds, y_val_next).detach())
@@ -226,15 +257,9 @@ class ConvNetPredefined(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            if self.model_name in LARGE_CNN:
-                return X
-            else:
-                return X.to(DEVICE)
+            return X.cpu()
         else:
-            if self.model_name in LARGE_CNN:
-                return torch.from_numpy(np.asarray(X))
-            else:
-                return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            return torch.from_numpy(np.asarray(X)).cpu()
 
     def remove_classification_layer(self):
         if hasattr(self.model, "fc"):
@@ -290,11 +315,15 @@ class CNNPlugin(base.ClassifierPlugin):
         self,
         conv_net: str = "alexnet",
         n_classes: Optional[int] = None,
+        transformation: transforms.Compose = None,
+        normalisation: bool = "channel-wise",
+        size: int = 256,
         lr: float = 1e-5,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 1,
+        data_augmentation: bool = True,
         patience: int = 10,
         n_iter_min: int = 10,
         early_stopping: bool = True,
@@ -314,10 +343,18 @@ class CNNPlugin(base.ClassifierPlugin):
         self.weight_decay = weight_decay
         self.n_iter = n_iter
         self.batch_size = batch_size
+        self.size = size
         self.n_iter_print = n_iter_print
         self.patience = patience
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
+        self.normalisation = normalisation
+        self.data_augmentation = data_augmentation
+        self.mean = None
+        self.std = None
+        self.transforms = []
+        self.transform_predict = []
+        self.transformation = transformation
 
         # Specific to CNN model
         self.conv_net = conv_net
@@ -341,7 +378,91 @@ class CNNPlugin(base.ClassifierPlugin):
         return [
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("data_augmentation", [True, False]),
+            params.Categorical("normalisation", ["channel-wise", "pixel-wise"]),
+            params.Categorical("size", [128, 256, 512]),
         ]
+
+    def normalisation_values(self, X: pd.DataFrame):
+
+        if self.normalisation == "channel-wise":
+            channels = [0, 0, 0]
+            n_pixels = 0
+            for img in X.squeeze():
+                tmp = transforms.ToTensor()(img)
+                n_pixels += tmp.size(0) * tmp.size(1) * tmp.size(2)
+                channels_sum = tmp.sum((1, 2))
+                for i in range(3):
+                    channels[i] += float(channels_sum[i])
+
+            # Compute means along each channel
+            self.mean = [
+                channels[0] / n_pixels,
+                channels[1] / n_pixels,
+                channels[2] / n_pixels,
+            ]
+
+            std = [0, 0, 0]
+            for img in X.squeeze():
+                tmp = transforms.ToTensor()(img)
+                channels_stds = (tmp - torch.Tensor(self.mean).view(3, 1, 1) ** 2).sum(
+                    (1, 2)
+                )
+                for i in range(3):
+                    std[i] += float(channels_stds[i])
+
+            # Compute stds along each channel
+            self.std = [
+                np.sqrt(std[0] / n_pixels),
+                np.sqrt(std[1] / n_pixels),
+                np.sqrt(std[2] / n_pixels),
+            ]
+
+        elif self.normalisation == "pixel-wise":
+            pixels = 0
+            for img in X.squeeze():
+                tmp = transforms.ToTensor()(img)
+                for i in range(3):
+                    for value in tmp[i, :, :].flatten().tolist():
+                        pixels += value
+
+            self.mean = np.mean(pixels)
+            self.std = np.std(pixels)
+
+    def image_transform(self):
+        if self.data_augmentation:
+            if self.transformation is None:
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomRotation(10),
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1
+                    ),
+                    transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0)),
+                ]
+            else:
+                self.transforms = self.transformation
+        self.transforms.extend(
+            [
+                transforms.Resize((self.size, self.size), antialias=True),
+                transforms.Normalize(self.mean, self.std),
+            ]
+        )
+        self.transforms_compose = transforms.Compose(self.transforms)
+
+        self.transform_predict = transforms.Compose(
+            [
+                transforms.Resize((self.size, self.size)),
+                transforms.ToTensor(),
+                transforms.Normalize(self.mean, self.std),
+            ]
+        )
+
+    @staticmethod
+    def to_tensor(img_: pd.DataFrame) -> torch.Tensor:
+        img_ = img_.squeeze(axis=1).apply(lambda d: transforms.ToTensor()(d))
+        return torch.stack(img_.tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNPlugin":
         if len(*args) == 0:
@@ -351,6 +472,9 @@ class CNNPlugin(base.ClassifierPlugin):
 
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+
+        self.normalisation_values(X)
+        self.image_transform()
 
         # Preprocess Data
         self.n_classes = np.unique(y).shape[0]
@@ -367,9 +491,10 @@ class CNNPlugin(base.ClassifierPlugin):
             patience=self.patience,
             batch_size=self.batch_size,
             weight_decay=self.weight_decay,
+            transformation=self.transforms_compose,
         )
 
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.to_tensor(X)
 
         self.model.train(X, y)
 
@@ -378,26 +503,27 @@ class CNNPlugin(base.ClassifierPlugin):
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.to_tensor(X)
+
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_loader = DataLoader(
-                    TensorDataset(X), batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE))
-                            .argmax(dim=-1)
-                            .detach()
-                            .cpu()
-                            .numpy(),
-                        )
+            results = np.empty((0, self.n_classes))
+            test_loader = DataLoader(
+                CustomDataset(X, transform=self.transform_predict),
+                batch_size=self.batch_size,
+                pin_memory=False,
+            )
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_test.to(DEVICE))
+                        .argmax(dim=-1)
+                        .detach()
+                        .cpu()
+                        .numpy(),
                     )
-            else:
-                results = self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+                )
+
             return pd.DataFrame(results)
 
     def _predict_proba(
@@ -405,23 +531,20 @@ class CNNPlugin(base.ClassifierPlugin):
     ) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.to_tensor(X)
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_dataset = TensorDataset(X)
-                test_loader = DataLoader(
-                    test_dataset, batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
-                        )
+            results = np.empty((0, self.n_classes))
+            test_dataset = CustomDataset(X, transform=self.transform_predict)
+            test_loader = DataLoader(
+                test_dataset, batch_size=self.batch_size, pin_memory=False
+            )
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
                     )
-            else:
-                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+                )
 
             return pd.DataFrame(results)
 
