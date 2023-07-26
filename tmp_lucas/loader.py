@@ -227,7 +227,10 @@ class DataLoader:
             elif drop_features:
                 incomplete_features = []
                 for column in df.columns:
-                    if sum(df[column].isna()):
+                    if sum(df[column].isna()) and column not in [
+                        "diameter_1",
+                        "diameter_2",
+                    ]:
                         incomplete_features.append(column)
                 df.drop(incomplete_features, axis=1, inplace=True)
 
