@@ -76,3 +76,5 @@ release
 *windows.py
 intermediary_results/
 venv/
+figure_output/
+results/
