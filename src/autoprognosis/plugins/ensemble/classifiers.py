@@ -211,6 +211,10 @@ class WeightedEnsemble(BaseEnsemble):
 
         return pd.DataFrame(pred_ens)
 
+    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        for exp in self.explainers:
+            self.explainers[exp].plot(X, class_names=class_names)
+
     def explain(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
         if self.explainers is None:
             raise ValueError("Interpretability is not enabled for this ensemble")
@@ -363,6 +367,10 @@ class WeightedEnsembleCV(BaseEnsemble):
             results[exp] = self.explainers[exp].explain(X)
         return results
 
+    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        for exp in self.explainers:
+            self.explainers[exp].plot(X, class_names=class_names)
+
     def name(self) -> str:
         return "Calibrated " + self.models[0].name()
 
@@ -468,6 +476,10 @@ class StackingEnsemble(BaseEnsemble):
         for exp in self.explainers:
             results[exp] = self.explainers[exp].explain(X)
         return results
+
+    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        for exp in self.explainers:
+            self.explainers[exp].plot(X, class_names=class_names)
 
     def name(self) -> str:
         ensemble_name = []
@@ -580,6 +592,10 @@ class AggregatingEnsemble(BaseEnsemble):
             results[exp] = self.explainers[exp].explain(X)
 
         return results
+
+    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        for exp in self.explainers:
+            self.explainers[exp].plot(X, class_names=class_names)
 
     def name(self) -> str:
         ensemble_name = []
