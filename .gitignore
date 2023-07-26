@@ -73,7 +73,6 @@ image_bin
 release
 
 # TMP LUCAS
-figures/
 *windows.py
 intermediary_results/
 venv/
