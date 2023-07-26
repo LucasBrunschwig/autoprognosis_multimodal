@@ -20,7 +20,7 @@ for retry in range(2):
         # third party
         import torch
         from torch import nn
-        from torch.utils.data import DataLoader, Dataset
+        from torch.utils.data import DataLoader, TensorDataset
 
         break
     except ImportError:
@@ -43,8 +43,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-8
 
 
-class CustomDataset(Dataset):
-    def __init__(self, images, labels=None, transform=None):
+class TrainingTensorDataset(TensorDataset):
+    def __init__(self, data_tensor, target_tensor, transform=None):
         """
         CustomDataset constructor.
 
@@ -53,24 +53,44 @@ class CustomDataset(Dataset):
         labels (torch.Tensor): Tensor containing the labels corresponding to the images.
         transform (callable, optional): Optional transformations to be applied to the images. Default is None.
         """
-        self.images = images
-        self.labels = labels
+        super(TrainingTensorDataset, self).__init__(data_tensor, target_tensor)
         self.transform = transform
 
     def __len__(self):
-        return len(self.labels)
+        return len(self.tensors[0])
 
     def __getitem__(self, index):
-        image = self.images[index]
-        if self.transform is not None:
+        image, label = super(TrainingTensorDataset, self).__getitem__(index)
+
+        if self.transform:
             image = self.transform(image)
 
-        # When predicting there is no labels
-        if self.labels is None:
-            return image
-        label = self.labels[index]
-
         return image, label
+
+
+class TestTensorDataset(TensorDataset):
+    def __init__(self, data_tensor, transform=None):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        super(TestTensorDataset, self).__init__(data_tensor)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.tensors[0])
+
+    def __getitem__(self, index):
+        image = super(TestTensorDataset, self).__getitem__(index)
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image
 
 
 def initialize_weights(module):
@@ -178,7 +198,7 @@ class ConvNetPredefined(nn.Module):
         X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = CustomDataset(X, y, transform=self.transforms)
+        dataset = TrainingTensorDataset(X, y, transform=self.transforms)
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -320,7 +340,7 @@ class CNNPlugin(base.ClassifierPlugin):
         size: int = 256,
         lr: float = 1e-5,
         weight_decay: float = 1e-4,
-        n_iter: int = 1000,
+        n_iter: int = 1,
         batch_size: int = 100,
         n_iter_print: int = 1,
         data_augmentation: bool = True,
@@ -383,51 +403,15 @@ class CNNPlugin(base.ClassifierPlugin):
             params.Categorical("size", [128, 256, 512]),
         ]
 
-    def normalisation_values(self, X: pd.DataFrame):
+    def normalisation_values(self, X: torch.Tensor):
 
         if self.normalisation == "channel-wise":
-            channels = [0, 0, 0]
-            n_pixels = 0
-            for img in X.squeeze():
-                tmp = transforms.ToTensor()(img)
-                n_pixels += tmp.size(0) * tmp.size(1) * tmp.size(2)
-                channels_sum = tmp.sum((1, 2))
-                for i in range(3):
-                    channels[i] += float(channels_sum[i])
-
-            # Compute means along each channel
-            self.mean = [
-                channels[0] / n_pixels,
-                channels[1] / n_pixels,
-                channels[2] / n_pixels,
-            ]
-
-            std = [0, 0, 0]
-            for img in X.squeeze():
-                tmp = transforms.ToTensor()(img)
-                channels_stds = (tmp - torch.Tensor(self.mean).view(3, 1, 1) ** 2).sum(
-                    (1, 2)
-                )
-                for i in range(3):
-                    std[i] += float(channels_stds[i])
-
-            # Compute stds along each channel
-            self.std = [
-                np.sqrt(std[0] / n_pixels),
-                np.sqrt(std[1] / n_pixels),
-                np.sqrt(std[2] / n_pixels),
-            ]
+            self.mean = torch.mean(X, dim=(0, 2, 3)).tolist()
+            self.std = torch.std(X, dim=(0, 2, 3)).tolist()
 
         elif self.normalisation == "pixel-wise":
-            pixels = 0
-            for img in X.squeeze():
-                tmp = transforms.ToTensor()(img)
-                for i in range(3):
-                    for value in tmp[i, :, :].flatten().tolist():
-                        pixels += value
-
-            self.mean = np.mean(pixels)
-            self.std = np.std(pixels)
+            self.mean = float(torch.mean(X))
+            self.std = float(torch.std(X))
 
     def image_transform(self):
         if self.data_augmentation:
@@ -437,7 +421,10 @@ class CNNPlugin(base.ClassifierPlugin):
                     transforms.RandomVerticalFlip(),
                     transforms.RandomRotation(10),
                     transforms.ColorJitter(
-                        brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1
+                        brightness=0.2,
+                        contrast=0.2,
+                        saturation=0.2,
+                        hue=0.1,
                     ),
                     transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0)),
                 ]
@@ -453,8 +440,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
         self.transform_predict = transforms.Compose(
             [
-                transforms.Resize((self.size, self.size)),
-                transforms.ToTensor(),
+                transforms.Resize((self.size, self.size), antialias=True),
                 transforms.Normalize(self.mean, self.std),
             ]
         )
@@ -472,6 +458,8 @@ class CNNPlugin(base.ClassifierPlugin):
 
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
+
+        X = self.to_tensor(X)
 
         self.normalisation_values(X)
         self.image_transform()
@@ -494,8 +482,6 @@ class CNNPlugin(base.ClassifierPlugin):
             transformation=self.transforms_compose,
         )
 
-        X = self.to_tensor(X)
-
         self.model.train(X, y)
 
         return self
@@ -506,9 +492,9 @@ class CNNPlugin(base.ClassifierPlugin):
         X = self.to_tensor(X)
 
         with torch.no_grad():
-            results = np.empty((0, self.n_classes))
+            results = np.empty((0, 1))
             test_loader = DataLoader(
-                CustomDataset(X, transform=self.transform_predict),
+                TestTensorDataset(X, transform=self.transform_predict),
                 batch_size=self.batch_size,
                 pin_memory=False,
             )
@@ -516,11 +502,14 @@ class CNNPlugin(base.ClassifierPlugin):
                 results = np.vstack(
                     (
                         results,
-                        self.model(X_test.to(DEVICE))
-                        .argmax(dim=-1)
-                        .detach()
-                        .cpu()
-                        .numpy(),
+                        np.expand_dims(
+                            self.model(X_test.to(DEVICE))
+                            .argmax(dim=-1)
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            axis=1,
+                        ),
                     )
                 )
 
@@ -534,7 +523,7 @@ class CNNPlugin(base.ClassifierPlugin):
         X = self.to_tensor(X)
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
-            test_dataset = CustomDataset(X, transform=self.transform_predict)
+            test_dataset = TestTensorDataset(X, transform=self.transform_predict)
             test_loader = DataLoader(
                 test_dataset, batch_size=self.batch_size, pin_memory=False
             )
