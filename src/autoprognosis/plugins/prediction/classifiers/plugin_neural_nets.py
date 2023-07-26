@@ -155,6 +155,9 @@ class BasicNet(nn.Module):
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         return self.model(X)
 
+    def eval(self):
+        self.model.eval()
+
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "BasicNet":
         X = self._check_tensor(X).float().to(DEVICE)
         y = self._check_tensor(y).squeeze().long().to(DEVICE)
@@ -359,6 +362,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
+            self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
             return self.model(X).argmax(dim=-1).detach().cpu().numpy()
 
@@ -366,6 +370,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         with torch.no_grad():
+            self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
             return self.model(X).detach().cpu().numpy()
 
