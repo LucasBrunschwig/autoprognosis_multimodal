@@ -30,8 +30,9 @@ class GradCAM:
         estimator: Any,
         target_layer: str,
     ):
-        # if estimator.is_fitted:
-        self.model = estimator.stages[-1].model.model.cpu()
+
+        self.plugin = estimator.stages[-1]
+        self.model = self.plugin.get_model()
         self.target_layer = target_layer
 
         self.gradient = None
@@ -47,7 +48,6 @@ class GradCAM:
             self.gradient = grad_output[0]
 
         def forward_hook(module, input, output_):
-            print("It passes through here")
             self.activations = output_
 
         target_layer = self.target_layer
@@ -63,9 +63,9 @@ class GradCAM:
 
     def generate_cam(self, input_image, target_class):
         self.model.zero_grad()
-        output = self.model(input_image.unsqueeze(0))
-        target = output[:, target_class]
 
+        output = self.plugin.predict_proba_tensor(input_image)
+        target = output[:, target_class]
         target.backward()
 
         # Compute the gradient for each activation maps k and target class c d(y^c)/dA^k
@@ -77,7 +77,9 @@ class GradCAM:
         cam = nn.functional.relu(cam)
 
         cam = cam.detach().cpu().numpy()
-        cam = cv2.resize(cam, (input_image.shape[1], input_image.shape[2]))
+        cam = cv2.resize(
+            cam, (input_image.squeeze()._size[0], input_image.squeeze()._size[1])
+        )
         cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))
 
         return cam
@@ -162,23 +164,34 @@ class GradCAMPlugin(ExplainerPlugin):
 
         label = pd.DataFrame(LabelEncoder().fit_transform(label))
 
-        results = []
+        results = {label_: [] for label_ in label.squeeze().unique()}
 
-        for (_, img_), (_, label_) in zip(X.iterrows(), label.iterrows()):
-            local_X = img_.copy()
+        # Get the top 2 highest score for each class
+        predictions = pd.DataFrame(self.estimator.predict_proba(X))
+        predictions["label"] = label.squeeze()
+        predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
+        predictions = predictions[["proba", "label"]]
+        indices = predictions.groupby("label")["proba"].nlargest(3)
+
+        for label_, ix in indices.index:
+            local_X = X.iloc[ix]
+
+            # Preprocess Data
+            local_X = pd.DataFrame(local_X)
             for stage in self.estimator.stages[:-1]:
-                local_X = pd.DataFrame(local_X)
                 local_X = stage.transform(local_X)
-            cam_normalized = self.explainer.generate_cam(
-                local_X.squeeze(), label_.squeeze()
-            )
-            img_array = local_X.squeeze().cpu().numpy()
-            alpha = 0.7
-            img_array[:, (cam_normalized < 0.8)] = 0
-            superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
-            results.append(superposed_image)
 
-        return pd.DataFrame(results)
+            # Generate CAM
+            cam_normalized = self.explainer.generate_cam(local_X, label_)
+            cam_normalized = cv2.applyColorMap(
+                np.uint8(255 * cam_normalized), cv2.COLORMAP_JET
+            )
+            img_array = np.array(local_X.squeeze())
+            alpha = 0.4
+            superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
+            results[label_].append([img_array / 255.0, superposed_image / 255.0])
+
+        return results
 
     @staticmethod
     def name() -> str:
