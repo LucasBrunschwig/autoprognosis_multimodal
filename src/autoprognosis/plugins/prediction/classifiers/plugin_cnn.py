@@ -7,7 +7,8 @@ import pandas as pd
 
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, CNN_MODEL
-import autoprognosis.logger as log
+
+# import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -240,7 +241,7 @@ class ConvNetPredefined(nn.Module):
         )
 
         loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, prefetch_factor=1, num_workers=1
+            train_dataset, batch_size=self.batch_size, prefetch_factor=3, num_workers=10
         )
         val_loader = DataLoader(
             test_dataset,
@@ -302,7 +303,7 @@ class ConvNetPredefined(nn.Module):
                             break
 
                     if i % self.n_iter_print == 0:
-                        log.trace(
+                        print(
                             f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}"
                         )
 
@@ -376,9 +377,9 @@ class CNNPlugin(base.ClassifierPlugin):
         n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 1,
-        data_augmentation: bool = True,
-        color_jittering: bool = True,
-        gaussian_noise: bool = True,
+        data_augmentation: bool = False,
+        color_jittering: bool = False,
+        gaussian_noise: bool = False,
         n_layers: int = 2,
         patience: int = 10,
         n_iter_min: int = 10,
@@ -538,7 +539,6 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         X = self.to_tensor(X)
-
         with torch.no_grad():
             results = np.empty((0, 1))
             test_loader = DataLoader(
