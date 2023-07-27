@@ -361,7 +361,7 @@ class MultimodalStudy(Study):
             )
         self.internal_name = dataframe_hash(dataset[dataset.columns.difference(image)])
         for img_key in image:
-            dataset.drop("hash_" + img_key, axis=1)
+            dataset.drop("hash_" + img_key, axis=1, inplace=True)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
