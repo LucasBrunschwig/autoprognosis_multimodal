@@ -191,13 +191,13 @@ class ImageClassifierStudy(Study):
             self.search_Y = self.Y.copy()
             self.search_group_ids = self.group_ids
 
-        dataset["hash_" + "image"] = np.array(
+        dataset["hash_image"] = np.array(
             [np.asarray(img).sum() for img in dataset["image"].to_numpy()]
         )
         self.internal_name = dataframe_hash(
             dataset[dataset.columns.difference(["image"])]
         )
-        dataset.drop("hash_" + "image", axis=1)
+        dataset.drop("hash_image", axis=1, inplace=True)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
