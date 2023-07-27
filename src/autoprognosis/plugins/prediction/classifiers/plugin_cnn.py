@@ -240,7 +240,7 @@ class ConvNetPredefined(nn.Module):
         )
 
         loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, prefetch_factor=2, num_workers=4
+            train_dataset, batch_size=self.batch_size, prefetch_factor=1, num_workers=1
         )
         val_loader = DataLoader(
             test_dataset,
