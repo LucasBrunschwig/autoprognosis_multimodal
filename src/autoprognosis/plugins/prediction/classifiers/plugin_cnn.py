@@ -85,7 +85,7 @@ class TestTensorDataset(TensorDataset):
         return len(self.tensors[0])
 
     def __getitem__(self, index):
-        image = super(TestTensorDataset, self).__getitem__(index)
+        image = super(TestTensorDataset, self).__getitem__(index)[0]
 
         if self.transform:
             image = self.transform(image)
@@ -133,6 +133,7 @@ class ConvNetPredefined(nn.Module):
         self,
         model_name: str,
         n_classes: Optional[int],
+        n_layers: int,
         batch_size: int,
         lr: float,
         n_iter: int,
@@ -171,19 +172,42 @@ class ConvNetPredefined(nn.Module):
         # Replace the output layer by the given number of classes
         if hasattr(self.model, "fc"):
             n_features_in = self.model.fc.in_features
-            classification_layer = nn.Linear(n_features_in, n_classes)
-            self.model.fc = classification_layer
+            classification_layer = []
+            for i in range(n_layers):
+                classification_layer.append(
+                    nn.Linear(n_features_in, n_features_in // 2)
+                )
+                classification_layer.append(nn.ReLU())
+                n_features_in = n_features_in // 2
+            classification_layer.append(nn.Linear(n_features_in, n_classes))
+
+            self.model.fc = nn.Sequential(*classification_layer)
 
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
                 n_features_in = self.model.classifier[-1].in_features
-                classification_layer = nn.Linear(n_features_in, n_classes)
-                self.model.classifier[-1] = classification_layer
+                classification_layer = []
+                for i in range(n_layers):
+                    classification_layer.append(
+                        nn.Linear(n_features_in, n_features_in // 2)
+                    )
+                    classification_layer.append(nn.ReLU())
+                    n_features_in = n_features_in // 2
+                classification_layer.append(nn.Linear(n_features_in, n_classes))
+                self.model.classifier[-1] = nn.Sequential(*classification_layer)
 
             else:
                 n_features_in = self.model.classifier.in_features
-                classification_layer = nn.Linear(n_features_in, n_classes)
-                self.model.classifier = classification_layer
+                classification_layer = []
+                for i in range(n_layers):
+                    classification_layer.append(
+                        nn.Linear(n_features_in, n_features_in // 2)
+                    )
+                    classification_layer.append(nn.ReLU())
+                    n_features_in = n_features_in // 2
+                classification_layer.append(nn.Linear(n_features_in, n_classes))
+
+                self.model.classifier[-1] = nn.Sequential(*classification_layer)
 
         self.model.to(DEVICE)
 
@@ -193,6 +217,12 @@ class ConvNetPredefined(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
+
+    def get_model(self):
+        return self.model
+
+    def set_zero_grad(self):
+        self.model.zero_grad()
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefined":
         X = self._check_tensor(X).float()
@@ -209,9 +239,12 @@ class ConvNetPredefined(nn.Module):
             dataset, [train_size, test_size]
         )
 
-        loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        loader = DataLoader(
+            train_dataset, batch_size=self.batch_size, prefetch_factor=2, num_workers=4
+        )
         val_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, pin_memory=False
+            test_dataset,
+            batch_size=self.batch_size,
         )
 
         # do training
@@ -340,10 +373,13 @@ class CNNPlugin(base.ClassifierPlugin):
         size: int = 256,
         lr: float = 1e-5,
         weight_decay: float = 1e-4,
-        n_iter: int = 1,
+        n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 1,
         data_augmentation: bool = True,
+        color_jittering: bool = True,
+        gaussian_noise: bool = True,
+        n_layers: int = 2,
         patience: int = 10,
         n_iter_min: int = 10,
         early_stopping: bool = True,
@@ -364,12 +400,15 @@ class CNNPlugin(base.ClassifierPlugin):
         self.n_iter = n_iter
         self.batch_size = batch_size
         self.size = size
+        self.n_layers = n_layers
         self.n_iter_print = n_iter_print
         self.patience = patience
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
         self.normalisation = normalisation
         self.data_augmentation = data_augmentation
+        self.color_jittering = color_jittering
+        self.gaussian_noise = gaussian_noise
         self.mean = None
         self.std = None
         self.transforms = []
@@ -399,7 +438,10 @@ class CNNPlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("data_augmentation", [True, False]),
+            params.Categorical("color_jittering", [True, False]),
+            params.Categorical("gaussian_noise", [True, False]),
             params.Categorical("normalisation", ["channel-wise", "pixel-wise"]),
+            params.Integer("n_layers", 1, 3),
             params.Categorical("size", [128, 256, 512]),
         ]
 
@@ -420,14 +462,20 @@ class CNNPlugin(base.ClassifierPlugin):
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
                     transforms.RandomRotation(10),
-                    transforms.ColorJitter(
-                        brightness=0.2,
-                        contrast=0.2,
-                        saturation=0.2,
-                        hue=0.1,
-                    ),
-                    transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0)),
                 ]
+                if self.color_jittering:
+                    self.transforms.append(
+                        transforms.ColorJitter(
+                            brightness=0.1,
+                            contrast=0.1,
+                            saturation=0.1,
+                            hue=0.05,
+                        )
+                    )
+                if self.gaussian_noise:
+                    self.transforms.append(
+                        transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0))
+                    )
             else:
                 self.transforms = self.transformation
         self.transforms.extend(
@@ -460,7 +508,6 @@ class CNNPlugin(base.ClassifierPlugin):
             X = pd.DataFrame(X)
 
         X = self.to_tensor(X)
-
         self.normalisation_values(X)
         self.image_transform()
 
@@ -471,6 +518,7 @@ class CNNPlugin(base.ClassifierPlugin):
         self.model = ConvNetPredefined(
             model_name=self.conv_net,
             n_classes=self.n_classes,
+            n_layers=self.n_layers,
             lr=self.lr,
             n_iter=self.n_iter,
             n_iter_min=self.n_iter_min,
@@ -509,11 +557,34 @@ class CNNPlugin(base.ClassifierPlugin):
                             .cpu()
                             .numpy(),
                             axis=1,
-                        ),
+                        ).astype(int),
                     )
                 )
 
             return pd.DataFrame(results)
+
+    def predict_proba_tensor(self, X: pd.DataFrame):
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+        X = self.to_tensor(X)
+        self.model.cpu()
+        results = torch.empty((0, self.n_classes))
+        test_dataset = TestTensorDataset(X, transform=self.transform_predict)
+        test_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, pin_memory=False
+        )
+        for batch_test_ndx, X_test in enumerate(test_loader):
+            X_test = X_test.cpu()
+            X_test.requires_grad = True
+            results = torch.cat(
+                (
+                    results,
+                    self.model(X_test),
+                ),
+                dim=0,
+            )
+
+        return results
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
@@ -536,6 +607,12 @@ class CNNPlugin(base.ClassifierPlugin):
                 )
 
             return pd.DataFrame(results)
+
+    def set_zero_grad(self):
+        self.model.zero_grad()
+
+    def get_model(self):
+        return self.model.get_model()
 
     def save(self) -> bytes:
         return save_model(self)
