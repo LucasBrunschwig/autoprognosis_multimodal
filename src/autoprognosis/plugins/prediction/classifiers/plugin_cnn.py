@@ -208,7 +208,7 @@ class ConvNetPredefined(nn.Module):
                     n_features_in = n_features_in // 2
                 classification_layer.append(nn.Linear(n_features_in, n_classes))
 
-                self.model.classifier[-1] = nn.Sequential(*classification_layer)
+                self.model.classifier = nn.Sequential(*classification_layer)
 
         self.model.to(DEVICE)
 
@@ -419,6 +419,8 @@ class CNNPlugin(base.ClassifierPlugin):
         # Specific to CNN model
         self.conv_net = conv_net
         self.n_classes = n_classes
+        if len(kwargs["predefined_cnn"]) > 0:
+            self.conv_net = kwargs["predefined_cnn"][0]
 
     @staticmethod
     def name() -> str:
