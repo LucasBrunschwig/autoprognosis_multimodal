@@ -40,7 +40,7 @@ for retry in range(2):
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+PREDEFINED_ARCHITECTURE = []
 EPS = 1e-8
 
 
@@ -419,8 +419,8 @@ class CNNPlugin(base.ClassifierPlugin):
         # Specific to CNN model
         self.conv_net = conv_net
         self.n_classes = n_classes
-        if len(kwargs["predefined_cnn"]) > 0:
-            self.conv_net = kwargs["predefined_cnn"][0]
+        if len(PREDEFINED_ARCHITECTURE) > 0:
+            self.conv_net = PREDEFINED_ARCHITECTURE[0]
 
     @staticmethod
     def name() -> str:
@@ -434,6 +434,7 @@ class CNNPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
             CNN = kwargs["predefined_cnn"]
+            PREDEFINED_ARCHITECTURE.extend(CNN)
         else:
             CNN = PREDEFINED_CNN
 
