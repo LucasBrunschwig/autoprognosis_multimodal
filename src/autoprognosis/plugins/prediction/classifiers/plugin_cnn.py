@@ -7,6 +7,7 @@ import pandas as pd
 
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, CNN_MODEL
+from autoprognosis.explorers.core.selector import predefined_args
 
 # import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
@@ -372,11 +373,11 @@ class CNNPlugin(base.ClassifierPlugin):
         transformation: transforms.Compose = None,
         normalisation: bool = "channel-wise",
         size: int = 256,
-        lr: float = 1e-5,
+        lr: float = 1e-3,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
         batch_size: int = 100,
-        n_iter_print: int = 1,
+        n_iter_print: int = 10,
         data_augmentation: bool = False,
         color_jittering: bool = False,
         gaussian_noise: bool = False,
@@ -419,8 +420,12 @@ class CNNPlugin(base.ClassifierPlugin):
         # Specific to CNN model
         self.conv_net = conv_net
         self.n_classes = n_classes
-        if len(PREDEFINED_ARCHITECTURE) > 0:
-            self.conv_net = PREDEFINED_ARCHITECTURE[0]
+
+        if (
+            predefined_args.get("predefined_cnn", None)
+            and len(predefined_args["predefined_cnn"]) > 0
+        ):
+            self.conv_net = predefined_args["predefined_cnn"][0]
 
     @staticmethod
     def name() -> str:
@@ -434,7 +439,6 @@ class CNNPlugin(base.ClassifierPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
             CNN = kwargs["predefined_cnn"]
-            PREDEFINED_ARCHITECTURE.extend(CNN)
         else:
             CNN = PREDEFINED_CNN
 
