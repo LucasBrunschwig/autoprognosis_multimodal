@@ -8,11 +8,7 @@ import pandas as pd
 
 # autoprognosis absolute
 import autoprognosis.plugins.utils.decorators as decorators
-from autoprognosis.utils.default_modalities import (
-    IMAGE_KEY,
-    MULTIMODAL_KEY,
-    TABULAR_KEY,
-)
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 import autoprognosis.utils.serialization as serialization
 
 
@@ -461,13 +457,9 @@ def _modality_type() -> Callable:
     return modality_type_implt
 
 
-def _get_image_model() -> Callable:
+def _get_classifier() -> Callable:
     def get_image_model(self: Any):
-        if (
-            self.stages[-1].modality_type() == IMAGE_KEY
-            or self.stages[-1].modality_type() == MULTIMODAL_KEY
-        ):
-            return self.stages[-1].get_image_model()
+        return self.stages[-1]
 
     return get_image_model
 
@@ -499,5 +491,5 @@ __all__ = [
     "_generate_intermediate_fusion_predict",
     "_generate_intermediate_fusion_predict_proba",
     "_modality_type",
-    "_get_image_model",
+    "_get_classifier",
 ]
