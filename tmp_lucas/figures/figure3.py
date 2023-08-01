@@ -15,13 +15,13 @@ from autoprognosis.plugins.explainers import Explainers
 from autoprognosis.studies.image_classifiers import ImageClassifierStudy
 from autoprognosis.utils.serialization import load_model_from_file, save_model_to_file
 
-from tmp_lucas.loader import DataLoader
+from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
-    train_model = False
+    train_model = True
     explain = True
-    fit_model = False
+    fit_model = True
 
     results_dir = "figure_output/"
     os.makedirs(results_dir, exist_ok=True)
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     study_name = f"image_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
 
     if train_model:
+        print("Training", study_name)
         study = ImageClassifierStudy(
             study_name=study_name,
             dataset=df,  # pandas DataFrame
@@ -56,10 +57,10 @@ if __name__ == "__main__":
             sample_for_search=False,  # no Sampling
             predefined_cnn=predefined_cnn,
             n_folds_cv=5,
-            num_iter=4,
+            num_iter=50,
             metric="aucroc",
             classifiers=[classifier],
-            timeout=int(6 * 3600),
+            timeout=int(10 * 3600),
             num_study_iter=1,
             workspace="../",
         )
