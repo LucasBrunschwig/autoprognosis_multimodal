@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
+from autoprognosis.utils.default_modalities import TABULAR_KEY
 from autoprognosis.utils.pip import install
 
 for retry in range(2):
@@ -41,6 +42,9 @@ class ExplainerPlugin(metaclass=ABCMeta):
     @abstractmethod
     def explain(self, X: pd.DataFrame) -> pd.DataFrame:
         ...
+
+    def modality_type(self):
+        return TABULAR_KEY
 
     def plot(
         self,
