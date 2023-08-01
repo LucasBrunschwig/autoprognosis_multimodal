@@ -17,11 +17,15 @@ from autoprognosis.plugins.explainers import Explainers
 from autoprognosis.plugins.imputers import Imputers
 from autoprognosis.plugins.pipeline import Pipeline, PipelineMeta
 from autoprognosis.plugins.prediction.classifiers import Classifiers
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.parallel import n_opt_jobs
 import autoprognosis.utils.serialization as serialization
 from autoprognosis.utils.tester import classifier_metrics
 
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
+
+# TODO: improve
+IMAGE_EXPLAINERS = ["grad_cam"]
 
 
 class BaseEnsemble(BaseEstimator, metaclass=ABCMeta):
@@ -140,18 +144,23 @@ class WeightedEnsemble(BaseEnsemble):
             return self
 
         self.explainers = {}
-        # TODO: make multimodal works with explainers
-        for exp in self.explainer_plugins:
-            log.debug("Fitting the explainer for the WeightedEnsemble")
-            exp_model = Explainers().get(
-                exp,
-                copy.deepcopy(self),
-                X,
-                Y,
-                n_epoch=self.explanations_nepoch,
-                prefit=True,
-            )
-            self.explainers[exp] = exp_model
+        # TODO: add for other type of classifier
+        for model in self.models:
+            modality_model = model.modality_type()
+            for exp in self.explainer_plugins:
+                if (modality_model == IMAGE_KEY and exp in IMAGE_EXPLAINERS) or (
+                    modality_model == TABULAR_KEY and exp not in IMAGE_EXPLAINERS
+                ):
+                    log.debug("Fitting the explainer for the WeightedEnsemble")
+                    exp_model = Explainers().get(
+                        exp,
+                        model,
+                        X[modality_model],
+                        Y,
+                        n_epoch=self.explanations_nepoch,
+                        prefit=True,
+                    )
+                    self.explainers[exp] = exp_model
 
         return self
 
@@ -214,6 +223,53 @@ class WeightedEnsemble(BaseEnsemble):
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
         for exp in self.explainers:
             self.explainers[exp].plot(X, class_names=class_names)
+
+    def explain_plot_multimodal(
+        self,
+        X: pd.DataFrame,
+        y: pd.DataFrame,
+        target_layer: str = None,
+        class_names: list = None,
+        *args: Any,
+    ):
+        if self.explainers is None:
+            raise ValueError("Interpretability is not enabled for this ensemble")
+
+        for exp in self.explainers:
+            try:
+                if self.explainers[exp].modality_type() == IMAGE_KEY:
+                    self.explainers[exp].plot(
+                        X[IMAGE_KEY],
+                        y,
+                        target_layer=target_layer,
+                        class_names=class_names,
+                    )
+                elif self.explainers[exp].modality_type() == TABULAR_KEY:
+                    self.explainers[exp].plot(X[TABULAR_KEY], class_names=class_names)
+
+            except BaseException as e:
+                log.error(f"explainer {exp} failed: {e} ")
+
+    def explain_multimodal(
+        self, X: pd.DataFrame, y: pd.DataFrame, target_layer: str = None
+    ):
+        if self.explainers is None:
+            raise ValueError("Interpretability is not enabled for this ensemble")
+
+        results = {TABULAR_KEY: {}, IMAGE_KEY: {}}
+        for exp in self.explainers:
+            try:
+                if self.explainers[exp].modality_type() == TABULAR_KEY:
+                    result = self.explainers[exp].explain(X[IMAGE_KEY], y, target_layer)
+                    results[IMAGE_KEY][exp] = result
+                elif self.explainers[exp].modality_type() == TABULAR_KEY:
+                    result = self.explainers[exp].explain(X[TABULAR_KEY])
+                    results[TABULAR_KEY][exp] = result
+
+            except BaseException as e:
+                log.error(f"explainer {exp} failed: {e} ")
+
+        return results
 
     def explain(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
         if self.explainers is None:
