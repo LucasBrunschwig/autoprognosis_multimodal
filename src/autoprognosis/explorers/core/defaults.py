@@ -38,7 +38,8 @@ default_image_dimensionality_reduction = [
     "cnn",
     "cnn_fine_tune",
     "cnn_imagenet",
-    "simsiam" "pca_image",
+    "simsiam",
+    "pca_image",
 ]
 default_fusion = ["concatenate"]
 
