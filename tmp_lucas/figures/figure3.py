@@ -43,8 +43,7 @@ if __name__ == "__main__":
     df = DL.load_dataset(raw=False, sample=False)
 
     df = df[["image", "label"]]
-
-    classifier = "cnn"
+    classifier = "cnn_fine_tune"
     predefined_cnn = ["alexnet"]
     study_name = f"image_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
 
@@ -57,7 +56,7 @@ if __name__ == "__main__":
             sample_for_search=False,  # no Sampling
             predefined_cnn=predefined_cnn,
             n_folds_cv=5,
-            num_iter=50,
+            num_iter=1,
             metric="aucroc",
             classifiers=[classifier],
             timeout=int(10 * 3600),
@@ -71,6 +70,8 @@ if __name__ == "__main__":
 
         df.reset_index(drop=True, inplace=True)
         df_label = df.label
+        if "hash_image" in df.columns:
+            df.drop("hash_image", axis=1, inplace=True)
         df_features = df.drop(["label"], axis=1)
 
         # Unique LabelEncoder
