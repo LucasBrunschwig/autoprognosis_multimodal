@@ -289,7 +289,7 @@ class ConvNetPredefinedFineTune(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
-    def get_image_model(self):
+    def get_model(self):
         return self.model
 
     def set_zero_grad(self):
@@ -684,7 +684,9 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         return self.model.get_model()
 
     def get_size(self):
-        return self.preprocess.keywords["crop_size"]
+        return models.get_weight(WEIGHTS[self.conv_net]).transforms.keywords[
+            "crop_size"
+        ]
 
     def save(self) -> bytes:
         return save_model(self)
