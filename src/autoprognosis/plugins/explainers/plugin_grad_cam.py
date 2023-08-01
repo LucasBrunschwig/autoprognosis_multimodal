@@ -1,5 +1,4 @@
 # stdlib
-import copy
 from typing import Any, List, Optional
 
 # third party
@@ -68,10 +67,10 @@ def get_last_conv_layer_before_classifier(model, input_size):
 class GradCAM:
     def __init__(
         self,
-        model: Any,
+        classifier: Any,
     ):
-
-        self.model = model.get_image_model()
+        self.classifier = classifier
+        self.model = classifier.get_image_model()
 
         self.gradient = None
         self.activations = None
@@ -104,7 +103,7 @@ class GradCAM:
         self.register_hooks()
         self.model.zero_grad()
 
-        output = self.model.predict_proba_tensor(input_image)
+        output = self.classifier.predict_proba_tensor(input_image)
         target = output[:, target_class]
         target.backward()
 
@@ -187,8 +186,9 @@ class GradCAMPlugin(ExplainerPlugin):
         )
         super().__init__(self.feature_names)
 
-        self.estimator = copy.deepcopy(estimator)
-        self.model = estimator.get_image_model()
+        self.estimator = estimator
+        self.classifier = estimator.get_classifier()
+
         if task_type == "classification":
             if not prefit:
                 self.estimator.fit(X, y)
@@ -198,7 +198,7 @@ class GradCAMPlugin(ExplainerPlugin):
                 raise RuntimeError("invalid input for risk estimation interpretability")
 
         if task_type == "classification":
-            self.explainer = GradCAM(self.model)
+            self.explainer = GradCAM(self.classifier)
         else:
             raise ValueError("Not Implemented")
 
@@ -207,14 +207,12 @@ class GradCAMPlugin(ExplainerPlugin):
     ) -> dict:
 
         if target_layer is None:
-            # TODO: create a function in generator if modality type == image or multimodal ->
-            #  function get_model() self.estimator.stages[-1].get_image_model()
             # by default grad-cam will extract the last convolutional layer
-            input_size = self.model.get_size()
+            input_size = self.classifier.get_size()
             n_channel = 3
             input_size = (n_channel, input_size, input_size)
             target_layer = get_last_conv_layer_before_classifier(
-                self.estimator.stages[-1].get_model(), input_size
+                self.classifier.get_image_model(), input_size
             )
 
         label = pd.DataFrame(LabelEncoder().fit_transform(label))
