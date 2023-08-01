@@ -70,6 +70,8 @@ class PipelineSelector:
             Preprocessors(category="dimensionality_reduction").get_type(plugin)
             for plugin in feature_selection
         ]
+        self.image_processing = []
+
         self.image_dimensionality_reduction = [
             Preprocessors(category="image_reduction").get_type(plugin)
             for plugin in image_dimensionality_reduction
