@@ -6,8 +6,12 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-# autoprognosis absolut
-from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, WEIGHTS
+from autoprognosis.explorers.core.defaults import (
+    CNN as PREDEFINED_CNN,
+    CNN_MODEL,
+    WEIGHTS,
+)
+from autoprognosis.explorers.core.selector import predefined_args
 
 # import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
@@ -494,6 +498,12 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         # Create the Data Transformation
         self.image_transform()
 
+        if (
+            predefined_args.get("predefined_cnn", None)
+            and len(predefined_args["predefined_cnn"]) > 0
+        ):
+            self.conv_net = predefined_args["predefined_cnn"][0]
+
     @staticmethod
     def name() -> str:
         return "cnn_fine_tune"
@@ -504,6 +514,11 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
+        if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
+            CNN = kwargs["predefined_cnn"]
+        else:
+            CNN = PREDEFINED_CNN
+
         return [
             # CNN Architecture
             params.Categorical("conv_net", CNN),
