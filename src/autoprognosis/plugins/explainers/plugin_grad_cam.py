@@ -68,11 +68,10 @@ def get_last_conv_layer_before_classifier(model, input_size):
 class GradCAM:
     def __init__(
         self,
-        estimator: Any,
+        model: Any,
     ):
 
-        self.plugin = estimator.stages[-1]
-        self.model = self.plugin.get_model()
+        self.model = model.get_image_model()
 
         self.gradient = None
         self.activations = None
@@ -105,7 +104,7 @@ class GradCAM:
         self.register_hooks()
         self.model.zero_grad()
 
-        output = self.plugin.predict_proba_tensor(input_image)
+        output = self.model.predict_proba_tensor(input_image)
         target = output[:, target_class]
         target.backward()
 
@@ -189,6 +188,7 @@ class GradCAMPlugin(ExplainerPlugin):
         super().__init__(self.feature_names)
 
         self.estimator = copy.deepcopy(estimator)
+        self.model = estimator.get_image_model()
         if task_type == "classification":
             if not prefit:
                 self.estimator.fit(X, y)
@@ -198,7 +198,7 @@ class GradCAMPlugin(ExplainerPlugin):
                 raise RuntimeError("invalid input for risk estimation interpretability")
 
         if task_type == "classification":
-            self.explainer = GradCAM(estimator)
+            self.explainer = GradCAM(self.model)
         else:
             raise ValueError("Not Implemented")
 
@@ -210,7 +210,7 @@ class GradCAMPlugin(ExplainerPlugin):
             # TODO: create a function in generator if modality type == image or multimodal ->
             #  function get_model() self.estimator.stages[-1].get_image_model()
             # by default grad-cam will extract the last convolutional layer
-            input_size = self.estimator.stages[-1].get_size()
+            input_size = self.model.get_size()
             n_channel = 3
             input_size = (n_channel, input_size, input_size)
             target_layer = get_last_conv_layer_before_classifier(
