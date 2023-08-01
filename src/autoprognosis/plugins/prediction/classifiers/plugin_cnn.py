@@ -41,7 +41,7 @@ for retry in range(2):
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-PREDEFINED_ARCHITECTURE = []
+
 EPS = 1e-8
 
 
@@ -208,7 +208,6 @@ class ConvNetPredefined(nn.Module):
                     classification_layer.append(nn.ReLU())
                     n_features_in = n_features_in // 2
                 classification_layer.append(nn.Linear(n_features_in, n_classes))
-
                 self.model.classifier = nn.Sequential(*classification_layer)
 
         self.model.to(DEVICE)
@@ -463,6 +462,9 @@ class CNNPlugin(base.ClassifierPlugin):
             self.mean = float(torch.mean(X))
             self.std = float(torch.std(X))
 
+        else:
+            raise ValueError("Unknown normalization type")
+
     def image_transform(self):
         if self.data_augmentation:
             if self.transformation is None:
@@ -546,6 +548,7 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         X = self.to_tensor(X)
+        self.model.to(DEVICE)
         with torch.no_grad():
             results = np.empty((0, 1))
             test_loader = DataLoader(
@@ -573,7 +576,7 @@ class CNNPlugin(base.ClassifierPlugin):
     def predict_proba_tensor(self, X: pd.DataFrame):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.to_tensor(X)
+        X = self.to_tensor(X).cpu()
         self.model.cpu()
         results = torch.empty((0, self.n_classes))
         test_dataset = TestTensorDataset(X, transform=self.transform_predict)
@@ -599,6 +602,7 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         X = self.to_tensor(X)
+        self.model.to(DEVICE)
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestTensorDataset(X, transform=self.transform_predict)
