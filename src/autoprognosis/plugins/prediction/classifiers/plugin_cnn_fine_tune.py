@@ -7,8 +7,9 @@ import pandas as pd
 
 # autoprognosis absolute
 # autoprognosis absolut
-from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, LARGE_CNN, WEIGHTS
-import autoprognosis.logger as log
+from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, WEIGHTS
+
+# import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -30,6 +31,7 @@ for retry in range(2):
 for retry in range(2):
     try:
         # third party
+        from torchvision import transforms
         import torchvision.models as models
 
         break
@@ -48,16 +50,56 @@ NONLIN = {
     "selu": nn.SELU,
 }
 
-# Depending on the number of additional layer the intermediate layer have different sizes
-N_INTERMEDIATE = {
-    "alexnet": {1: 256, 2: 512, 3: 2048},  # last layer is 4096
-    "resnet18": {1: 128, 2: 256, 3: 512},  # last layer is 1024
-    "resnet50": {1: 128, 2: 256, 3: 512},  # last layer is 1024
-    "resnet34": {1: 128, 2: 256, 3: 512},  # last layer is 1024
-    "vgg19": {1: 128, 2: 256, 3: 512},  # last layer is 1024
-    "mobilenet_v3_large": {1: 128, 2: 256, 3: 512},  # last layer is 1280
-    "densenet121": {1: 128, 2: 256, 3: 512},
-}
+
+class TrainingTensorDataset(TensorDataset):
+    def __init__(self, data_tensor, target_tensor, preprocess, transform=None):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        super(TrainingTensorDataset, self).__init__(data_tensor, target_tensor)
+        self.transform = transforms.Compose(transform.transforms)
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return len(self.tensors[0])
+
+    def __getitem__(self, index):
+        image, label = super(TrainingTensorDataset, self).__getitem__(index)
+
+        if self.transform:
+            image = self.transform(image)
+
+        image = self.preprocess(image)
+
+        return image, label
+
+
+class TestTensorDataset(TensorDataset):
+    def __init__(self, data_tensor, preprocess):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (PIL, Images): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        super(TestTensorDataset, self).__init__(data_tensor)
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return len(self.tensors[0])
+
+    def __getitem__(self, index):
+        image = super(TestTensorDataset, self).__getitem__(index)[0]
+        image = self.preprocess(image)
+
+        return image
 
 
 class ConvNetPredefinedFineTune(nn.Module):
@@ -94,6 +136,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         model_name: str,
         n_classes: Optional[int],
         non_linear: str,
+        transformation: transforms.Compose,
         batch_size: int,
         lr: float,
         n_iter: int,
@@ -102,14 +145,15 @@ class ConvNetPredefinedFineTune(nn.Module):
         n_iter_print: int,
         n_iter_min: int,
         patience: int,
+        preprocess,
         n_unfrozen_layer: int = 0,
-        n_hidden_units: int = 60,
+        n_additional_layers: int = 2,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
 
-        self.model_name = model_name.lower()
-
+        # Training Parameters
+        self.transforms = transformation
         self.batch_size = batch_size
         self.lr = lr
         self.n_iter = n_iter
@@ -117,14 +161,17 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.patience = patience
+        self.preprocess = preprocess
+
+        # Model Architectures
+        self.model_name = model_name.lower()
+        self.n_additional_layers = n_additional_layers
         self.model = CNN_MODEL[self.model_name](weights=WEIGHTS[self.model_name]).to(
             DEVICE
         )
 
-        weights = models.get_weight(WEIGHTS[self.model_name])
-        self.preprocess = weights.transforms(antialias=True)
-
-        self.set_parameter_requires_grad(n_unfrozen_layer)
+        # Unfroze specified layer
+        self.unfreeze_last_n_layers(n_unfrozen_layer)
 
         if n_classes is None:
             raise RuntimeError(
@@ -143,20 +190,25 @@ class ConvNetPredefinedFineTune(nn.Module):
         else:
             raise ValueError(f"Model not implemented: {self.model_name}")
 
-        # Add 3 layers on top of the net
-        for i in range(2):
-            n_hidden_units *= 2
+        # The first intermediate layer depends on the last output
+        n_intermediate = int((n_features_in // 2))
         NL = NONLIN[non_linear]
-        additional_layers = [nn.Linear(n_features_in, n_hidden_units), NL()]
-        additional_layers.extend(
-            [nn.Linear(n_hidden_units, int(n_hidden_units / 2)), NL()]
-        )
-        n_hidden_units /= 2
-        additional_layers.extend(
-            [nn.Linear(int(n_hidden_units), int(n_hidden_units / 2)), NL()]
-        )
-        n_hidden_units /= 2
-        additional_layers.append(nn.Linear(int(n_hidden_units), n_classes))
+
+        additional_layers = [
+            nn.Linear(n_features_in, n_intermediate),
+            NL(inplace=True),
+        ]
+
+        for i in range(n_additional_layers - 1):
+            additional_layers.extend(
+                [
+                    nn.Linear(n_intermediate, int(n_intermediate / 2)),
+                    NL(inplace=True),
+                ]
+            )
+            n_intermediate = int(n_intermediate / 2)
+
+        additional_layers.append(nn.Linear(n_intermediate, n_classes))
 
         params_ = []
         if hasattr(self.model, "fc"):
@@ -170,14 +222,13 @@ class ConvNetPredefinedFineTune(nn.Module):
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
-                name_match = "classifier." + str(len(self.model.classifier) - 1)
             else:
                 self.model.classifier = nn.Sequential(*additional_layers)
-                name_match = "classifier"
-
+            name_match = "classifier"
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if name_match in name:
+                    param.requires_grad = True
                     params_.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
@@ -188,85 +239,65 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         self.optimizer = torch.optim.Adam(params_)
 
-    def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
-        return torch.stack(img_.apply(lambda d: self.preprocess(d)).tolist())
-
-    def set_parameter_requires_grad(
-        self,
-        num_layers_to_unfreeze: int,
-    ):
+    def unfreeze_last_n_layers(self, n):
+        # First, freeze all parameters
         for param in self.model.parameters():
             param.requires_grad = False
 
-        if num_layers_to_unfreeze > 0:
-            unfrozen_layers = 0
-            skip = True  # skip the first layer which will be replaced by other
+        # Count the unfrozen layers
+        unfrozen_count = 0
 
-            # Iterate over the model modules in reverse order and unfreeze the desired number of layers
-            for module in reversed(list(self.model.modules())):
+        # Define a recursive function for depth-first search
+        def dfs(module):
+            nonlocal unfrozen_count
+            for child in reversed(list(module.children())):
+                dfs(child)
+                if unfrozen_count >= n:
+                    return
                 if isinstance(
-                    module,
-                    (
-                        torch.nn.modules.Conv2d,
-                        torch.nn.modules.Linear,
-                        torch.nn.modules.BatchNorm2d,
-                    ),
+                    child, (torch.nn.Conv2d, torch.nn.Linear, torch.nn.BatchNorm2d)
                 ):
-                    if skip:
-                        skip = False
-                        continue
-                    for param in module.parameters():
+                    for param in child.parameters():
                         param.requires_grad = True
-                    unfrozen_layers += 1
-                    if unfrozen_layers >= num_layers_to_unfreeze:
-                        break
-                elif isinstance(module, torch.nn.modules.Sequential):
-                    for submodule in reversed(list(module.children())):
-                        if isinstance(
-                            submodule,
-                            (
-                                torch.nn.modules.Conv2d,
-                                torch.nn.modules.Linear,
-                                torch.nn.modules.BatchNorm2d,
-                            ),
-                        ):
-                            if skip:
-                                skip = False
-                                continue
-                            for param in submodule.parameters():
-                                param.requires_grad = True
-                            unfrozen_layers += 1
-                            if unfrozen_layers >= num_layers_to_unfreeze:
-                                break
-                        elif isinstance(submodule, torch.nn.Sequential):
-                            for subsubmodule in reversed(list(submodule.children())):
-                                if isinstance(
-                                    subsubmodule,
-                                    (
-                                        torch.nn.modules.Conv2d,
-                                        torch.nn.modules.Linear,
-                                        torch.nn.modules.BatchNorm2d,
-                                    ),
-                                ):
-                                    if skip:
-                                        skip = False
-                                        continue
-                                    for param in subsubmodule.parameters():
-                                        param.requires_grad = True
-                                    unfrozen_layers += 1
-                                    if unfrozen_layers >= num_layers_to_unfreeze:
-                                        break
-                if unfrozen_layers >= num_layers_to_unfreeze:
-                    break
+                    unfrozen_count += 1
+
+        # Select the feature extraction part of the model
+        if isinstance(self.model, torch.nn.Sequential):
+            feature_extractor = self.model
+        elif hasattr(self.model, "features"):
+            feature_extractor = self.model.features
+        elif hasattr(self.model, "layer4"):  # For ResNet
+            feature_extractor = self.model.layer4
+        elif hasattr(self.model, "classifier") and hasattr(
+            self.model, "features"
+        ):  # For MobileNet
+            feature_extractor = self.model.features
+        elif hasattr(self.model, "features") and hasattr(
+            self.model, "classifier"
+        ):  # For DenseNet
+            feature_extractor = self.model.features
+        else:
+            raise ValueError("Unsupported architecture")
+
+        # Perform depth-first search on the feature extractor
+        dfs(feature_extractor)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
+
+    def get_image_model(self):
+        return self.model
+
+    def set_zero_grad(self):
+        self.model.zero_grad()
 
     def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
         X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TensorDataset(X, y)
+        dataset = TrainingTensorDataset(
+            X, y, preprocess=self.preprocess, transform=self.transforms
+        )
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -277,9 +308,12 @@ class ConvNetPredefinedFineTune(nn.Module):
             dataset, [train_size, test_size]
         )
 
-        loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        loader = DataLoader(
+            train_dataset, batch_size=self.batch_size, prefetch_factor=3, num_workers=10
+        )
         val_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, pin_memory=False
+            test_dataset,
+            batch_size=self.batch_size,
         )
 
         # do training
@@ -295,10 +329,8 @@ class ConvNetPredefinedFineTune(nn.Module):
                 self.optimizer.zero_grad()
 
                 X_next, y_next = sample
-
-                if self.model_name in LARGE_CNN:
-                    X_next = X_next.to(DEVICE)
-                    y_next = y_next.to(DEVICE)
+                X_next = X_next.to(DEVICE)
+                y_next = y_next.to(DEVICE)
 
                 preds = self.forward(X_next).squeeze()
 
@@ -318,12 +350,9 @@ class ConvNetPredefinedFineTune(nn.Module):
                     val_loss = []
 
                     for batch_val_ndx, sample in enumerate(val_loader):
-
                         X_val_next, y_val_next = sample
-
-                        if self.model_name in LARGE_CNN:
-                            X_val_next = X_val_next.to(DEVICE)
-                            y_val_next = y_val_next.to(DEVICE)
+                        X_val_next = X_val_next.to(DEVICE)
+                        y_val_next = y_val_next.to(DEVICE)
 
                         preds = self.forward(X_val_next).squeeze()
                         val_loss.append(loss(preds, y_val_next).detach())
@@ -341,7 +370,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                             break
 
                     if i % self.n_iter_print == 0:
-                        log.trace(
+                        print(
                             f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}"
                         )
 
@@ -365,15 +394,9 @@ class ConvNetPredefinedFineTune(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            if self.model_name in LARGE_CNN:
-                return X
-            else:
-                return X.to(DEVICE)
+            return X.cpu()
         else:
-            if self.model_name in LARGE_CNN:
-                return torch.from_numpy(np.asarray(X))
-            else:
-                return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            return torch.from_numpy(np.asarray(X)).cpu()
 
 
 class CNNFineTunePlugin(base.ClassifierPlugin):
@@ -381,6 +404,10 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
     Parameters
     ----------
+    conv_net: str,
+        the predefined architecture
+    n_unfrozen_layers:
+        the number of layer to unfreeze
     lr: float
         learning rate for optimizer. step_size equivalent in the JAX version.
     weight_decay: float
@@ -411,11 +438,17 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
+        # Architecture
         conv_net: str = "alexnet",
         n_unfrozen_layer: int = 1,
-        n_classes: Optional[int] = None,
-        n_hidden_units: int = 30,
+        n_additional_layers: int = 2,
         non_linear: str = "relu",
+        # Data Augmentation
+        data_augmentation: bool = True,
+        color_jittering: bool = True,
+        gaussian_noise: bool = True,
+        transformation: transforms.Compose = None,
+        # Training
         lr: float = 1e-3,
         weight_decay: float = 1e-3,
         n_iter: int = 1000,
@@ -435,7 +468,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if hyperparam_search_iterations:
             n_iter = 5 * int(hyperparam_search_iterations)
 
-        # Specific to Training
+        # Training Parameters
         self.lr = lr
         self.non_linear = non_linear
         self.weight_decay = weight_decay
@@ -446,11 +479,20 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
 
-        # Specific to CNN model
+        # CNN Architecture
         self.conv_net = conv_net
         self.n_unfrozen_layer = n_unfrozen_layer
-        self.n_classes = n_classes
-        self.n_hidden_units = n_hidden_units
+        self.n_classes = None
+        self.n_additional_layers = n_additional_layers
+
+        # Data Augmentation
+        self.transformation = transformation
+        self.preprocess = None
+        self.data_augmentation = data_augmentation
+        self.color_jittering = color_jittering
+        self.gaussian_noise = gaussian_noise
+        # Create the Data Transformation
+        self.image_transform()
 
     @staticmethod
     def name() -> str:
@@ -463,12 +505,53 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
+            # CNN Architecture
             params.Categorical("conv_net", CNN),
+            params.Integer("n_additional_layers", 1, 3),
+            # Training
             params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
-            params.Categorical("n_hidden_units", [30, 60, 120]),
-            params.Categorical("non_linear", ["elu", "relu", "leaky_relu", "selu"]),
             params.Integer("n_unfrozen_layer", 0, 3),
+            # Data Augmentation
+            params.Categorical("data_augmentation", [True, False]),
+            params.Categorical("color_jittering", [True, False]),
+            params.Categorical("gaussian_noise", [True, False]),
         ]
+
+    def image_transform(self):
+        if self.data_augmentation:
+            if self.transformation is None:
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomRotation(10),
+                ]
+                if self.color_jittering:
+                    self.transforms.append(
+                        transforms.ColorJitter(
+                            brightness=0.1,
+                            contrast=0.1,
+                            saturation=0.1,
+                            hue=0.05,
+                        )
+                    )
+                if self.gaussian_noise:
+                    self.transforms.append(
+                        transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0))
+                    )
+            else:
+                self.transforms = self.transformation
+            self.transforms_compose = transforms.Compose(self.transforms)
+
+        else:
+            self.transforms_compose = None
+
+        weights = models.get_weight(WEIGHTS[self.conv_net.lower()])
+        self.preprocess = weights.transforms(antialias=True)
+
+    @staticmethod
+    def to_tensor(img_: pd.DataFrame) -> torch.Tensor:
+        img_ = img_.squeeze(axis=1).apply(lambda d: transforms.ToTensor()(d))
+        return torch.stack(img_.tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFineTunePlugin":
         if len(*args) == 0:
@@ -487,7 +570,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.model = ConvNetPredefinedFineTune(
             model_name=self.conv_net,
             n_classes=n_classes,
-            n_hidden_units=self.n_hidden_units,
+            n_additional_layers=self.n_additional_layers,
             n_unfrozen_layer=self.n_unfrozen_layer,
             lr=self.lr,
             non_linear=self.non_linear,
@@ -498,9 +581,11 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             patience=self.patience,
             batch_size=self.batch_size,
             weight_decay=self.weight_decay,
+            transformation=self.transforms_compose,
+            preprocess=self.preprocess,
         )
 
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.to_tensor(X)
 
         self.model.train(X, y)
 
@@ -509,55 +594,82 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.model.preprocess_images(X.squeeze())
+        X = self.to_tensor(X)
+        self.model.to(DEVICE)
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_loader = DataLoader(
-                    TensorDataset(X), batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE))
+            results = np.empty((0, 1))
+            test_loader = DataLoader(
+                TestTensorDataset(X, preprocess=self.preprocess),
+                batch_size=self.batch_size,
+                pin_memory=False,
+            )
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        np.expand_dims(
+                            self.model(X_test.to(DEVICE))
                             .argmax(dim=-1)
                             .detach()
                             .cpu()
                             .numpy(),
-                        )
+                            axis=1,
+                        ).astype(int),
                     )
-
-            else:
-                results = self.model(X.to(DEVICE)).argmax(dim=-1).detach().cpu().numpy()
+                )
 
             return pd.DataFrame(results)
+
+    def predict_proba_tensor(self, X: pd.DataFrame):
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+        X = self.to_tensor(X)
+        self.model.cpu()
+        results = torch.empty((0, self.n_classes))
+        test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+        test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
+        for batch_test_ndx, X_test in enumerate(test_loader):
+            X_test = X_test.cpu()
+            X_test.requires_grad = True
+            results = torch.cat(
+                (
+                    results,
+                    self.model(X_test),
+                ),
+                dim=0,
+            )
+
+        return results
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.model.preprocess_images(X.squeeze())
+        self.model.to(DEVICE)
+        X = self.to_tensor(X)
         with torch.no_grad():
-            if self.conv_net in LARGE_CNN:
-                results = np.empty((0, self.n_classes))
-                test_dataset = TensorDataset(X)
-                test_loader = DataLoader(
-                    test_dataset, batch_size=self.batch_size, pin_memory=False
-                )
-                for batch_test_ndx, X_test in enumerate(test_loader):
-                    results = np.vstack(
-                        (
-                            results,
-                            self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
-                        )
+            results = np.empty((0, self.n_classes))
+            test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+            test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
                     )
-
-            else:
-                results = self.model(X.to(DEVICE)).detach().cpu().numpy()
+                )
 
             return pd.DataFrame(results)
+
+    def set_zero_grad(self):
+        self.model.zero_grad()
+
+    def get_image_model(self):
+        return self.model.get_model()
+
+    def get_size(self):
+        return self.preprocess.keywords["crop_size"]
 
     def save(self) -> bytes:
         return save_model(self)
