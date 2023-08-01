@@ -622,8 +622,11 @@ class CNNPlugin(base.ClassifierPlugin):
     def set_zero_grad(self):
         self.model.zero_grad()
 
-    def get_model(self):
+    def get_image_model(self):
         return self.model.get_model()
+
+    def get_size(self):
+        return self.size
 
     def save(self) -> bytes:
         return save_model(self)
