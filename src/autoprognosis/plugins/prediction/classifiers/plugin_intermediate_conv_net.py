@@ -4,10 +4,12 @@ from typing import Any, List
 # third party
 import numpy as np
 import pandas as pd
+import torchvision.transforms
 
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
-import autoprognosis.logger as log
+
+# import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.plugins.prediction.classifiers.plugin_neural_nets import NONLIN
@@ -30,6 +32,7 @@ for retry in range(2):
 for retry in range(2):
     try:
         # third party
+        from torchvision import transforms
         import torchvision.models as models
 
         break
@@ -39,6 +42,68 @@ for retry in range(2):
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class TrainingTensorDataset(TensorDataset):
+    def __init__(
+        self,
+        data_tensor_tab: torch.Tensor,
+        data_tensor_image: torch.Tensor,
+        target_tensor: torch.Tensor,
+        weight_transform,
+        transform: torchvision.transforms.Compose = None,
+    ):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.transform = transform
+        self.weight_transform = weight_transform
+        self.image = data_tensor_image
+        self.tab = data_tensor_tab
+        self.target = target_tensor
+
+    def __len__(self):
+        return len(self.image)
+
+    def __getitem__(self, index):
+        image, tab, label = self.image[index], self.tab[index], self.target[index]
+
+        if self.transform:
+            image = self.transform(image)
+
+        image = self.weight_transform(image)
+
+        return tab, image, label
+
+
+class TestTensorDataset(TensorDataset):
+    def __init__(self, data_tensor_tab, data_tensor_image, weight_transform):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.weight_transform = weight_transform
+        self.image = data_tensor_image
+        self.tab = data_tensor_tab
+
+    def __len__(self):
+        return len(self.image)
+
+    def __getitem__(self, index):
+        image, tab = self.image[index], self.tab[index]
+
+        image = self.weight_transform(image)
+
+        return tab, image
 
 
 class ConvIntermediateNet(nn.Module):
@@ -82,13 +147,13 @@ class ConvIntermediateNet(nn.Module):
         n_tab_in: int,
         n_tab_out: int,
         conv_name: str,
-        n_img_out: int,
+        transform: torchvision.transforms.Compose = None,
         n_tab_layer: int = 1,
         n_img_layer: int = 1,
         n_inter_hidden: int = 50,
         n_layers_hidden: int = 2,
         n_units_hidden: int = 100,
-        n_unfrozen_layer: int = 1,
+        n_unfrozen_layer: int = 3,
         nonlin: str = "relu",
         lr: float = 1e-3,
         weight_decay: float = 1e-3,
@@ -159,7 +224,7 @@ class ConvIntermediateNet(nn.Module):
         self.preprocess = weights.transforms(antialias=True)
 
         # Unfroze specified layer
-        self.set_parameter_requires_grad(n_unfrozen_layer)
+        self.unfreeze_last_n_layers(n_unfrozen_layer)
 
         # Replace the output layer by the given number of classes
         if hasattr(self.image_model, "fc"):
@@ -177,9 +242,7 @@ class ConvIntermediateNet(nn.Module):
             raise ValueError(f"Unknown last layer type for: {conv_name}")
 
         # The first intermediate layer depends on the last output
-        n_intermediate = n_img_out
-        for i in range(n_img_layer):
-            n_intermediate *= 2
+        n_intermediate = int((n_features_in // 2))
 
         additional_layers = [
             nn.Linear(n_features_in, n_intermediate),
@@ -196,6 +259,7 @@ class ConvIntermediateNet(nn.Module):
                 ]
             )
             n_intermediate = int(n_intermediate / 2)
+        n_img_out = int(n_intermediate // 2)
         additional_layers.append(nn.Linear(n_intermediate, n_img_out))
 
         if hasattr(self.image_model, "fc"):
@@ -203,31 +267,31 @@ class ConvIntermediateNet(nn.Module):
             self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
                 if "fc" in name:
+                    param.requires_grad = True
                     params.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
                 elif param.requires_grad:
                     params.append(
-                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
+                        {"params": param, "lr": 1e-5, "weight_decay": weight_decay}
                     )
 
         elif hasattr(self.image_model, "classifier"):
             if isinstance(self.image_model.classifier, torch.nn.modules.Sequential):
                 self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
-                name_match = "classifier." + str(len(self.image_model.classifier) - 1)
             else:
                 self.image_model.classifier = nn.Sequential(*additional_layers)
-                name_match = "classifier"
+            name_match = "classifier"
             self.image_model.to(DEVICE)
             for name, param in self.image_model.named_parameters():
-
                 if name_match in name:
+                    param.requires_grad = True
                     params.append(
                         {"params": param, "lr": lr, "weight_decay": weight_decay}
                     )
                 elif param.requires_grad:
                     params.append(
-                        {"params": param, "lr": 1e-6, "weight_decay": weight_decay}
+                        {"params": param, "lr": 1e-5, "weight_decay": weight_decay}
                     )
 
         n_unit_in = n_tab_out + n_img_out
@@ -286,6 +350,7 @@ class ConvIntermediateNet(nn.Module):
         self.n_iter_min = n_iter_min
         self.clipping_value = clipping_value
         self.early_stopping = early_stopping
+        self.transform = transform
 
         self.optimizer = torch.optim.Adam(params)
 
@@ -303,7 +368,9 @@ class ConvIntermediateNet(nn.Module):
         X_tab = self._check_tensor(X_tab).float()
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TensorDataset(X_tab, X_img, y)
+        dataset = TrainingTensorDataset(
+            X_tab, X_img, y, weight_transform=self.preprocess, transform=self.transform
+        )
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
@@ -312,10 +379,12 @@ class ConvIntermediateNet(nn.Module):
         )
 
         train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, pin_memory=False
+            train_dataset,
+            batch_size=self.batch_size,
+            pin_memory=True,
         )
         test_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, pin_memory=False
+            test_dataset, batch_size=self.batch_size, pin_memory=True
         )
 
         # do training
@@ -382,7 +451,7 @@ class ConvIntermediateNet(nn.Module):
                             break
 
                     if i % self.n_iter_print == 0:
-                        log.trace(
+                        print(
                             f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}"
                         )
 
@@ -397,72 +466,54 @@ class ConvIntermediateNet(nn.Module):
     def preprocess_images(self, img_: pd.DataFrame) -> torch.Tensor:
         return torch.stack(img_.squeeze().apply(lambda d: self.preprocess(d)).tolist())
 
-    def set_parameter_requires_grad(
-        self,
-        num_layers_to_unfreeze: int,
-    ):
+    def unfreeze_last_n_layers(self, n):
+        # First, freeze all parameters
         for param in self.image_model.parameters():
             param.requires_grad = False
 
-        if num_layers_to_unfreeze > 0:
-            unfrozen_layers = 0
-            skip = True
-            # Iterate over the model modules in reverse order and unfreeze the desired number of layers
-            for module in reversed(list(self.image_model.modules())):
+        # Count the unfrozen layers
+        unfrozen_count = 0
+
+        # Define a recursive function for depth-first search
+        def dfs(module):
+            nonlocal unfrozen_count
+            for child in reversed(list(module.children())):
+                dfs(child)
+                if unfrozen_count >= n:
+                    return
                 if isinstance(
-                    module,
-                    (
-                        torch.nn.modules.Conv2d,
-                        torch.nn.modules.Linear,
-                        torch.nn.modules.BatchNorm2d,
-                    ),
+                    child, (torch.nn.Conv2d, torch.nn.Linear, torch.nn.BatchNorm2d)
                 ):
-                    if skip:
-                        skip = False
-                        continue
-                    for param in module.parameters():
+                    for param in child.parameters():
                         param.requires_grad = True
-                    unfrozen_layers += 1
-                    if unfrozen_layers >= num_layers_to_unfreeze:
-                        break
-                elif isinstance(module, torch.nn.modules.Sequential):
-                    for submodule in reversed(list(module.children())):
-                        if isinstance(
-                            submodule,
-                            (
-                                torch.nn.modules.Conv2d,
-                                torch.nn.modules.Linear,
-                                torch.nn.modules.BatchNorm2d,
-                            ),
-                        ):
-                            if skip:
-                                skip = False
-                                continue
-                            for param in submodule.parameters():
-                                param.requires_grad = True
-                            unfrozen_layers += 1
-                            if unfrozen_layers >= num_layers_to_unfreeze:
-                                break
-                        elif isinstance(submodule, torch.nn.Sequential):
-                            for subsubmodule in reversed(list(submodule.children())):
-                                if isinstance(
-                                    subsubmodule,
-                                    (
-                                        torch.nn.modules.Conv2d,
-                                        torch.nn.modules.Linear,
-                                        torch.nn.modules.BatchNorm2d,
-                                    ),
-                                ):
-                                    if skip:
-                                        skip = False
-                                        continue
-                                    for param in subsubmodule.parameters():
-                                        param.requires_grad = True
-                                    unfrozen_layers += 1
-                                    if unfrozen_layers >= num_layers_to_unfreeze:
-                                        break
-                if unfrozen_layers >= num_layers_to_unfreeze:
-                    break
+                    unfrozen_count += 1
+
+        # Select the feature extraction part of the model
+        if isinstance(self.image_model, torch.nn.Sequential):
+            feature_extractor = self.image_model
+        elif hasattr(self.image_model, "features"):
+            feature_extractor = self.image_model.features
+        elif hasattr(self.image_model, "layer4"):  # For ResNet
+            feature_extractor = self.image_model.layer4
+        elif hasattr(self.image_model, "classifier") and hasattr(
+            self.image_model, "features"
+        ):  # For MobileNet
+            feature_extractor = self.image_model.features
+        elif hasattr(self.image_model, "features") and hasattr(
+            self.image_model, "classifier"
+        ):  # For DenseNet
+            feature_extractor = self.image_model.features
+        else:
+            raise ValueError("Unsupported architecture")
+
+        # Perform depth-first search on the feature extractor
+        dfs(feature_extractor)
+
+    def get_image_model(self):
+        return self.image_model
+
+    def zero_grad_model(self):
+        self.image_model.zero_grad()
 
 
 class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
@@ -496,20 +547,22 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
     def __init__(
         self,
         model: Any = None,
-        n_tab_layer: int = 2,
+        # Network Architecture
         nonlin="relu",
+        n_tab_layer: int = 2,
+        tab_reduction_ratio=3.0,
         n_img_layer: int = 3,
         conv_name: str = "alexnet",
         n_neurons: int = 64,
-        img_out: int = 256,
         n_layers_hidden: int = 3,
         n_units_hidden: int = 100,
+        dropout: float = 0.1,
+        # Training
+        data_augmentation: bool = True,
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        dropout: float = 0.1,
         clipping_value: int = 1,
         random_state: int = 0,
-        tab_reduction_ratio=0.9,
         n_iter_print: int = 1,
         patience: int = 20,
         n_iter_min: int = 10,
@@ -525,7 +578,6 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.n_tab_layer = n_tab_layer
         self.n_img_layer = n_img_layer
         self.n_neurons = n_neurons
-        self.img_out = img_out
         self.non_linear = nonlin
         self.n_layers_hidden = n_layers_hidden
         self.n_units_hidden = n_units_hidden
@@ -535,6 +587,11 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.clipping_value = clipping_value
         self.tab_reduction_ratio = tab_reduction_ratio
         self.conv_name = conv_name.lower()
+        self.data_augmentation = data_augmentation
+        self.image_transformation = None
+
+        weights = models.get_weight(WEIGHTS[self.conv_name.lower()])
+        self.preprocess = weights.transforms(antialias=True)
 
         self.n_iter_print = n_iter_print
         self.patience = patience
@@ -564,8 +621,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
         return [
             # Network for Tabular and Image network
-            params.Categorical("img_out", [128, 256, 320, 512]),
-            params.Categorical("tab_reduction_ratio", [0.8, 1.0, 1.5, 2.0, 4.0]),
+            params.Categorical("tab_reduction_ratio", [1.0, 2.0, 4.0]),
             params.Integer("n_tab_layer", 0, 3),
             params.Integer("n_img_layer", 1, 3),
             params.Categorical("conv_name", CNN),
@@ -575,9 +631,26 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             # Training and global parameters
             params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
-            params.Categorical("dropout", [0, 0.1, 0.2, 0.3]),
-            # params.Categorical("clipping_value", [0, 1]),
+            params.Categorical("dropout", [0, 0.1, 0.2, 0.4]),
+            # Data Augmentation
+            params.Categorical("data_augmentation", [True, False]),
         ]
+
+    def image_tranform(self):
+        if self.data_augmentation:
+            # Add random rotation and flip to the image
+            self.image_transformation = transforms.Compose(
+                [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomRotation(10),
+                ]
+            )
+
+    @staticmethod
+    def to_tensor(img_: pd.DataFrame) -> torch.Tensor:
+        img_ = img_.squeeze(axis=1).apply(lambda d: transforms.ToTensor()(d))
+        return torch.stack(img_.tolist())
 
     def _fit(
         self, X: dict, *args: Any, **kwargs: Any
@@ -585,24 +658,26 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
         X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY]))
         y = args[0]
-        cat = len(np.unique(y))
+        self.n_classes = len(np.unique(y))
         y = torch.from_numpy(np.asarray(y))
 
         n_tab_out = int(self.tab_reduction_ratio * X_tab.shape[1])
         if self.n_tab_layer == 0:
             n_tab_out = X_tab.shape[1]
 
+        self.image_tranform()
+
         self.model = ConvIntermediateNet(
-            categories_cnt=cat,
+            categories_cnt=self.n_classes,
             n_tab_in=X_tab.shape[1],
             conv_name=self.conv_name,
             n_tab_out=n_tab_out,
-            n_img_out=self.img_out,
             n_tab_layer=self.n_tab_layer,
             n_img_layer=self.n_img_layer,
             n_inter_hidden=self.n_neurons,
             n_layers_hidden=self.n_layers_hidden,
             n_units_hidden=self.n_units_hidden,
+            transform=self.image_transformation,
             lr=self.lr,
             weight_decay=self.weight_decay,
             dropout=self.dropout,
@@ -615,26 +690,75 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
         )
 
-        X_img = self.model.preprocess_images(X[IMAGE_KEY])
+        X_img = self.to_tensor(X[IMAGE_KEY])
 
         # Step 2: fit the newly obtained vector with the selected classifier
         self.model.train(X_tab, X_img, y)
 
         return self
 
-    def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
-        with torch.no_grad():
-            X_img = self.model.preprocess_images(X[IMAGE_KEY].squeeze())
-            X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
-            return self.model(X_tab, X_img).argmax(dim=-1).detach().cpu().numpy()
-
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
+
         with torch.no_grad():
-            X_img = self.model.preprocess_images(X[IMAGE_KEY].squeeze())
-            X_img = torch.from_numpy(np.asarray(X_img)).float().to(DEVICE)
-            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float().to(DEVICE)
-            return self.model(X_tab, X_img).detach().cpu().numpy()
+            X_img = self.to_tensor(X[IMAGE_KEY])
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float()
+            results = np.empty((0, self.n_classes))
+            test_dataset = TestTensorDataset(
+                X_tab, X_img, weight_transform=self.preprocess
+            )
+            test_loader = DataLoader(test_dataset, batch_size=100, pin_memory=False)
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                X_tab, X_img = X_test
+                results = np.vstack(
+                    (
+                        results,
+                        self.model(X_tab.to(DEVICE), X_img.to(DEVICE))
+                        .detach()
+                        .cpu()
+                        .numpy(),
+                    )
+                )
+
+            return pd.DataFrame(results)
+
+    def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
+
+        with torch.no_grad():
+            X_img = self.to_tensor(X[IMAGE_KEY])
+            X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float()
+            results = np.empty((0, 1))
+            test_dataset = TestTensorDataset(
+                X_tab, X_img, weight_transform=self.preprocess
+            )
+            test_loader = DataLoader(test_dataset, batch_size=100, pin_memory=False)
+            for batch_test_ndx, X_test in enumerate(test_loader):
+                X_tab, X_img = X_test
+                results = np.vstack(
+                    (
+                        results,
+                        np.expand_dims(
+                            self.model(X_tab.to(DEVICE), X_img.to(DEVICE))
+                            .argmax(dim=-1)
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            axis=1,
+                        ).astype(int),
+                    )
+                )
+
+            return pd.DataFrame(results)
+
+    def get_image_model(self):
+        return self.model.get_image_model()
+
+    def zero_grad(self):
+        self.model.zero_grad()
+
+    def get_size(self):
+        return models.get_weight(WEIGHTS[self.conv_name]).transforms.keywords[
+            "crop_size"
+        ]
 
     def save(self) -> bytes:
         return save_model(self.model)
