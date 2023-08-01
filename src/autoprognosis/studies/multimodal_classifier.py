@@ -266,25 +266,16 @@ class MultimodalStudy(Study):
             if not fusion:
                 fusion = default_fusion
 
-        if (
-            multimodal_type == "intermediate_fusion"
-            and not image_dimensionality_reduction
-        ):
-            image_dimensionality_reduction = default_image_dimensionality_reduction
-
         if multimodal_type != "early_fusion":
             if fusion:
                 fusion = []
                 log.warning(
                     "Fusion plugin search pool are only included with early fusion"
                 )
-            if (
-                multimodal_type != "intermediate_fusion"
-                and image_dimensionality_reduction
-            ):
+            if image_dimensionality_reduction:
                 image_dimensionality_reduction = []
                 log.warning(
-                    "Image dimensionality reduction plugins are not included with late fusion pipeline"
+                    "Image dimensionality reduction plugins are only included with early fusion pipeline"
                 )
 
         # Specify a subset of architecture
@@ -332,6 +323,14 @@ class MultimodalStudy(Study):
         self.Y = dataset[target]
         self.X = dataset.drop(columns=drop_cols)
 
+        for img_key in image:
+            dataset["hash_" + img_key] = np.array(
+                [np.asarray(img).sum() for img in dataset[img_key].to_numpy()]
+            )
+        self.internal_name = dataframe_hash(dataset[dataset.columns.difference(image)])
+        for img_key in image:
+            dataset.drop("hash_" + img_key, axis=1, inplace=True)
+
         if sample_for_search:
             sample_size = min(len(self.Y), max_search_sample_size)
 
@@ -354,14 +353,6 @@ class MultimodalStudy(Study):
         for key, columns in self.multimodal_key.items():
             self.search_multimodal_X[key] = self.search_X[columns]
             self.multimodal_X[key] = self.X[columns]
-
-        for img_key in image:
-            dataset["hash_" + img_key] = np.array(
-                [np.asarray(img).sum() for img in dataset[img_key].to_numpy()]
-            )
-        self.internal_name = dataframe_hash(dataset[dataset.columns.difference(image)])
-        for img_key in image:
-            dataset.drop("hash_" + img_key, axis=1, inplace=True)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
