@@ -457,7 +457,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         weight_decay: float = 1e-3,
         n_iter: int = 1000,
         batch_size: int = 100,
-        n_iter_print: int = 1,
+        n_iter_print: int = 10,
         patience: int = 5,
         n_iter_min: int = 10,
         early_stopping: bool = True,
