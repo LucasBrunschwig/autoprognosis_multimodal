@@ -175,7 +175,9 @@ class ConvNetPredefinedFineTune(nn.Module):
         )
 
         # Unfroze specified layer
-        self.unfreeze_last_n_layers(n_unfrozen_layer)
+        n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(n_unfrozen_layer)
+
+        self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
 
         if n_classes is None:
             raise RuntimeError(
@@ -201,6 +203,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         additional_layers = [
             nn.Linear(n_features_in, n_intermediate),
             NL(inplace=True),
+            nn.Dropout(inplace=False),
         ]
 
         for i in range(n_additional_layers - 1):
@@ -208,6 +211,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                 [
                     nn.Linear(n_intermediate, int(n_intermediate / 2)),
                     NL(inplace=True),
+                    nn.Dropout(p=0.5, inplace=False),
                 ]
             )
             n_intermediate = int(n_intermediate / 2)
@@ -226,9 +230,10 @@ class ConvNetPredefinedFineTune(nn.Module):
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
+                name_match = "classifier." + str(len(self.model.classifier) - 1)
             else:
                 self.model.classifier = nn.Sequential(*additional_layers)
-            name_match = "classifier"
+                name_match = "classifier"
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if name_match in name:
@@ -243,7 +248,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         self.optimizer = torch.optim.Adam(params_)
 
-    def unfreeze_last_n_layers(self, n):
+    def unfreeze_last_n_layers_convolutional(self, n):
         # First, freeze all parameters
         for param in self.model.parameters():
             param.requires_grad = False
@@ -285,6 +290,43 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         # Perform depth-first search on the feature extractor
         dfs(feature_extractor)
+
+    def unfreeze_last_n_layers_classifier(self, n):
+        # First, freeze all parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        n = n + 1  # last linear layer is replaced by the new classifier
+
+        # Count the unfrozen layers
+        unfrozen_count = 0
+
+        # Define a recursive function for depth-first search
+        def dfs(module):
+            nonlocal unfrozen_count
+            for child in reversed(list(module.children())):
+                dfs(child)
+                if unfrozen_count >= n:
+                    return
+                if isinstance(child, (torch.nn.Linear, torch.nn.BatchNorm1d)):
+                    for param in child.parameters():
+                        param.requires_grad = True
+                    unfrozen_count += 1
+
+        # Select the feature extraction part of the model
+        if isinstance(self.model, torch.nn.Sequential):
+            feature_extractor = self.model
+        elif hasattr(self.model, "classifier"):
+            feature_extractor = self.model.classifier
+        elif hasattr(self.model, "fc"):  # For ResNet
+            feature_extractor = self.model.fc
+        else:
+            raise ValueError("Unsupported architecture")
+
+        # Perform depth-first search on the feature extractor
+        dfs(feature_extractor)
+
+        return n - unfrozen_count
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -444,7 +486,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self,
         # Architecture
         conv_net: str = "alexnet",
-        n_unfrozen_layer: int = 1,
+        n_unfrozen_layer: int = 2,
         n_additional_layers: int = 2,
         non_linear: str = "relu",
         # Data Augmentation
@@ -525,7 +567,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Integer("n_additional_layers", 1, 3),
             # Training
             params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
-            params.Integer("n_unfrozen_layer", 0, 3),
+            params.Integer("n_unfrozen_layer", 0, 4),
             # Data Augmentation
             params.Categorical("data_augmentation", [True, False]),
             params.Categorical("color_jittering", [True, False]),
