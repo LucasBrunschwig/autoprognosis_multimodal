@@ -430,7 +430,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
                     if i % self.n_iter_print == 0:
                         print(
-                            f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}, elapsed time: {end_ - start_}"
+                            f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
                         )
 
         return self
