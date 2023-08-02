@@ -1,4 +1,5 @@
 # stdlib
+import time
 from typing import Any, List, Optional
 
 # third party
@@ -26,7 +27,7 @@ for retry in range(2):
         # third party
         import torch
         from torch import nn
-        from torch.utils.data import DataLoader, TensorDataset
+        from torch.utils.data import DataLoader, Dataset
 
         break
     except ImportError:
@@ -55,8 +56,8 @@ NONLIN = {
 }
 
 
-class TrainingTensorDataset(TensorDataset):
-    def __init__(self, data_tensor, target_tensor, preprocess, transform=None):
+class TrainingTensorDataset(Dataset):
+    def __init__(self, data, target, preprocess, transform=None):
         """
         CustomDataset constructor.
 
@@ -65,15 +66,16 @@ class TrainingTensorDataset(TensorDataset):
         labels (torch.Tensor): Tensor containing the labels corresponding to the images.
         transform (callable, optional): Optional transformations to be applied to the images. Default is None.
         """
-        super(TrainingTensorDataset, self).__init__(data_tensor, target_tensor)
+        self.image = data.squeeze()
+        self.target = target
         self.transform = transform
         self.preprocess = preprocess
 
     def __len__(self):
-        return len(self.tensors[0])
+        return len(self.image)
 
     def __getitem__(self, index):
-        image, label = super(TrainingTensorDataset, self).__getitem__(index)
+        image, label = self.image.iloc[index], self.target[index]
 
         if self.transform:
             image = self.transform(image)
@@ -83,8 +85,8 @@ class TrainingTensorDataset(TensorDataset):
         return image, label
 
 
-class TestTensorDataset(TensorDataset):
-    def __init__(self, data_tensor, preprocess):
+class TestTensorDataset(Dataset):
+    def __init__(self, data, preprocess):
         """
         CustomDataset constructor.
 
@@ -93,14 +95,14 @@ class TestTensorDataset(TensorDataset):
         labels (torch.Tensor): Tensor containing the labels corresponding to the images.
         transform (callable, optional): Optional transformations to be applied to the images. Default is None.
         """
-        super(TestTensorDataset, self).__init__(data_tensor)
+        self.image = data.squeeze()
         self.preprocess = preprocess
 
     def __len__(self):
-        return len(self.tensors[0])
+        return len(self.image)
 
     def __getitem__(self, index):
-        image = super(TestTensorDataset, self).__getitem__(index)[0]
+        image = self.image.iloc[index]
         image = self.preprocess(image)
 
         return image
@@ -152,6 +154,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         preprocess,
         n_unfrozen_layer: int = 0,
         n_additional_layers: int = 2,
+        clipping_value: int = 1,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
@@ -166,6 +169,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.n_iter_print = n_iter_print
         self.patience = patience
         self.preprocess = preprocess
+        self.clipping_value = clipping_value
 
         # Model Architectures
         self.model_name = model_name.lower()
@@ -203,7 +207,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         additional_layers = [
             nn.Linear(n_features_in, n_intermediate),
             NL(inplace=True),
-            nn.Dropout(inplace=False),
+            nn.Dropout(p=0.5, inplace=False),
         ]
 
         for i in range(n_additional_layers - 1):
@@ -337,8 +341,8 @@ class ConvNetPredefinedFineTune(nn.Module):
     def set_zero_grad(self):
         self.model.zero_grad()
 
-    def train(self, X: torch.Tensor, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
-        X = self._check_tensor(X).float()
+    def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
+        # X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
         dataset = TrainingTensorDataset(
@@ -355,11 +359,14 @@ class ConvNetPredefinedFineTune(nn.Module):
         )
 
         loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, prefetch_factor=3, num_workers=10
+            train_dataset,
+            batch_size=self.batch_size,
+            pin_memory=True,
+            prefetch_factor=3,
+            num_workers=10,
         )
         val_loader = DataLoader(
-            test_dataset,
-            batch_size=self.batch_size,
+            test_dataset, batch_size=self.batch_size, pin_memory=True
         )
 
         # do training
@@ -370,7 +377,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         for i in range(self.n_iter):
             train_loss = []
-
+            start_ = time.time()
             for batch_ndx, sample in enumerate(loader):
                 self.optimizer.zero_grad()
 
@@ -388,7 +395,13 @@ class ConvNetPredefinedFineTune(nn.Module):
 
                 train_loss.append(batch_loss.detach())
 
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.clipping_value
+                )
+
             train_loss = torch.Tensor(train_loss).to(DEVICE)
+
+            end_ = time.time()
 
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
@@ -417,7 +430,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
                     if i % self.n_iter_print == 0:
                         print(
-                            f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}"
+                            f"Epoch: {i}, loss: {val_loss}, train_loss: {torch.mean(train_loss)}, elapsed time: {end_ - start_}"
                         )
 
         return self
@@ -491,18 +504,19 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         non_linear: str = "relu",
         # Data Augmentation
         data_augmentation: bool = True,
-        color_jittering: bool = True,
-        gaussian_noise: bool = True,
+        color_jittering: bool = False,
+        gaussian_noise: bool = False,
         transformation: transforms.Compose = None,
         # Training
-        lr: float = 1e-3,
-        weight_decay: float = 1e-3,
+        lr: float = 1e-5,
+        weight_decay: float = 1e-4,
         n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 10,
         patience: int = 5,
         n_iter_min: int = 10,
         early_stopping: bool = True,
+        clipping_value: int = 1,
         hyperparam_search_iterations: Optional[int] = None,
         random_state: int = 0,
         **kwargs: Any,
@@ -524,6 +538,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.patience = patience
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
+        self.clipping_value = clipping_value
 
         # CNN Architecture
         self.conv_net = conv_net
@@ -566,12 +581,13 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 1, 3),
             # Training
-            params.Categorical("lr", [1e-3, 1e-4, 1e-5]),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Integer("n_unfrozen_layer", 0, 4),
             # Data Augmentation
             params.Categorical("data_augmentation", [True, False]),
             params.Categorical("color_jittering", [True, False]),
             params.Categorical("gaussian_noise", [True, False]),
+            params.Categorical("clipping_value", [0, 1]),
         ]
 
     def image_transform(self):
@@ -640,9 +656,8 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             weight_decay=self.weight_decay,
             transformation=self.transforms_compose,
             preprocess=self.preprocess,
+            clipping_value=self.clipping_value,
         )
-
-        X = self.to_tensor(X)
 
         self.model.train(X, y)
 
