@@ -9,12 +9,43 @@ import zipfile
 
 # third party
 from PIL import Image
+import cv2
 import numpy as np
 import pandas as pd
 from torchvision import transforms
 
 # autoprognosis absolute
 import autoprognosis.logger as log
+
+
+def shade_of_gray_cc(img, power=6, gamma=None):
+    """
+    img (numpy array): the original image with format of (h, w, c)
+    power (int): the degree of norm, 6 is used in reference paper
+    gamma (float): the value of gamma correction, 2.2 is used in reference paper
+    """
+    img = np.asarray(img)
+    img_dtype = img.dtype
+
+    if gamma is not None:
+        img = img.astype("uint8")
+        look_up_table = np.ones((256, 1), dtype="uint8") * 0
+        for i in range(256):
+            look_up_table[i][0] = 255 * pow(i / 255, 1 / gamma)
+        img = cv2.LUT(img, look_up_table)
+
+    img = img.astype("float32")
+    img_power = np.power(img, power)
+    rgb_vec = np.power(np.mean(img_power, (0, 1)), 1 / power)
+    rgb_norm = np.sqrt(np.sum(np.power(rgb_vec, 2.0)))
+    rgb_vec = rgb_vec / rgb_norm
+    rgb_vec = 1 / (rgb_vec * np.sqrt(3))
+    img = np.multiply(img, rgb_vec)
+
+    # Andrew Anikin suggestion
+    img = np.clip(img, a_min=0, a_max=255)
+
+    return Image.fromarray(img.astype(img_dtype))
 
 
 def crop_center(image, size):
@@ -47,7 +78,8 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
         for img_name in files:
             if img_name.endswith(".png"):
                 img_ = Image.open(os.path.join(dirpath, img_name))
-                img_ = img_.convert("RGB").resize((500, 500))
+                img_ = img_.convert("RGB")  # .resize((256, 256))
+                img_ = shade_of_gray_cc(img_)
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
