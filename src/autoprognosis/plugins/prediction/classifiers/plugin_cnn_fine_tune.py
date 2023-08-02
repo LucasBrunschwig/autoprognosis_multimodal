@@ -178,6 +178,10 @@ class ConvNetPredefinedFineTune(nn.Module):
             DEVICE
         )
 
+        # First, freeze all parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+
         # Unfroze specified layer
         n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(n_unfrozen_layer)
 
@@ -253,9 +257,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.optimizer = torch.optim.Adam(params_)
 
     def unfreeze_last_n_layers_convolutional(self, n):
-        # First, freeze all parameters
-        for param in self.model.parameters():
-            param.requires_grad = False
 
         # Count the unfrozen layers
         unfrozen_count = 0
@@ -296,9 +297,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         dfs(feature_extractor)
 
     def unfreeze_last_n_layers_classifier(self, n):
-        # First, freeze all parameters
-        for param in self.model.parameters():
-            param.requires_grad = False
 
         n = n + 1  # last linear layer is replaced by the new classifier
 
