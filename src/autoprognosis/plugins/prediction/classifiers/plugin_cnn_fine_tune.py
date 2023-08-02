@@ -579,7 +579,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 1, 3),
             # Training
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("lr", [1e-4, 1e-5]),
             params.Integer("n_unfrozen_layer", 0, 4),
             # Data Augmentation
             params.Categorical("data_augmentation", [True, False]),
