@@ -6,6 +6,7 @@ from torchvision.models import (
     mobilenet_v3_large,
     resnet34,
     resnet50,
+    vgg13,
     vgg16,
     vgg16_bn,
 )
@@ -75,6 +76,7 @@ CNN_MODEL = {
     "alexnet": alexnet,
     "resnet34": resnet34,
     "resnet50": resnet50,
+    "vgg13": vgg13,
     "vgg16": vgg16,
     "vgg16_bn": vgg16_bn,
     "mobilenet_v3_large": mobilenet_v3_large,
@@ -90,6 +92,7 @@ WEIGHTS = {
     "vgg16": "VGG16_Weights.DEFAULT",
     "vgg16_bn": "VGG16_BN_Weights.DEFAULT",
     "vgg19": "VGG19_Weights.DEFAULT",
+    "vgg13": "VGG13_Weights.DEFAULT",
 }
 
 percentile_val = 1.96

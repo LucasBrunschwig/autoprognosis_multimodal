@@ -66,7 +66,7 @@ class TrainingTensorDataset(TensorDataset):
         transform (callable, optional): Optional transformations to be applied to the images. Default is None.
         """
         super(TrainingTensorDataset, self).__init__(data_tensor, target_tensor)
-        self.transform = transforms.Compose(transform.transforms)
+        self.transform = transform
         self.preprocess = preprocess
 
     def __len__(self):
