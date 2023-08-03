@@ -501,9 +501,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         n_additional_layers: int = 2,
         non_linear: str = "relu",
         # Data Augmentation
-        data_augmentation: bool = True,
-        color_jittering: bool = False,
-        gaussian_noise: bool = False,
+        data_augmentation: bool = "rand_augment",
         transformation: transforms.Compose = None,
         # Training
         lr: float = 1e-5,
@@ -548,8 +546,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.transformation = transformation
         self.preprocess = None
         self.data_augmentation = data_augmentation
-        self.color_jittering = color_jittering
-        self.gaussian_noise = gaussian_noise
         # Create the Data Transformation
         self.image_transform()
 
@@ -579,38 +575,44 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 1, 3),
             # Training
-            params.Categorical("lr", [1e-4, 1e-5]),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Integer("n_unfrozen_layer", 0, 4),
             # Data Augmentation
-            params.Categorical("data_augmentation", [True, False]),
-            params.Categorical("color_jittering", [True, False]),
-            params.Categorical("gaussian_noise", [True, False]),
+            params.Categorical(
+                "data_augmentation",
+                [
+                    "",
+                    "autoaugment_cifar10",
+                    "autoaugment_imagenet",
+                    "rand_augment",
+                    "trivial_augment",
+                ],
+            ),
             params.Categorical("clipping_value", [0, 1]),
         ]
 
     def image_transform(self):
-        if self.data_augmentation:
-            if self.transformation is None:
+        if self.transformation:
+            self.transforms = self.transformation
+            self.transforms_compose = transforms.Compose(self.transforms)
+
+        elif self.data_augmentation:
+            if self.data_augmentation == "autoaugment_imagenet":
                 self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomRotation(10),
+                    transforms.AutoAugment(
+                        policy=transforms.AutoAugmentPolicy.IMAGENET
+                    ),
                 ]
-                if self.color_jittering:
-                    self.transforms.append(
-                        transforms.ColorJitter(
-                            brightness=0.1,
-                            contrast=0.1,
-                            saturation=0.1,
-                            hue=0.05,
-                        )
-                    )
-                if self.gaussian_noise:
-                    self.transforms.append(
-                        transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0))
-                    )
-            else:
-                self.transforms = self.transformation
+            elif self.data_augmentation == "autoaugment_cifar10":
+                self.transforms = [
+                    transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
+                ]
+            elif self.data_augmentation == "rand_augment":
+                self.transforms = [
+                    transforms.RandAugment(),
+                ]
+            elif self.data_augmentation == "trivial_augment":
+                self.transforms = [transforms.TrivialAugmentWide()]
             self.transforms_compose = transforms.Compose(self.transforms)
 
         else:
