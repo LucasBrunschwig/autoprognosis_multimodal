@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, WEIGHTS
+from autoprognosis.explorers.core.defaults import CNN_MODEL, WEIGHTS
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -101,10 +101,7 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return [
-            params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-        ]
+        return []
 
     def _fit(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
