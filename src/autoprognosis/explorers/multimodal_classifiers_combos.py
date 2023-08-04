@@ -453,26 +453,29 @@ class MultimodalEnsembleSeeker:
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
             scores = []
 
-            for model in best_models:
-                try:
-                    model_score = evaluate_multimodal_estimator(
-                        model,
-                        X,
-                        Y,
-                        multimodal_type=self.multimodal_type,
-                        n_folds=self.n_folds_cv,
-                        group_ids=group_ids,
-                    )["raw"][self.metric][0]
-                    log.info(f"Model: {model.name()} --> {model_score}")
+            if len(best_models) > 1:
+                for model in best_models:
+                    try:
+                        model_score = evaluate_multimodal_estimator(
+                            model,
+                            X,
+                            Y,
+                            multimodal_type=self.multimodal_type,
+                            n_folds=self.n_folds_cv,
+                            group_ids=group_ids,
+                        )["raw"][self.metric][0]
+                        log.info(f"Model: {model.name()} --> {model_score}")
 
-                    scores.append(model_score)
-                except Exception as e:
-                    log.error(f"Could not be fitted: {model.name()} - {e}")
+                        scores.append(model_score)
+                    except Exception as e:
+                        log.error(f"Could not be fitted: {model.name()} - {e}")
 
-            if self.hooks.cancel():
-                raise StudyCancelled("Classifier search cancelled")
+                if self.hooks.cancel():
+                    raise StudyCancelled("Classifier search cancelled")
 
-            return best_models[np.argmax(scores)]
+                return best_models[np.argmax(scores)]
+            else:
+                return best_models[0]
 
         # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
