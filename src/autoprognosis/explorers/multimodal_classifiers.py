@@ -18,12 +18,13 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import Optimizer
-from autoprognosis.explorers.core.selector import PipelineSelector
+from autoprognosis.explorers.core.selector import PipelineSelector, predefined_args
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
+from autoprognosis.plugins.preprocessors import Preprocessors
 from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.parallel import n_opt_jobs
-from autoprognosis.utils.tester import evaluate_multimodal_estimator
+from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_estimator
 
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
 
@@ -220,6 +221,8 @@ class MultimodalClassifierSeeker:
     ) -> Tuple[List[float], List[float]]:
         self._should_continue()
 
+        self.best_representation = {}
+
         def evaluate_args(**kwargs: Any) -> float:
             self._should_continue()
 
@@ -235,6 +238,78 @@ class MultimodalClassifierSeeker:
                 or X[IMAGE_KEY].empty
             ):
                 raise RuntimeError("Multimodal Fusion but no image inputs")
+
+            # ----------------------------------------------------------------------- #
+            # Learning Representation Optimization
+            image_reduction = None
+            search_str = ""
+            size_str = "output_size"
+            size = None
+            for key in kwargs.keys():
+                if "image_reduction" in key.split(".")[1]:
+                    image_reduction = key.split(".")[2]
+                    search_str = f"preprocessor.image_reduction.{image_reduction}."
+                    size = kwargs.get(search_str + size_str)
+                    break
+            if image_reduction is not None:
+                if self.best_representation.get(
+                    search_str + size_str + str(size), None
+                ):
+                    for arg, value in self.best_representation.get(
+                        search_str + size_str + str(size)
+                    ).items():
+                        predefined_args.update({search_str + arg: value})
+                else:
+                    estimator_representation = Preprocessors("image_reduction").get(
+                        image_reduction, output_size=size
+                    )
+
+                    def evaluate_learning_args(**kwargs):
+                        X_img = X[IMAGE_KEY]
+                        kwargs[size_str] = size
+                        model = Preprocessors("image_reduction").get(
+                            image_reduction, **kwargs
+                        )
+                        try:
+                            metrics = evaluate_estimator(
+                                model,
+                                X_img,
+                                Y,
+                                n_folds=self.n_folds_cv,
+                                group_ids=group_ids,
+                            )
+                        except BaseException as e:
+                            log.error(f"evaluate_estimator failed: {e}")
+                        eval_metrics = {}
+                        for metric in metrics["raw"]:
+                            eval_metrics[metric] = metrics["raw"][metric][0]
+                            eval_metrics[f"{metric}_str"] = metrics["str"][metric]
+
+                        return metrics["raw"][self.metric][0]
+
+                    study_learning = Optimizer(
+                        study_name=f"{self.study_name}_learning_representation_exploration_{estimator.name()}_{self.metric}",
+                        estimator=estimator_representation,
+                        evaluation_cbk=evaluate_learning_args,
+                        optimizer_type=self.optimizer_type,
+                        n_trials=10,
+                        timeout=self.timeout,
+                        random_state=self.random_state,
+                    )
+
+                    best_score, params = study_learning.evaluate()
+
+                    # Store the optimal solution if the learning representation size comes again
+                    self.best_representation[
+                        search_str + size_str + str(size)
+                    ] = params[np.argmax(best_score)]
+
+                    # Update the params for the neural  networks fitting
+                    for arg, value in self.best_representation.get(
+                        search_str + size_str + str(size)
+                    ).items():
+                        predefined_args.update({search_str + arg: value})
+            # ----------------------------------------------------------------------- #
 
             model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)
 
@@ -340,6 +415,27 @@ class MultimodalClassifierSeeker:
             log.info(
                 f"Selected score {score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
             )
+
+            # TODO: issue when the no argument is the best
+            #       Because even though best default argument might be the best, the best learning representation
+            #       parameters might be different. The solution is to extract the default argument from the image
+            #       reduction
+            best_representation_params = {}
+            for key in all_args[pos_est].keys():
+                if "image_reduction" in key.split(".")[1]:
+                    image_reduction = key.split(".")[2]
+                    search_str = f"preprocessor.image_reduction.{image_reduction}."
+                    size_str = "output_size"
+                    size = all_args[pos_est].get(search_str + size_str)
+                    best_representation_params = self.best_representation.get(
+                        search_str + size_str + str(size)
+                    )
+                    break
+            if best_representation_params:
+                for param, value in best_representation_params.items():
+                    predefined_args.update({search_str + param: value})
+                    all_args[pos_est].update({search_str + param: value})
+
             model = all_estimators[pos_est].get_multimodal_pipeline_from_named_args(
                 **all_args[pos_est]
             )
