@@ -474,7 +474,7 @@ class MultimodalStudy(Study):
 
             # TMP LUCAS
             for metric, score_ in metrics["str"].items():
-                log.info(f"{metric} {score_}")
+                print(f"{metric} {score_}")
 
             self.hooks.heartbeat(
                 topic="classification_study",
