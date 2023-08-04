@@ -200,10 +200,21 @@ class Plugin(metaclass=ABCMeta):
             X: pd.DataFrame
         """
 
-        X = self._preprocess_training_data(X)
-        log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")
+        if not isinstance(X, dict):
+            X = self._preprocess_training_data(X)
+            log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")
+        else:
+            for mod_, x_ in X.items():
+                X[mod_] = self._preprocess_training_data(x_)
+                log.debug(f"Training {self.fqdn()}, {mod_} input shape = {x_.shape}")
         self._fit(X, *args, **kwargs)
-        log.debug(f"Done Training {self.fqdn()}, input shape = {X.shape}")
+        if not isinstance(X, dict):
+            log.debug(f"Done Training {self.fqdn()}, input shape = {X.shape}")
+        else:
+            for mod_, x_ in X.items():
+                log.debug(
+                    f"Done Training {self.fqdn()}, {mod_} input shape = {x_.shape}"
+                )
 
         self._fitted = True
 
@@ -222,8 +233,15 @@ class Plugin(metaclass=ABCMeta):
         """
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
-        X = self._preprocess_inference_data(X)
-        log.debug(f"Transforming using {self.fqdn()}, input shape = {X.shape}")
+        if not isinstance(X, dict):
+            X = self._preprocess_inference_data(X)
+            log.debug(f"Transforming using {self.fqdn()}, input shape = {X.shape}")
+        else:
+            for mod_, x_ in X.items():
+                X[mod_] = self._preprocess_inference_data(x_)
+                log.debug(
+                    f"Transforming using {self.fqdn()}, {mod_} input shape = {x_.shape}"
+                )
         return self.output(self._transform(X))
 
     @abstractmethod
@@ -239,8 +257,15 @@ class Plugin(metaclass=ABCMeta):
         """
         if not self.is_fitted():
             raise RuntimeError("Fit the model first")
-        X = self._preprocess_inference_data(X)
-        log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
+        if not isinstance(X, dict):
+            X = self._preprocess_inference_data(X)
+            log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
+        else:
+            for mod_, x_ in X.items():
+                X[mod_] = self._preprocess_inference_data(x_)
+                log.debug(
+                    f"Predicting using {self.fqdn()}, {mod_} input shape = {x_.shape}"
+                )
         return self.output(self._predict(X, *args, *kwargs))
 
     @abstractmethod
