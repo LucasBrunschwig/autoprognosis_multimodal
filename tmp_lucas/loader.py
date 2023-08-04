@@ -78,8 +78,9 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
         for img_name in files:
             if img_name.endswith(".png"):
                 img_ = Image.open(os.path.join(dirpath, img_name))
-                img_ = img_.convert("RGB")  # .resize((256, 256))
+                img_ = img_.convert("RGB")
                 img_ = shade_of_gray_cc(img_)
+                img_ = img_.resize((300, 300))
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
