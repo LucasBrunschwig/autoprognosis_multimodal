@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL, LARGE_CNN
+from autoprognosis.explorers.core.defaults import CNN, CNN_MODEL
+from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
@@ -40,13 +41,16 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS = 1e-8
 
-fixed_rotations = [0, 90, 180, 270]  # Rotations in degrees
 
 # Define the transformation for data augmentation
 transform = transforms.Compose(
     [
         transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
         transforms.RandomRotation(10),
+        transforms.ToTensor(),
+        transforms.Resize((256, 256)),
+        transforms.Normalize(mean=0, std=1),
     ]
 )
 
@@ -161,8 +165,6 @@ class SimSiam(nn.Module):
 
     def train(self, X: torch.Tensor):
 
-        # X = self._check_tensor(X).float()
-
         dataset = SiameseDataset(X, transform)
 
         train_size = int(0.8 * len(dataset))
@@ -253,15 +255,9 @@ class SimSiam(nn.Module):
 
     def _check_tensor(self, X: torch.Tensor) -> torch.Tensor:
         if isinstance(X, torch.Tensor):
-            if self.model_name in LARGE_CNN:
-                return X
-            else:
-                return X.to(DEVICE)
+            return X.cpu()
         else:
-            if self.model_name in LARGE_CNN:
-                return torch.from_numpy(np.asarray(X))
-            else:
-                return torch.from_numpy(np.asarray(X)).to(DEVICE)
+            return X.cpu()
 
 
 class SimSiamPlugin(base.PreprocessorPlugin):
@@ -328,6 +324,23 @@ class SimSiamPlugin(base.PreprocessorPlugin):
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
         ]
+
+    @staticmethod
+    def hyperparameter_lr_space(*args: Any, **kwargs: Any) -> List[params.Params]:
+        return [
+            params.Categorical("conv_net", CNN),
+            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+        ]
+
+    def sample_hyperparameters(cls, trial, *args: Any, **kwargs: Any):
+        param_space = cls.hyperparameter_lr_space(*args, **predefined_args)
+
+        results = {}
+
+        for hp in param_space:
+            results[hp.name] = hp.sample(trial)
+
+        return results
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "SimSiamPlugin":
 
