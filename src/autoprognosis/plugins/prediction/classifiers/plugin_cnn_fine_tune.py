@@ -13,8 +13,7 @@ from autoprognosis.explorers.core.defaults import (
     WEIGHTS,
 )
 from autoprognosis.explorers.core.selector import predefined_args
-
-# import autoprognosis.logger as log
+import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -95,7 +94,7 @@ class TestTensorDataset(Dataset):
         labels (torch.Tensor): Tensor containing the labels corresponding to the images.
         transform (callable, optional): Optional transformations to be applied to the images. Default is None.
         """
-        self.image = data.squeeze()
+        self.image = pd.DataFrame(data).squeeze(axis=1)
         self.preprocess = preprocess
 
     def __len__(self):
@@ -155,6 +154,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         n_unfrozen_layer: int = 0,
         n_additional_layers: int = 2,
         clipping_value: int = 1,
+        output_size: int = None,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
@@ -170,6 +170,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.patience = patience
         self.preprocess = preprocess
         self.clipping_value = clipping_value
+        self.output_size = output_size
 
         # Model Architectures
         self.model_name = model_name.lower()
@@ -224,7 +225,11 @@ class ConvNetPredefinedFineTune(nn.Module):
             )
             n_intermediate = int(n_intermediate / 2)
 
-        additional_layers.append(nn.Linear(n_intermediate, n_classes))
+        if self.output_size:
+            additional_layers.append(nn.Linear(n_intermediate, output_size))
+            additional_layers.append(nn.Linear(output_size, n_classes))
+        else:
+            additional_layers.append(nn.Linear(n_intermediate, n_classes))
 
         params_ = []
         if hasattr(self.model, "fc"):
@@ -427,7 +432,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                             break
 
                     if i % self.n_iter_print == 0:
-                        print(
+                        log.trace(
                             f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
                         )
 
@@ -592,11 +597,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         ]
 
     def image_transform(self):
-        if self.transformation:
-            self.transforms = self.transformation
-            self.transforms_compose = transforms.Compose(self.transforms)
-
-        elif self.data_augmentation:
+        if self.data_augmentation:
             if self.data_augmentation == "autoaugment_imagenet":
                 self.transforms = [
                     transforms.AutoAugment(
