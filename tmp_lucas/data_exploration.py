@@ -12,8 +12,8 @@ from autoprognosis.plugins.preprocessors import Preprocessors
 # SETTINGS
 
 SAVE_RESULTS = r"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\results"
-EXPLORATORY_ANALYSIS = False
-CORRELATION_IMAGES = True
+EXPLORATORY_ANALYSIS = True
+CORRELATION_IMAGES = False
 
 # DATA LOADER
 
@@ -26,6 +26,17 @@ DL = DataLoader(
 
 def exploratory_analysis():
     df = DL.load_dataset(raw=True)
+
+    df_image = df["image"]
+    pixels_ = []
+    for image in df_image:
+        pixels_.append(image.size[0])
+
+    sns.set_theme()
+    plt.hist(pixels_, bins=50)
+    plt.ylabel("counts")
+    plt.xlabel("resolution (n x n)")
+    plt.savefig(SAVE_RESULTS + r"\image_resolution.png")
 
     labels = df.label.value_counts().index.tolist()
 
