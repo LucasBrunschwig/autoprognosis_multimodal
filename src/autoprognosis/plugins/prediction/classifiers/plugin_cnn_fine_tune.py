@@ -13,7 +13,8 @@ from autoprognosis.explorers.core.defaults import (
     WEIGHTS,
 )
 from autoprognosis.explorers.core.selector import predefined_args
-import autoprognosis.logger as log
+
+# import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -239,7 +240,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                 if "fc" in name:
                     params_.append({"params": param, "lr": lr})
                 elif param.requires_grad:
-                    params_.append({"params": param, "lr": 1e-5})
+                    params_.append({"params": param, "lr": lr / 10})
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
@@ -256,7 +257,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                     )
                 elif param.requires_grad:
                     params_.append(
-                        {"params": param, "lr": 1e-5, "weight_decay": weight_decay}
+                        {"params": param, "lr": lr / 10, "weight_decay": weight_decay}
                     )
 
         self.optimizer = torch.optim.Adam(params_)
@@ -365,8 +366,8 @@ class ConvNetPredefinedFineTune(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=3,
-            num_workers=10,
+            prefetch_factor=2,
+            num_workers=5,
         )
         val_loader = DataLoader(
             test_dataset, batch_size=self.batch_size, pin_memory=True
@@ -432,7 +433,7 @@ class ConvNetPredefinedFineTune(nn.Module):
                             break
 
                     if i % self.n_iter_print == 0:
-                        log.trace(
+                        print(
                             f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
                         )
 
@@ -506,7 +507,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         n_additional_layers: int = 2,
         non_linear: str = "relu",
         # Data Augmentation
-        data_augmentation: bool = "rand_augment",
+        data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
         # Training
         lr: float = 1e-5,
@@ -591,6 +592,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
+                    "simple_strategy",
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
@@ -614,6 +616,22 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 ]
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
+            elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(
+                        10
+                    ),  # Random rotation between -10 and 10 degrees
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2, saturation=0.2
+                    ),
+                    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+                ]
+
             self.transforms_compose = transforms.Compose(self.transforms)
 
         else:
