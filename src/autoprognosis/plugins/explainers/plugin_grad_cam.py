@@ -97,6 +97,46 @@ class GradCAM:
 
         self.handles = [backward_handle, forward_handle]
 
+    def generate_cam_plusplus(self, input_image, target_class, target_layer):
+        self.target_layer = target_layer
+        self.register_hooks()
+        self.model.zero_grad()
+
+        output = self.classifier.predict_proba_tensor(input_image)
+        target = output[:, target_class]
+        target.backward()
+
+        gradients = self.gradient[0]  # Get gradients
+        gradients = gradients.detach().cpu().numpy()
+        activations = self.activations  # Get activations
+        activations = activations.detach().cpu().numpy()
+
+        grads_power_2 = gradients**2
+        grads_power_3 = grads_power_2 * gradients
+        # Equation 19 in https://arxiv.org/abs/1710.11063
+        sum_activations = np.sum(activations, axis=(2, 3))
+        eps = 0.000001
+        aij = grads_power_2 / (
+            2 * grads_power_2 + sum_activations[:, :, None, None] * grads_power_3 + eps
+        )
+        # Now bring back the ReLU from eq.7 in the paper,
+        # And zero out aijs where the activations are 0
+        aij = np.where(gradients != 0, aij, 0)
+
+        weights = np.maximum(gradients, 0) * aij
+        weights = np.sum(weights, axis=(2, 3))
+
+        cam = np.sum(weights[0][:, np.newaxis, np.newaxis] * activations[0], axis=0)
+
+        cam = np.maximum(cam, 0)
+        w = input_image.values[0, 0].size[0]
+        h = input_image.values[0, 0].size[1]
+        cam = cv2.resize(cam, (w, h))
+        cam = cam - np.min(cam)
+        cam = cam / np.max(cam)
+
+        return cam
+
     def generate_cam(self, input_image, target_class, target_layer):
 
         self.target_layer = target_layer
@@ -235,10 +275,15 @@ class GradCAMPlugin(ExplainerPlugin):
                 local_X = stage.transform(local_X)
 
             # Generate CAM
-            cam_normalized = self.explainer.generate_cam(local_X, label_, target_layer)
-            cam_normalized = cv2.applyColorMap(
-                np.uint8(255 * cam_normalized), cv2.COLORMAP_JET
+            cam_normalized = self.explainer.generate_cam_plusplus(
+                local_X, label_, target_layer
             )
+            cam_normalized = cv2.cvtColor(
+                np.uint8(255 * cam_normalized), cv2.COLOR_RGB2BGR
+            )
+            cam_normalized = cv2.applyColorMap(cam_normalized, cv2.COLORMAP_JET)
+            cam_normalized = cv2.cvtColor(cam_normalized, cv2.COLOR_BGR2RGB)
+
             img_array = np.array(local_X.squeeze())
             alpha = 0.4
             superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
@@ -255,8 +300,6 @@ class GradCAMPlugin(ExplainerPlugin):
     ) -> dict:
 
         if target_layer is None:
-            # TODO: create a function in generator if modality type == image or multimodal ->
-            #  function get_model() self.estimator.stages[-1].get_image_model()
             # by default grad-cam will extract the last convolutional layer
             input_size = self.estimator.stages[-1].get_size()
             n_channels = 3
