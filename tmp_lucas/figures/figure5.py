@@ -25,7 +25,7 @@ if __name__ == "__main__":
     train_model = True
     predefined_model = None
 
-    results_dir = "figure_output\\"
+    results_dir = "figure_output/"
     os.makedirs(results_dir, exist_ok=True)
 
     print("Loading Images")
@@ -44,9 +44,10 @@ if __name__ == "__main__":
 
     print("Loaded Images")
 
-    classifier = "intermediate_conv_net"
+    dim_red = "cnn_fine_tune"
+    classifier = "neural_nets"
     predefined_cnn = ["alexnet"]
-    study_name = f"intermediate_fusion_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
+    study_name = f"early_fusion_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
 
     if train_model:
         study = MultimodalStudy(
@@ -59,12 +60,13 @@ if __name__ == "__main__":
             predefined_cnn=predefined_cnn,
             feature_selection=[],
             image_processing=[],
+            image_dimensionality_reduction=[dim_red],
             imputers=["ice"],
             n_folds_cv=5,
-            num_iter=10,
+            num_iter=50,
             metric="aucroc",
             classifiers=[classifier],
-            timeout=int(6 * 3600),
+            timeout=int(30 * 3600),
             num_study_iter=1,
             workspace="../",
         )
