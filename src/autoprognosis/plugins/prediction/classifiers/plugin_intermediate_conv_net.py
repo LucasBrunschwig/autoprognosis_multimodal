@@ -45,6 +45,35 @@ for retry in range(2):
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+class TrainingImageDataset(Dataset):
+    def __init__(self, data, target, preprocess, transform=None):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.image = data.squeeze()
+        self.target = target
+        self.transform = transform
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return len(self.image)
+
+    def __getitem__(self, index):
+        image, label = self.image.iloc[index], self.target[index]
+
+        if self.transform:
+            image = self.transform(image)
+
+        image = self.preprocess(image)
+
+        return image, label
+
+
 class TrainingDataset(Dataset):
     def __init__(
         self,
@@ -232,8 +261,6 @@ class ConvIntermediateNet(nn.Module):
         n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(n_unfrozen_layer)
         self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
 
-        # TODO: test how pretraining on image network improves results
-
         # Replace the output layer by the given number of classes
         if hasattr(self.image_model, "fc"):
             if isinstance(self.image_model.fc, torch.nn.Sequential):
@@ -297,7 +324,7 @@ class ConvIntermediateNet(nn.Module):
                 params.append({"params": param, "lr": lr, "weight_decay": weight_decay})
             elif param.requires_grad:
                 params.append(
-                    {"params": param, "lr": 1e-5, "weight_decay": weight_decay}
+                    {"params": param, "lr": lr / 10, "weight_decay": weight_decay}
                 )
 
         n_unit_in = n_tab_out + n_img_out
@@ -338,8 +365,6 @@ class ConvIntermediateNet(nn.Module):
         else:
             layers = [nn.Linear(n_unit_in, categories_cnt)]
 
-        layers.append(nn.Softmax(dim=-1))
-
         # return final architecture
         self.classifier_model = nn.Sequential(*layers)
         self.classifier_model.to(DEVICE)
@@ -357,6 +382,7 @@ class ConvIntermediateNet(nn.Module):
         self.clipping_value = clipping_value
         self.early_stopping = early_stopping
         self.transform = transform
+        self.lr = lr
 
         self.optimizer = torch.optim.Adam(params)
 
@@ -365,6 +391,153 @@ class ConvIntermediateNet(nn.Module):
         x_img = self.image_model(X_img)
         x_combined = torch.cat((x_tab, x_img), dim=1)
         return self.classifier_model(x_combined)
+
+    def add_classification_layer(self, n_classes: int):
+
+        out = None
+        if hasattr(self.image_model, "fc"):
+            if isinstance(self.image_model.fc, nn.Sequential):
+                out = self.image_model.fc[-1].out_features
+            else:
+                out = self.image_model.fc.out_features
+
+        elif hasattr(self.image_model, "classifier"):
+            if isinstance(self.image_model.classifier, torch.nn.Sequential):
+                if isinstance(self.image_model.classifier[-1], torch.nn.Sequential):
+                    out = self.image_model.classifier[-1][-1].out_features
+                else:
+                    out = self.image_model.classifier[-1].out_features
+            elif isinstance(self.image_model.classifier, torch.nn.Linear):
+                out = self.image_model.classifier.out_features
+            else:
+                raise ValueError("Unknown architecture")
+
+        self.image_model.classification = nn.Linear(out, n_classes)
+        self.image_model.classification.to(DEVICE)
+
+    def remove_classification_layer(self):
+        if hasattr(self.image_model, "classification"):
+            del self.image_model.classification
+
+    def forward_image(self, X_img: torch.Tensor):
+        output = self.image_model(X_img)
+        return self.image_model.classification(output)
+
+    def pretrain_image_model(
+        self, X_img: pd.DataFrame, y: torch.Tensor, n_classes: int
+    ):
+        y = self._check_tensor(y).squeeze().long()
+
+        self.add_classification_layer(n_classes)
+
+        optimizer_image = torch.optim.Adam(
+            params=self.image_model.parameters(), lr=self.lr
+        )
+
+        dataset = TrainingImageDataset(
+            X_img, y, preprocess=self.preprocess, transform=self.transform
+        )
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train_dataset, test_dataset = torch.utils.data.random_split(
+            dataset, [train_size, test_size]
+        )
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            pin_memory=True,
+            # prefetch_factor=3,
+            # num_workers=5,
+        )
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=self.batch_size,
+            pin_memory=True,
+            # prefetch_factor=3,
+            # num_workers=5,
+        )
+
+        # do training
+        val_loss_best = 999999
+        patience = 0
+
+        # TMP LUCAS
+        # label_counts = torch.bincount(y)
+        # class_weights = 1. / label_counts.float()
+        # class_weights = class_weights / class_weights.sum()
+        # class_weights = class_weights.to(DEVICE)
+        # loss = nn.CrossEntropyLoss(weight=class_weights)
+        loss = nn.CrossEntropyLoss()
+
+        for i in range(self.n_iter):
+            train_loss = []
+
+            start_ = time.time()
+
+            for batch_ndx, sample in enumerate(train_loader):
+                optimizer_image.zero_grad()
+
+                X_img_next, y_next = sample
+                if torch.cuda.is_available():
+                    X_img_next = X_img_next.to(DEVICE)
+                    y_next = y_next.to(DEVICE)
+
+                preds = self.forward_image(X_img_next).squeeze()
+
+                batch_loss = loss(preds, y_next)
+
+                batch_loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.classifier_model.parameters())
+                    + list(self.image_model.parameters())
+                    + list(self.tab_model.parameters()),
+                    self.clipping_value,
+                )
+
+                optimizer_image.step()
+
+                train_loss.append(batch_loss.detach())
+
+            train_loss = torch.Tensor(train_loss).to(DEVICE)
+            end_ = time.time()
+
+            if self.early_stopping or i % self.n_iter_print == 0:
+                with torch.no_grad():
+                    val_loss = []
+                    for batch_test_ndx, val_sample in enumerate(test_loader):
+                        X_img_val, y_val = val_sample
+
+                        if torch.cuda.is_available():
+                            X_img_val = X_img_val.to(DEVICE)
+                            y_val = y_val.to(DEVICE)
+
+                        preds = self.forward_image(X_img_val).squeeze()
+                        val_loss.append(loss(preds, y_val).detach())
+
+                    val_loss = torch.mean(torch.Tensor(val_loss).to(DEVICE))
+
+                    if self.early_stopping:
+                        if val_loss_best > val_loss:
+                            val_loss_best = val_loss
+                            patience = 0
+                        else:
+                            patience += 1
+
+                        if patience > self.patience and i > self.n_iter_min:
+                            break
+
+                    if i % self.n_iter_print == 0:
+                        print(
+                            f"Pretraining - Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, "
+                            f"elapsed time {(end_-start_):.2f}"
+                        )
+
+        self.remove_classification_layer()
+
+        return self
 
     def train(
         self, X_tab: torch.Tensor, X_img: pd.DataFrame, y: torch.Tensor
@@ -402,6 +575,12 @@ class ConvIntermediateNet(nn.Module):
         val_loss_best = 999999
         patience = 0
 
+        # # TMP LUCAS
+        # label_counts = torch.bincount(y)
+        # class_weights = 1. / label_counts.float()
+        # class_weights = class_weights / class_weights.sum()
+        # class_weights = class_weights.to(DEVICE)
+        # loss = nn.CrossEntropyLoss(weight=class_weights)
         loss = nn.CrossEntropyLoss()
 
         for i in range(self.n_iter):
@@ -592,8 +771,8 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         model: Any = None,
         # Network Architecture
         nonlin="relu",
-        n_tab_layer: int = 1,
-        tab_reduction_ratio=2.0,
+        n_tab_layer: int = 0,
+        tab_reduction_ratio=3.0,
         n_img_layer: int = 2,
         conv_name: str = "alexnet",
         n_neurons: int = 64,
@@ -602,12 +781,13 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         dropout: float = 0.4,
         # Training
         data_augmentation: bool = True,
-        lr: float = 1e-5,
+        n_unfrozen_layers: int = 3,
+        lr: float = 1e-4,
         weight_decay: float = 1e-3,
         clipping_value: int = 1,
         random_state: int = 0,
         n_iter_print: int = 1,
-        patience: int = 10,
+        patience: int = 5,
         n_iter_min: int = 10,
         n_iter: int = 1000,
         batch_norm: bool = True,
@@ -625,6 +805,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.n_layers_hidden = n_layers_hidden
         self.n_units_hidden = n_units_hidden
         self.lr = lr
+        self.n_unfrozen_layers = n_unfrozen_layers
         self.weight_decay = weight_decay
         self.dropout = dropout
         self.clipping_value = clipping_value
@@ -675,6 +856,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
             params.Categorical("dropout", [0, 0.1, 0.2, 0.4]),
+            params.Integer("n_unfrozen_layers", 1, 3),
             # Data Augmentation
             params.Categorical("data_augmentation", [True, False]),
         ]
@@ -735,6 +917,9 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         )
 
         X_img = X[IMAGE_KEY]
+
+        # Step 2: pretrain the image model
+        # self.model.pretrain_image_model(X_img, y, self.n_classes)
 
         # Step 2: fit the newly obtained vector with the selected classifier
         self.model.train(X_tab, X_img, y)
