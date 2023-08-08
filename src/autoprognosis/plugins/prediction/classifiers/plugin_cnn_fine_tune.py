@@ -396,6 +396,7 @@ class ConvNetPredefinedFineTune(nn.Module):
             label_counts = torch.bincount(y)
             class_weights = 1.0 / label_counts.float()
             class_weights = class_weights / class_weights.sum()
+            class_weights = class_weights.to(DEVICE)
             loss = nn.CrossEntropyLoss(weight=class_weights)
         else:
             loss = nn.CrossEntropyLoss()
