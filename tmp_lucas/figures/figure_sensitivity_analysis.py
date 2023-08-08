@@ -6,6 +6,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
 """
 # stdlib
+import os
 import random
 
 # third party
@@ -22,6 +23,9 @@ from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
+    output = "sensivity"
+    os.makedirs(output, exist_ok=True)
+
     run_analysis = True
     n_runs = 10
     analyze_results = True
@@ -37,7 +41,7 @@ if __name__ == "__main__":
             format_="PIL",
         )
         df = DL.load_dataset()
-        df = df.sample(n=1200)
+        df = df.sample(n=1000, random_state=42)
         print("Dataset Loaded")
 
         targets = df[["label"]]
@@ -68,7 +72,7 @@ if __name__ == "__main__":
             params_dict[param.name.split(".")[-1]] = param.choices
 
         # Fix Parameters
-        params_dict["conv_name"] = "alexnet"
+        params_dict["conv_net"] = "alexnet"
         params_dict["aucroc"] = 0
         params_dict["accuracy"] = 0
         params_dict["balanced_accuracy"] = 0
@@ -153,7 +157,7 @@ if __name__ == "__main__":
                 ]
                 param_runs.loc[name + f"_{i}"] = initial_params
 
-        param_runs.to_csv("tmp/sensitivity_analysis.csv")
+        param_runs.to_csv(f"{output}/sensitivity_analysis.csv")
 
     if analyze_results:
         results = pd.read_csv("tmp/sensitivity_analysis.csv")
@@ -178,9 +182,8 @@ if __name__ == "__main__":
         for values in sensitivity_analysis.values():
             importance_mean.append(np.mean(np.abs(values)))
             importance_std.append(np.std(np.abs(values)))
-        fig, ax = plt.subplots()
-
-        # Plot the bars for the mean values
+        fig, ax = plt.subplots(figsize=(18, 18))
+        ax.set_xticks(rotation=90)  # Plot the bars for the mean values
         ax.bar(params, importance_mean, yerr=importance_std, capsize=5)
 
         # Set labels and title
@@ -189,5 +192,5 @@ if __name__ == "__main__":
         ax.set_title("Morris Sensitivity Analysis for Intermediate Fusion")
 
         # Display the plot
-        plt.savefig("tmp/sensitivity_analysis.png")
-        plt.show()
+        plt.tight_layout()
+        plt.savefig(f"{output}/sensitivity_analysis.png", bbox_inches="tight")
