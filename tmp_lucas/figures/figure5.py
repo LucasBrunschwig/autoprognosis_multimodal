@@ -45,15 +45,17 @@ if __name__ == "__main__":
     print("Loaded Images")
 
     dim_red = "cnn_fine_tune"
+    multimodal_type = "early_fusion"
     classifier = "neural_nets"
     predefined_cnn = ["alexnet"]
-    study_name = f"early_fusion_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
+    study_name = f"{multimodal_type}_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
 
     if train_model:
+        print("Started Training")
         study = MultimodalStudy(
             study_name=study_name,
             dataset=df,  # pandas DataFrame
-            multimodal_type="intermediate_fusion",
+            multimodal_type=multimodal_type,
             image="image",
             target="label",  # the label column in the dataset
             sample_for_search=False,  # no Sampling
