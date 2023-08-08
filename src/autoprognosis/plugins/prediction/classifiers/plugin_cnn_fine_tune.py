@@ -355,7 +355,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.model.zero_grad()
 
     def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
-
         # X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
@@ -553,7 +552,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             n_iter = 5 * int(hyperparam_search_iterations)
 
         # Training Parameters
-        self.lr = LR[lr]
+        self.lr = lr
         self.non_linear = non_linear
         self.weight_decay = weight_decay
         self.n_iter = n_iter
@@ -612,11 +611,12 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 "data_augmentation",
                 [
                     "",
-                    "autoaugment_cifar10",
-                    "autoaugment_imagenet",
+                    # "autoaugment_cifar10",
+                    # "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
                     "simple_strategy",
+                    "color_jittering",
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
@@ -647,13 +647,23 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     transforms.RandomResizedCrop(
                         224
                     ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(10),
+                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
+                ]
+            elif self.data_augmentation == "color_jittering":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
                     transforms.RandomRotation(
                         10
                     ),  # Random rotation between -10 and 10 degrees
                     transforms.ColorJitter(
-                        brightness=0.2, contrast=0.2, saturation=0.2
+                        brightness=0.05, contrast=0.05, saturation=0.05
                     ),
-                    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
                 ]
 
             self.transforms_compose = transforms.Compose(self.transforms)
@@ -700,7 +710,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             transformation=self.transforms_compose,
             preprocess=self.preprocess,
             clipping_value=self.clipping_value,
-            weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
         self.model.train(X, y)
