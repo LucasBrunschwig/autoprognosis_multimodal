@@ -10,6 +10,7 @@ from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
 from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.plugin_cnn_fine_tune import (
+    LR,
     ConvNetPredefinedFineTune,
     TestTensorDataset,
 )
@@ -68,9 +69,9 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         self,
         conv_net: str = "AlexNet",
         nonlin: str = "relu",
-        lr: float = 1e-5,
+        lr: int = 3,
         batch_size: int = 128,
-        data_augmentation: bool = "rand_augment",
+        data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
         n_unfrozen_layer: int = 2,
         n_iter: int = 1000,
@@ -93,7 +94,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         self.output_size = output_size
         self.classifier_removed = False
         # Model Fitting
-        self.lr = lr
+        self.lr = LR[lr]
         self.batch_size = batch_size
         self.n_iter = n_iter
         self.n_iter_min = n_iter_min
@@ -162,10 +163,10 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         return [
             # CNN Architecture
             params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("lr", [0, 1, 2, 3, 4, 5]),
             params.Integer("n_additional_layers", 1, 3),
             # fix the number of unfrozen layers
-            params.Integer("n_unfrozen_layer", 0, 4),
+            params.Integer("n_unfrozen_layer", 1, 6),
             # Use the auto augment policy from pytorch
             params.Categorical(
                 "data_augmentation",
@@ -175,6 +176,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                     "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
+                    "simple_strategy",
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
@@ -208,6 +210,21 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                 ]
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
+            elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(
+                        10
+                    ),  # Random rotation between -10 and 10 degrees
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2, saturation=0.2
+                    ),
+                    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+                ]
         else:
             self.transforms_compose = None
 

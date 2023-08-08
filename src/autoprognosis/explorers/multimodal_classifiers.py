@@ -288,9 +288,6 @@ class MultimodalClassifierSeeker:
 
                         return metrics["raw"][self.metric][0]
 
-                    # TMP PRINT
-                    print("Starting Learning Representation Optimization")
-
                     study_learning = Optimizer(
                         study_name=f"{self.study_name}_learning_representation_exploration_{estimator.name()}_{self.metric}",
                         estimator=estimator_representation,

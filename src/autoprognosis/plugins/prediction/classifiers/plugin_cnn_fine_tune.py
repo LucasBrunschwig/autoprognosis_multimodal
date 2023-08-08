@@ -13,8 +13,7 @@ from autoprognosis.explorers.core.defaults import (
     WEIGHTS,
 )
 from autoprognosis.explorers.core.selector import predefined_args
-
-# import autoprognosis.logger as log
+import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -357,9 +356,6 @@ class ConvNetPredefinedFineTune(nn.Module):
 
     def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
 
-        # TMP PRINT
-        print("Starting Training CNN FINE TUNE LR")
-
         # X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
@@ -452,10 +448,13 @@ class ConvNetPredefinedFineTune(nn.Module):
                             patience += 1
 
                         if patience > self.patience and i > self.n_iter_min:
+                            print(
+                                f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
+                            )
                             break
 
                     if i % self.n_iter_print == 0:
-                        print(
+                        log.trace(
                             f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
                         )
 
