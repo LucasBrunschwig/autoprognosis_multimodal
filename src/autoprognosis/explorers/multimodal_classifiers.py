@@ -265,6 +265,7 @@ class MultimodalClassifierSeeker:
                     )
 
                     def evaluate_learning_args(**kwargs):
+
                         X_img = X[IMAGE_KEY]
                         kwargs[size_str] = size
                         model = Preprocessors("image_reduction").get(
@@ -286,6 +287,9 @@ class MultimodalClassifierSeeker:
                             eval_metrics[f"{metric}_str"] = metrics["str"][metric]
 
                         return metrics["raw"][self.metric][0]
+
+                    # TMP PRINT
+                    print("Starting Learning Representation Optimization")
 
                     study_learning = Optimizer(
                         study_name=f"{self.study_name}_learning_representation_exploration_{estimator.name()}_{self.metric}",

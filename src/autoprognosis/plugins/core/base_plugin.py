@@ -200,6 +200,9 @@ class Plugin(metaclass=ABCMeta):
             X: pd.DataFrame
         """
 
+        # TMP PRINT
+        print("PREPROCESSING DATA")
+
         if not isinstance(X, dict):
             X = self._preprocess_training_data(X)
             log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")

@@ -348,6 +348,10 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.model.zero_grad()
 
     def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
+
+        # TMP PRINT
+        print("Starting Training CNN FINE TUNE LR")
+
         # X = self._check_tensor(X).float()
         y = self._check_tensor(y).squeeze().long()
 
