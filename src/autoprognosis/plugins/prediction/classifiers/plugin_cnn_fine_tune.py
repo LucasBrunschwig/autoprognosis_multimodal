@@ -552,7 +552,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             n_iter = 5 * int(hyperparam_search_iterations)
 
         # Training Parameters
-        self.lr = lr
+        self.lr = LR[lr]
         self.non_linear = non_linear
         self.weight_decay = weight_decay
         self.n_iter = n_iter
