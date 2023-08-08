@@ -144,7 +144,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         non_linear: str,
         transformation: transforms.Compose,
         batch_size: int,
-        lr: float,
+        lr: list,
         n_iter: int,
         weight_decay: float,
         early_stopping: bool,
@@ -156,6 +156,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         n_additional_layers: int = 2,
         clipping_value: int = 1,
         output_size: int = None,
+        weighted_cross_entropy: bool = False,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
@@ -172,6 +173,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.preprocess = preprocess
         self.clipping_value = clipping_value
         self.output_size = output_size
+        self.weighted_cross_entropy = weighted_cross_entropy
 
         # Model Architectures
         self.model_name = model_name.lower()
@@ -238,9 +240,9 @@ class ConvNetPredefinedFineTune(nn.Module):
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if "fc" in name:
-                    params_.append({"params": param, "lr": lr})
+                    params_.append({"params": param, "lr": lr[0]})
                 elif param.requires_grad:
-                    params_.append({"params": param, "lr": lr / 10})
+                    params_.append({"params": param, "lr": lr[1]})
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 self.model.classifier[-1] = nn.Sequential(*additional_layers)
@@ -253,11 +255,11 @@ class ConvNetPredefinedFineTune(nn.Module):
                 if name_match in name:
                     param.requires_grad = True
                     params_.append(
-                        {"params": param, "lr": lr, "weight_decay": weight_decay}
+                        {"params": param, "lr": lr[0], "weight_decay": weight_decay}
                     )
                 elif param.requires_grad:
                     params_.append(
-                        {"params": param, "lr": lr / 10, "weight_decay": weight_decay}
+                        {"params": param, "lr": lr[1], "weight_decay": weight_decay}
                     )
 
         self.optimizer = torch.optim.Adam(params_)
@@ -377,7 +379,14 @@ class ConvNetPredefinedFineTune(nn.Module):
         val_loss_best = 999999
         patience = 0
 
-        loss = nn.CrossEntropyLoss()
+        if self.weighted_cross_entropy:
+            # TMP LUCAS
+            label_counts = torch.bincount(y)
+            class_weights = 1.0 / label_counts.float()
+            class_weights = class_weights / class_weights.sum()
+            loss = nn.CrossEntropyLoss(weight=class_weights)
+        else:
+            loss = nn.CrossEntropyLoss()
 
         for i in range(self.n_iter):
             train_loss = []
@@ -510,7 +519,8 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
         # Training
-        lr: float = 1e-5,
+        lr: list = [1e-5, 1e-5],
+        weighted_cross_entropy: bool = True,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
         batch_size: int = 100,
@@ -541,6 +551,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
         self.clipping_value = clipping_value
+        self.weighted_cross_entropy = weighted_cross_entropy
 
         # CNN Architecture
         self.conv_net = conv_net
@@ -581,8 +592,19 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 1, 3),
             # Training
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-            params.Integer("n_unfrozen_layer", 0, 4),
+            params.Categorical(
+                "lr",
+                [
+                    [1e-4, 1e-5],
+                    [1e-4, 1e-4],
+                    [1e-5, 1e-6],
+                    [1e-5, 1e-5],
+                    [1e-6, 1e-6],
+                    [1e-6, 1e-7],
+                ],
+            ),
+            params.Integer("n_unfrozen_layer", 1, 6),
+            params.Categorical("weighted_cross_entropy", [True, False]),
             # Data Augmentation
             params.Categorical(
                 "data_augmentation",
@@ -676,6 +698,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             transformation=self.transforms_compose,
             preprocess=self.preprocess,
             clipping_value=self.clipping_value,
+            weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
         self.model.train(X, y)
