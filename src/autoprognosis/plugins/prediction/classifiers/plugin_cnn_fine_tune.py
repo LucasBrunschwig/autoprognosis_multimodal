@@ -54,6 +54,14 @@ NONLIN = {
     "leaky_relu": nn.LeakyReLU,
     "selu": nn.SELU,
 }
+LR = {
+    0: [1e-4, 1e-5],
+    1: [1e-4, 1e-4],
+    2: [1e-5, 1e-6],
+    3: [1e-5, 1e-5],
+    4: [1e-6, 1e-6],
+    5: [1e-6, 1e-7],
+}
 
 
 class TrainingTensorDataset(Dataset):
@@ -523,7 +531,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
         # Training
-        lr: list = [1e-5, 1e-5],
+        lr: int = 3,
         weighted_cross_entropy: bool = True,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
@@ -545,7 +553,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             n_iter = 5 * int(hyperparam_search_iterations)
 
         # Training Parameters
-        self.lr = lr
+        self.lr = LR[lr]
         self.non_linear = non_linear
         self.weight_decay = weight_decay
         self.n_iter = n_iter
@@ -596,17 +604,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 1, 3),
             # Training
-            params.Categorical(
-                "lr",
-                [
-                    [1e-4, 1e-5],
-                    [1e-4, 1e-4],
-                    [1e-5, 1e-6],
-                    [1e-5, 1e-5],
-                    [1e-6, 1e-6],
-                    [1e-6, 1e-7],
-                ],
-            ),
+            params.Integer("lr", 0, 5),
             params.Integer("n_unfrozen_layer", 1, 6),
             params.Categorical("weighted_cross_entropy", [True, False]),
             # Data Augmentation
