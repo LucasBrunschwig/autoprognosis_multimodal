@@ -123,8 +123,8 @@ if __name__ == "__main__":
         # Add labels, title, and axis names
         plt.xlabel("Predicted Diagnoses")
         plt.ylabel("True Diagnoses")
-        plt.title("Confusion Matrix for Skin Lesion Classification")
-        plt.savefig(results_dir + "confusion_matrix_{classifier}.png")
+        plt.title(f"Confusion Matrix for Skin Lesion Classification - {classifier}")
+        plt.savefig(results_dir + f"confusion_matrix_{classifier}.png")
         plt.figure(figsize=(8, 6))
 
         # Test the explainer on test data
@@ -159,4 +159,4 @@ if __name__ == "__main__":
         fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
 
         plt.subplots_adjust(wspace=0.3, hspace=0.3)
-        plt.savefig(results_dir + "grad_cam_summary.png")
+        plt.savefig(results_dir + f"grad_cam_pp_summary_{classifier}.png")
