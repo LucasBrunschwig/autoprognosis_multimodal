@@ -601,10 +601,10 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         return [
             # CNN Architecture
             params.Categorical("conv_net", CNN),
-            params.Integer("n_additional_layers", 1, 3),
+            params.Integer("n_additional_layers", 1, 4),
             # Training
             params.Integer("lr", 0, 5),
-            params.Integer("n_unfrozen_layer", 1, 6),
+            params.Integer("n_unfrozen_layer", 1, 8),
             params.Categorical("weighted_cross_entropy", [True, False]),
             # Data Augmentation
             params.Categorical(
@@ -641,6 +641,15 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
             elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(10),
+                ]
+            elif self.data_augmentation == "gaussian_noise":
                 self.transforms = [
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
