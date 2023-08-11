@@ -44,11 +44,18 @@ if __name__ == "__main__":
 
     print("Loaded Images")
 
-    dim_red = "cnn_fine_tune"
-    multimodal_type = "early_fusion"
-    classifier = "neural_nets"
     predefined_cnn = ["alexnet"]
-    study_name = f"{multimodal_type}_{classifier}_{predefined_cnn[0]}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
+    multimodal_type = "intermediate_fusion"
+
+    if multimodal_type == "intermediate_fusion":
+        dim_red = []
+        classifier = "intermediate_conv_net"
+        study_name = f"test_new_intermediate_fusion_{classifier}_{predefined_cnn[0]}"
+
+    elif multimodal_type == "early_fusion":
+        dim_red = ["cnn_fine_tune"]
+        classifier = "neural_nets"
+        study_name = f"test_new_early_fusion_{classifier}_{predefined_cnn[0]}"
 
     if train_model:
         print("Started Training")
@@ -62,7 +69,7 @@ if __name__ == "__main__":
             predefined_cnn=predefined_cnn,
             feature_selection=[],
             image_processing=[],
-            image_dimensionality_reduction=[dim_red],
+            image_dimensionality_reduction=dim_red,
             imputers=["ice"],
             n_folds_cv=5,
             num_iter=50,

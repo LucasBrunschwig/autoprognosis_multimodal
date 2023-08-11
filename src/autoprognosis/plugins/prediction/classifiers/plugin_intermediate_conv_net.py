@@ -9,8 +9,7 @@ import torchvision.transforms
 
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
-
-# import autoprognosis.logger as log
+import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.plugins.prediction.classifiers.plugin_neural_nets import NONLIN
@@ -527,10 +526,14 @@ class ConvIntermediateNet(nn.Module):
                             patience += 1
 
                         if patience > self.patience and i > self.n_iter_min:
+                            print(
+                                f"Pretraining - Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, "
+                                f"elapsed time {(end_ - start_):.2f}"
+                            )
                             break
 
                     if i % self.n_iter_print == 0:
-                        print(
+                        log.trace(
                             f"Pretraining - Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, "
                             f"elapsed time {(end_-start_):.2f}"
                         )
@@ -560,15 +563,15 @@ class ConvIntermediateNet(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=3,
-            num_workers=5,
+            # prefetch_factor=3,
+            # num_workers=5,
         )
         test_loader = DataLoader(
             test_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=3,
-            num_workers=5,
+            # prefetch_factor=3,
+            # num_workers=5,
         )
 
         # do training
@@ -641,10 +644,14 @@ class ConvIntermediateNet(nn.Module):
                             patience += 1
 
                         if patience > self.patience and i > self.n_iter_min:
+                            print(
+                                f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, "
+                                f"elapsed time {(end_ - start_):.2f}"
+                            )
                             break
 
                     if i % self.n_iter_print == 0:
-                        print(
+                        log.trace(
                             f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, "
                             f"elapsed time {(end_-start_):.2f}"
                         )
@@ -780,7 +787,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_units_hidden: int = 100,
         dropout: float = 0.4,
         # Training
-        data_augmentation: bool = True,
+        data_augmentation: str = "simple_strategy",
         n_unfrozen_layers: int = 3,
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
@@ -789,9 +796,10 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
-        n_iter: int = 1000,
+        n_iter: int = 500,
         batch_norm: bool = True,
         early_stopping: bool = True,
+        pretrain_image_model: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -813,6 +821,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.conv_name = conv_name.lower()
         self.data_augmentation = data_augmentation
         self.image_transformation = None
+        self.pretrain_image_model = pretrain_image_model
 
         weights = models.get_weight(WEIGHTS[self.conv_name.lower()])
         self.preprocess = weights.transforms(antialias=True)
@@ -856,21 +865,81 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
             params.Categorical("dropout", [0, 0.1, 0.2, 0.4]),
-            params.Integer("n_unfrozen_layers", 1, 3),
+            params.Integer("n_unfrozen_layers", 1, 6),
+            params.Categorical("pretrain_image_model", [True, False]),
             # Data Augmentation
-            params.Categorical("data_augmentation", [True, False]),
+            params.Categorical(
+                "data_augmentation",
+                [
+                    "",
+                    # "autoaugment_cifar10",
+                    # "autoaugment_imagenet",
+                    "rand_augment",
+                    "trivial_augment",
+                    "simple_strategy",
+                    "gaussian_noise",
+                    # "color_jittering",
+                ],
+            ),
         ]
 
     def image_tranform(self):
         if self.data_augmentation:
-            # Add random rotation and flip to the image
-            self.image_transformation = transforms.Compose(
-                [
+            if self.data_augmentation == "autoaugment_imagenet":
+                self.transforms = [
+                    transforms.AutoAugment(
+                        policy=transforms.AutoAugmentPolicy.IMAGENET
+                    ),
+                ]
+            elif self.data_augmentation == "autoaugment_cifar10":
+                self.transforms = [
+                    transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
+                ]
+            elif self.data_augmentation == "rand_augment":
+                self.transforms = [
+                    transforms.RandAugment(),
+                ]
+            elif self.data_augmentation == "trivial_augment":
+                self.transforms = [transforms.TrivialAugmentWide()]
+            elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
                     transforms.RandomRotation(10),
                 ]
-            )
+            elif self.data_augmentation == "gaussian_noise":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(10),
+                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
+                ]
+            elif self.data_augmentation == "color_jittering":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(
+                        10
+                    ),  # Random rotation between -10 and 10 degrees
+                    transforms.ColorJitter(
+                        brightness=0.05, contrast=0.05, saturation=0.05
+                    ),
+                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
+                ]
+
+            self.transforms_compose = transforms.Compose(self.transforms)
+
+        else:
+            self.transforms_compose = None
 
     @staticmethod
     def to_tensor(img_: pd.DataFrame) -> torch.Tensor:
@@ -902,7 +971,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             n_inter_hidden=self.n_neurons,
             n_layers_hidden=self.n_layers_hidden,
             n_units_hidden=self.n_units_hidden,
-            transform=self.image_transformation,
+            transform=self.transforms_compose,
             lr=self.lr,
             weight_decay=self.weight_decay,
             dropout=self.dropout,
@@ -919,7 +988,8 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         X_img = X[IMAGE_KEY]
 
         # Step 2: pretrain the image model
-        # self.model.pretrain_image_model(X_img, y, self.n_classes)
+        if self.pretrain_image_model:
+            self.model.pretrain_image_model(X_img, y, self.n_classes)
 
         # Step 2: fit the newly obtained vector with the selected classifier
         self.model.train(X_tab, X_img, y)
