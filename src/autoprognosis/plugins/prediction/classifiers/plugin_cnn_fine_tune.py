@@ -617,6 +617,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     "trivial_augment",
                     "simple_strategy",
                     "color_jittering",
+                    "gaussian_noise",
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
