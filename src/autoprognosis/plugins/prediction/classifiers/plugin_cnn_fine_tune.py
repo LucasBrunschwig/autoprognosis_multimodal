@@ -215,31 +215,39 @@ class ConvNetPredefinedFineTune(nn.Module):
         else:
             raise ValueError(f"Model not implemented: {self.model_name}")
 
-        # The first intermediate layer depends on the last output
-        n_intermediate = int((n_features_in // 2))
-        NL = NONLIN[non_linear]
+        additional_layers = []
+        if n_additional_layers > 0:
+            # The first intermediate layer depends on the last output
+            n_intermediate = int((n_features_in // 2))
+            NL = NONLIN[non_linear]
 
-        additional_layers = [
-            nn.Linear(n_features_in, n_intermediate),
-            NL(inplace=True),
-            nn.Dropout(p=0.5, inplace=False),
-        ]
+            additional_layers = [
+                nn.Linear(n_features_in, n_intermediate),
+                NL(inplace=True),
+                nn.Dropout(p=0.5, inplace=False),
+            ]
 
-        for i in range(n_additional_layers - 1):
-            additional_layers.extend(
-                [
-                    nn.Linear(n_intermediate, int(n_intermediate / 2)),
-                    NL(inplace=True),
-                    nn.Dropout(p=0.5, inplace=False),
-                ]
-            )
-            n_intermediate = int(n_intermediate / 2)
+            for i in range(n_additional_layers - 1):
+                additional_layers.extend(
+                    [
+                        nn.Linear(n_intermediate, int(n_intermediate / 2)),
+                        NL(inplace=True),
+                        nn.Dropout(p=0.5, inplace=False),
+                    ]
+                )
+                n_intermediate = int(n_intermediate / 2)
 
-        if self.output_size:
-            additional_layers.append(nn.Linear(n_intermediate, output_size))
-            additional_layers.append(nn.Linear(output_size, n_classes))
+            if self.output_size:
+                additional_layers.append(nn.Linear(n_intermediate, output_size))
+                additional_layers.append(nn.Linear(output_size, n_classes))
+            else:
+                additional_layers.append(nn.Linear(n_intermediate, n_classes))
         else:
-            additional_layers.append(nn.Linear(n_intermediate, n_classes))
+            if self.output_size:
+                additional_layers.append(nn.Linear(n_features_in, output_size))
+                additional_layers.append(nn.Linear(output_size, n_classes))
+            else:
+                additional_layers.append(nn.Linear(n_features_in, n_classes))
 
         params_ = []
         if hasattr(self.model, "fc"):
@@ -375,8 +383,6 @@ class ConvNetPredefinedFineTune(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=2,
-            num_workers=5,
         )
         val_loader = DataLoader(
             test_dataset, batch_size=self.batch_size, pin_memory=True
@@ -601,7 +607,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         return [
             # CNN Architecture
             params.Categorical("conv_net", CNN),
-            params.Integer("n_additional_layers", 1, 4),
+            params.Integer("n_additional_layers", 0, 3),
             # Training
             params.Integer("lr", 0, 5),
             params.Integer("n_unfrozen_layer", 1, 8),
@@ -612,7 +618,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 [
                     "",
                     # "autoaugment_cifar10",
-                    # "autoaugment_imagenet",
+                    "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
                     "simple_strategy",
@@ -641,15 +647,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 ]
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
-            elif self.data_augmentation == "simple_strategy":
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
-                    transforms.RandomRotation(10),
-                ]
             elif self.data_augmentation == "gaussian_noise":
                 self.transforms = [
                     transforms.RandomHorizontalFlip(),
@@ -659,6 +656,15 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     ),  # Assuming input images are larger than 224x224
                     transforms.RandomRotation(10),
                     transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
+                ]
+            elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(10),
                 ]
             elif self.data_augmentation == "color_jittering":
                 self.transforms = [
