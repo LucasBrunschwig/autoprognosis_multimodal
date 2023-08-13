@@ -423,10 +423,11 @@ def evaluate_multimodal_estimator(
     enable_reproducible_results(seed)
 
     for modality, df in X.items():
-        if not (df.empty):
-            X[modality] = pd.DataFrame(df).reset_index(drop=True)
-        else:
-            X.pop(modality)
+        if modality != "lr":
+            if not (df.empty):
+                X[modality] = pd.DataFrame(df).reset_index(drop=True)
+            else:
+                X.pop(modality)
 
     Y = LabelEncoder().fit_transform(Y)
     Y = pd.Series(Y).reset_index(drop=True)
@@ -457,8 +458,12 @@ def evaluate_multimodal_estimator(
         X_train = {}
         X_test = {}
         for key in X.keys():
-            X_train[key] = X[key].loc[X[key].index[train_index]]
-            X_test[key] = X[key].loc[X[key].index[test_index]]
+            if key == "lr":
+                X_train[key] = X[key]["train"][indx]
+                X_test[key] = X[key]["test"][indx]
+            else:
+                X_train[key] = X[key].loc[X[key].index[train_index]]
+                X_test[key] = X[key].loc[X[key].index[test_index]]
 
         if pretrained:
             model = estimator[indx]

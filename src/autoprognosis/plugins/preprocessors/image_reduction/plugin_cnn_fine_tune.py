@@ -117,6 +117,10 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         ):
             self.conv_net = predefined_args["predefined_cnn"][0]
 
+            # If there are a subgroup of predefined architecture select from it
+            if predefined_args.get("output_size", None):
+                self.output_size = predefined_args["output_size"][0]
+
         self.image_transform()
 
     @staticmethod
@@ -133,10 +137,10 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        # Optimization step: early fusion
+        # Output size for early fusion optimization
         params_output = [params.Categorical("output_size", [50, 100, 300])]
-        # Use the learned optimal learning representation features
-        search_str = "preprocessor.image_reduction.cnn_fine_tune."
+        # Other parameters for learning representation optimization
+        search_str = "cnn_fine_tune."
         params_name = [
             "conv_net",
             "n_additional_layers",
@@ -155,12 +159,27 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     def hyperparameter_lr_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         # Optimization of learning representation
-        if kwargs.get("predefined_cnn", None) and len(kwargs["predefined_cnn"]) > 0:
-            CNN = kwargs["predefined_cnn"]
+
+        if (
+            predefined_args.get("predefined_cnn", None)
+            and len(predefined_args["predefined_cnn"]) > 0
+        ):
+            CNN = predefined_args["predefined_cnn"]
         else:
             CNN = PREDEFINED_CNN
+        if not isinstance(CNN, list):
+            CNN = [CNN]
+
+        search_str = "cnn_fine_tune."
+        if predefined_args.get(search_str + "output_size", None):
+            output_size = predefined_args.get(search_str + "output_size")
+        else:
+            output_size = [50, 100, 300]
+        if not isinstance(output_size, list):
+            output_size = [output_size]
 
         return [
+            params.Categorical("output_size", output_size),
             # CNN Architecture
             params.Categorical("conv_net", CNN),
             params.Categorical("lr", [0, 1, 2, 3, 4, 5]),
@@ -172,11 +191,12 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                 "data_augmentation",
                 [
                     "",
-                    "autoaugment_cifar10",
+                    # "autoaugment_cifar10",
                     "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
                     "simple_strategy",
+                    "gaussian_noise",
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
@@ -210,7 +230,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                 ]
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
-            elif self.data_augmentation == "simple_strategy":
+            elif self.data_augmentation == "gaussian_noise":
                 self.transforms = [
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
@@ -224,6 +244,20 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                         brightness=0.2, contrast=0.2, saturation=0.2
                     ),
                     transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+                ]
+            elif self.data_augmentation == "simple_strategy":
+                self.transforms = [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomResizedCrop(
+                        224
+                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomRotation(
+                        10
+                    ),  # Random rotation between -10 and 10 degrees
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2, saturation=0.2
+                    ),
                 ]
         else:
             self.transforms_compose = None

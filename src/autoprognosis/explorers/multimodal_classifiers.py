@@ -7,6 +7,8 @@ from joblib import Parallel
 import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.exceptions import StudyCancelled
@@ -198,6 +200,11 @@ class MultimodalClassifierSeeker:
             for plugin in classifiers
         ]
 
+        self.estimators_lr = [
+            Preprocessors(category="image_reduction").get(plugin)
+            for plugin in image_dimensionality_reduction
+        ]
+
         self.n_folds_cv = n_folds_cv
         self.num_iter = num_iter
         self.strict = strict
@@ -207,10 +214,59 @@ class MultimodalClassifierSeeker:
         self.optimizer_type = optimizer_type
         self.random_state = random_state
         self.multimodal_key = multimodal_key
+        self.best_representation = {}
+        self.pretrain_representation = {}
 
     def _should_continue(self) -> None:
         if self.hooks.cancel():
             raise StudyCancelled("Classifier search cancelled")
+
+    def pretrain_lr_for_early_fusion(
+        self,
+        X: pd.DataFrame,
+        Y: pd.Series,
+        group_ids: Optional[pd.Series] = None,
+        seed: int = 0,
+    ) -> List:
+        self._should_continue()
+
+        if group_ids is not None:
+            skf = StratifiedGroupKFold(
+                n_splits=self.n_folds_cv, shuffle=True, random_state=seed
+            )
+        else:
+            skf = StratifiedKFold(
+                n_splits=self.n_folds_cv, shuffle=True, random_state=seed
+            )
+        Y_ = LabelEncoder().fit_transform(Y)
+        Y_ = pd.Series(Y_).reset_index(drop=True)
+        X_ = X.reset_index(drop=True)
+        for train_index, test_index in skf.split(X_, Y_, groups=group_ids):
+
+            Y_train = Y_.loc[Y_.index[train_index]]
+            X_train = X_.loc[X_.index[train_index]]
+            X_test = X_.loc[X_.index[test_index]]
+
+            for estimator in self.estimators_lr:
+                for result in self.best_representation.keys():
+                    if estimator.name() in result:
+                        model = Preprocessors(category="image_reduction").get(
+                            estimator.name(), **self.best_representation[result]
+                        )
+                        if not self.pretrain_representation.get(result, None):
+                            self.pretrain_representation[result] = {
+                                "train": [],
+                                "test": [],
+                            }
+
+                        model.fit(X_train, Y_train)
+                        proba_train = model.transform(X_train)
+                        proba_test = model.transform(X_test)
+
+                        self.pretrain_representation[result]["train"].append(
+                            proba_train
+                        )
+                        self.pretrain_representation[result]["test"].append(proba_test)
 
     def search_best_args_for_estimator(
         self,
@@ -220,8 +276,6 @@ class MultimodalClassifierSeeker:
         group_ids: Optional[pd.Series] = None,
     ) -> Tuple[List[float], List[float]]:
         self._should_continue()
-
-        self.best_representation = {}
 
         def evaluate_args(**kwargs: Any) -> float:
             self._should_continue()
@@ -239,78 +293,25 @@ class MultimodalClassifierSeeker:
             ):
                 raise RuntimeError("Multimodal Fusion but no image inputs")
 
-            # ----------------------------------------------------------------------- #
-            # Learning Representation Optimization
-            image_reduction = None
-            search_str = ""
-            size_str = "output_size"
-            size = None
-            for key in kwargs.keys():
-                if "image_reduction" in key.split(".")[1]:
-                    image_reduction = key.split(".")[2]
-                    search_str = f"preprocessor.image_reduction.{image_reduction}."
-                    size = kwargs.get(search_str + size_str)
+            image_reduction = ""
+            for arg in kwargs.keys():
+                if "image_reduction." in arg:
+                    image_reduction = ".".join(arg.split(".")[0:-1])
                     break
-            if image_reduction is not None:
+
+            if image_reduction:
+                image_reduction_name = image_reduction.split(".")[-1]
+                size = str(kwargs.get(image_reduction + ".output_size", None))
                 if self.best_representation.get(
-                    search_str + size_str + str(size), None
+                    image_reduction_name + "." + size, None
                 ):
                     for arg, value in self.best_representation.get(
-                        search_str + size_str + str(size)
+                        image_reduction_name + "." + size
                     ).items():
-                        predefined_args.update({search_str + arg: value})
-                else:
-                    estimator_representation = Preprocessors("image_reduction").get(
-                        image_reduction, output_size=size
-                    )
-
-                    def evaluate_learning_args(**kwargs):
-
-                        X_img = X[IMAGE_KEY]
-                        kwargs[size_str] = size
-                        model = Preprocessors("image_reduction").get(
-                            image_reduction, **kwargs
-                        )
-                        try:
-                            metrics = evaluate_estimator(
-                                model,
-                                X_img,
-                                Y,
-                                n_folds=self.n_folds_cv,
-                                group_ids=group_ids,
-                            )
-                        except BaseException as e:
-                            log.error(f"evaluate_estimator failed: {e}")
-                        eval_metrics = {}
-                        for metric in metrics["raw"]:
-                            eval_metrics[metric] = metrics["raw"][metric][0]
-                            eval_metrics[f"{metric}_str"] = metrics["str"][metric]
-
-                        return metrics["raw"][self.metric][0]
-
-                    study_learning = Optimizer(
-                        study_name=f"{self.study_name}_learning_representation_exploration_{estimator.name()}_{self.metric}",
-                        estimator=estimator_representation,
-                        evaluation_cbk=evaluate_learning_args,
-                        optimizer_type=self.optimizer_type,
-                        n_trials=10,
-                        timeout=self.timeout,
-                        random_state=self.random_state,
-                    )
-
-                    best_score, params = study_learning.evaluate()
-
-                    # Store the optimal solution if the learning representation size comes again
-                    self.best_representation[
-                        search_str + size_str + str(size)
-                    ] = params[np.argmax(best_score)]
-
-                    # Update the params for the neural  networks fitting
-                    for arg, value in self.best_representation.get(
-                        search_str + size_str + str(size)
-                    ).items():
-                        predefined_args.update({search_str + arg: value})
-            # ----------------------------------------------------------------------- #
+                        kwargs.update({estimator.name() + "." + arg: value})
+                X["lr"] = self.pretrain_representation[
+                    image_reduction_name + "." + size
+                ]
 
             model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)
 
@@ -361,6 +362,74 @@ class MultimodalClassifierSeeker:
         )
         return study.evaluate()
 
+    def search_best_args_for_lr_estimator(
+        self,
+        estimator: Any,
+        X: pd.DataFrame,
+        Y: pd.Series,
+        output_size: int,
+        group_ids: Optional[pd.Series] = None,
+    ) -> Tuple[List[float], List[float]]:
+        self._should_continue()
+
+        predefined_args.update({estimator.name() + ".output_size": [output_size]})
+
+        def evaluate_learning_args(**kwargs):
+
+            self._should_continue()
+
+            model = Preprocessors(category="image_reduction").get(
+                estimator.name(), **kwargs
+            )
+
+            try:
+                metrics = evaluate_estimator(
+                    model,
+                    X,
+                    Y,
+                    n_folds=self.n_folds_cv,
+                    group_ids=group_ids,
+                )
+            except BaseException as e:
+                log.error(f"evaluate_estimator failed: {e}")
+            eval_metrics = {}
+            for metric in metrics["raw"]:
+                eval_metrics[metric] = metrics["raw"][metric][0]
+                eval_metrics[f"{metric}_str"] = metrics["str"][metric]
+
+            return metrics["raw"][self.metric][0]
+
+        study_learning = Optimizer(
+            study_name=f"{self.study_name}_learning_representation_exploration_{estimator.name()}_{self.metric}",
+            estimator=estimator,
+            evaluation_cbk=evaluate_learning_args,
+            optimizer_type=self.optimizer_type,
+            n_trials=min(20, self.num_iter),
+            timeout=self.timeout,
+            random_state=self.random_state,
+        )
+
+        best_score, params = study_learning.evaluate()
+
+        # Store the optimal solution if the learning representation size comes again
+        self.best_representation[estimator.name() + "." + str(output_size)] = params[
+            np.argmax(best_score)
+        ]
+
+    def lr_search(self, X: dict, Y: pd.Series, group_ids: Optional[pd.Series]):
+
+        self._should_continue()
+
+        for estimator in self.estimators_lr:
+            for param in estimator.hyperparameter_space():
+                if "output_size" in param.name:
+                    choices = param.choices
+
+                    for output_size in choices:
+                        self.search_best_args_for_lr_estimator(
+                            estimator, X, Y, output_size, group_ids
+                        )
+
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def search(
         self,
@@ -380,12 +449,6 @@ class MultimodalClassifierSeeker:
 
         """
         self._should_continue()
-
-        # TMP LUCAS
-        # search_results = dispatcher(
-        #    delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
-        #    for estimator in self.estimators
-        # )
 
         search_results = [
             self.search_best_args_for_estimator(estimator, X, Y, group_ids)
@@ -429,12 +492,12 @@ class MultimodalClassifierSeeker:
                     size_str = "output_size"
                     size = all_args[pos_est].get(search_str + size_str)
                     best_representation_params = self.best_representation.get(
-                        search_str + size_str + str(size)
+                        image_reduction + "." + str(size)
                     )
                     break
+
             if best_representation_params:
                 for param, value in best_representation_params.items():
-                    predefined_args.update({search_str + param: value})
                     all_args[pos_est].update({search_str + param: value})
 
             model = all_estimators[pos_est].get_multimodal_pipeline_from_named_args(

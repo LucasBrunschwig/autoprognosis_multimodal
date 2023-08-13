@@ -450,6 +450,12 @@ class MultimodalEnsembleSeeker:
 
         # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
+
+            # Optimize the learned representation
+            self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+            # Pretrain and predict learned representation and use (LR key) if this works
+            self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
+            # Train the classifier - provide X
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
             scores = []
 

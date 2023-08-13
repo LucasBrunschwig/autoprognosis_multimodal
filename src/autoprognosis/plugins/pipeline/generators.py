@@ -151,10 +151,13 @@ def _generate_early_fusion_fit() -> Callable:
         local_X_img = X[IMAGE_KEY].copy()
 
         # Transform the image
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.fit_transform(local_X_img, *args)
+        if X.get("lr", None) is None:
+            for stage in self.stages[:-2]:
+                if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
+                    local_X_img = pd.DataFrame(local_X_img)
+                    local_X_img = stage.fit_transform(local_X_img, *args)
+        else:
+            local_X_img = X["lr"]
 
         # Process tabular
         for stage in self.stages[:-2]:
@@ -223,11 +226,14 @@ def _generate_early_fusion_predict() -> Callable:
         local_X_tab = X[TABULAR_KEY].copy()
         local_X_img = X[IMAGE_KEY].copy()
 
-        # Process images
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img, *args)
+        if X.get("lr", None) is None:
+            # Process images
+            for stage in self.stages[:-2]:
+                if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
+                    local_X_img = pd.DataFrame(local_X_img)
+                    local_X_img = stage.transform(local_X_img, *args)
+        else:
+            local_X_img = X["lr"]
 
         # Process tabular
         for stage in self.stages[:-2]:
@@ -282,11 +288,14 @@ def _generate_early_fusion_predict_proba() -> Callable:
         local_X_tab = X[TABULAR_KEY].copy()
         local_X_img = X[IMAGE_KEY].copy()
 
-        # Process images
-        for stage in self.stages[:-2]:
-            if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                local_X_img = pd.DataFrame(local_X_img)
-                local_X_img = stage.transform(local_X_img, *args)
+        if X.get("lr", None) is None:
+            # Process images
+            for stage in self.stages[:-2]:
+                if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
+                    local_X_img = pd.DataFrame(local_X_img)
+                    local_X_img = stage.transform(local_X_img, *args)
+        else:
+            local_X_img = X["lr"]
 
         # Process tabular
         for stage in self.stages[:-2]:
