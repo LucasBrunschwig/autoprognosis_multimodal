@@ -78,3 +78,5 @@ intermediary_results/
 venv/
 figure_output/
 results/
+data/
+sensitivity_results/
