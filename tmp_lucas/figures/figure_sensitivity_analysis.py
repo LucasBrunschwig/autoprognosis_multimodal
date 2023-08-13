@@ -1,7 +1,7 @@
 """
 Sensitivity Analysis
 
-Description: This file is used for a sensitivity analysis on new parameters
+Description: This file is used for a sensitivity analysis on new parameters based on the Morris Sensitivity Analysis
 Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 
 """
@@ -11,29 +11,35 @@ import random
 
 # third party
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.ticker import MaxNLocator
 import pandas as pd
+import seaborn as sns
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.plugins.prediction import Predictions
-from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_estimator
+from autoprognosis.utils.tester import classifier_metrics
 
 from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
-    output = "sensivity"
-    os.makedirs(output, exist_ok=True)
-
-    run_analysis = True
-    n_runs = 10
-    analyze_results = True
+    run_analysis = False
+    run_results = True
+    n_runs = 5
 
     multimodal_type = "image"
     classifier = "cnn_fine_tune"
 
+    output = "sensitivity_results"
+
+    output = output + "/" + classifier
+    os.makedirs(output, exist_ok=True)
+
     if run_analysis:
+
+        # ---------- PREPARING DATASET ---------- #
         print("Loading Datasets")
         DL = DataLoader(
             path_="../../data",
@@ -41,8 +47,9 @@ if __name__ == "__main__":
             format_="PIL",
         )
         df = DL.load_dataset()
-        df = df.sample(n=1000, random_state=42)
         print("Dataset Loaded")
+
+        evaluator = classifier_metrics()
 
         targets = df[["label"]]
         targets.reset_index(inplace=True, drop=True)
@@ -64,6 +71,14 @@ if __name__ == "__main__":
             df_dict = df[["image"]]
             df_dict.reset_index(inplace=True, drop=True)
 
+            X_train, X_test, y_train, y_test = train_test_split(
+                df_dict, targets, test_size=0.2, random_state=42
+            )
+
+        # ---------- PREPARING DATASET ---------- #
+
+        # ---------- PREPARING PARAMETERS ---------- #
+
         model = Predictions(category="classifier").get(classifier)
 
         params = model.hyperparameter_space_fqdn()
@@ -71,126 +86,165 @@ if __name__ == "__main__":
         for param in params:
             params_dict[param.name.split(".")[-1]] = param.choices
 
-        # Fix Parameters
         params_dict["conv_net"] = "alexnet"
-        params_dict["aucroc"] = 0
-        params_dict["accuracy"] = 0
-        params_dict["balanced_accuracy"] = 0
 
-        initial_params = {}
-        for name, choice in params_dict.items():
-            if isinstance(choice, list):
-                initial_params[name] = random.choice(choice)
-            else:
-                initial_params[name] = params_dict[name]
+        # Select One parameter and evaluate the model with random set up to see how
+        for current_name, current_choices in params_dict.items():
+            if not isinstance(current_choices, list):
+                continue
 
-        print("Running sensitivity analysis...")
-        param_runs = pd.DataFrame(columns=list(params_dict.keys()))
-        for i in range(n_runs):
+            evaluation_aucroc = {choice: [] for choice in current_choices}
+            evaluation_accuracy = {choice: [] for choice in current_choices}
+            evaluation_balanced = {choice: [] for choice in current_choices}
 
-            model = Predictions(category="classifier").get(classifier, **initial_params)
+            random_param_selection = {}
 
-            if multimodal_type == "intermediate_fusion":
-                results = evaluate_multimodal_estimator(
-                    model,
-                    X=df_dict,
-                    Y=targets,
-                    multimodal_type="late_fusion",
-                    n_folds=5,
-                )
-            elif multimodal_type == "image":
-                results = evaluate_estimator(
-                    model,
-                    X=df_dict,
-                    Y=targets,
-                    n_folds=5,
-                )
+            for i in range(n_runs):
 
-            initial_params["aucroc"] = results["str"]["aucroc"]
-            initial_params["accuracy"] = results["str"]["accuracy"]
-            initial_params["balanced_accuracy"] = results["str"]["balanced_accuracy"]
-            param_runs.loc["initial_params_" + str(i)] = initial_params
+                # For each run fix a set of random param
+                for name, choices in params_dict.items():
+                    if name != current_name:
+                        if isinstance(choices, list):
+                            value = random.choice(choices)
+                            random_param_selection[name] = value
+                        else:
+                            random_param_selection[name] = choices
 
-            for name, choice in params_dict.items():
-                if not isinstance(choice, list):
-                    continue
-                new_param = random.choice(choice)
-                count = 0
-                count_max = 20
-                tested_params = np.unique(param_runs[name].to_numpy())
+                # Evaluate all params value with this params
+                for choice in current_choices:
+                    random_param_selection[current_name] = choice
 
-                # Try to find a new parameters
-                while count < count_max and new_param in tested_params:
-                    new_param = random.choice(choice)
-                    count += 1
-
-                # If no new parameters possible just choose another one
-                if new_param == initial_params[name]:
-                    while new_param == initial_params[name]:
-                        new_param = random.choice(choice)
-
-                initial_params[name] = new_param
-                model = Predictions(category="classifier").get(
-                    classifier, **initial_params
-                )
-
-                if multimodal_type == "intermediate_fusion":
-                    results = evaluate_multimodal_estimator(
-                        model,
-                        X=df_dict,
-                        Y=targets,
-                        multimodal_type="late_fusion",
-                        n_folds=5,
-                    )
-                elif multimodal_type == "image":
-                    results = evaluate_estimator(
-                        model,
-                        X=df_dict,
-                        Y=targets,
-                        n_folds=5,
+                    model = Predictions(category="classifier").get(
+                        classifier, **random_param_selection
                     )
 
-                initial_params["aucroc"] = results["str"]["aucroc"]
-                initial_params["accuracy"] = results["str"]["accuracy"]
-                initial_params["balanced_accuracy"] = results["str"][
-                    "balanced_accuracy"
-                ]
-                param_runs.loc[name + f"_{i}"] = initial_params
+                    model.fit(X_train, y_train)
 
-        param_runs.to_csv(f"{output}/sensitivity_analysis.csv")
+                    preds = model.predict_proba(X_test)
 
-    if analyze_results:
-        results = pd.read_csv("tmp/sensitivity_analysis.csv")
-        results.drop("Unnamed: 0", axis=1, inplace=True)
-        n_params = len(results) // 5
-        params_name = results.columns
-        previous_accuracy = None
-        sensitivity_analysis = {column: [] for column in params_name[:-3]}
-        for ix, row in results.iterrows():
-            column = ix % n_params
-            accuracy = row.iloc[-2]
-            if column > 0:
-                sensitivity_analysis[results.columns[column - 1]].append(
-                    float(accuracy.split(" ")[0])
-                    - float(previous_accuracy.split(" ")[0])
+                    results = evaluator.score_proba(y_test, preds)
+
+                    evaluation_aucroc[choice].append(results["aucroc"])
+                    evaluation_accuracy[choice].append(results["accuracy"])
+                    evaluation_balanced[choice].append(results["balanced_accuracy"])
+
+            # Save to csv for each param
+            param_summary = pd.DataFrame.from_dict(evaluation_accuracy)
+            param_summary.to_csv(f"{output}/{current_name}_accuracy.csv")
+
+            param_summary = pd.DataFrame.from_dict(evaluation_accuracy)
+            param_summary.to_csv(output + "/" + current_name + "_aucroc.csv")
+
+            param_summary = pd.DataFrame.from_dict(evaluation_balanced)
+            param_summary.to_csv(output + "/" + current_name + "_balanced_accuracy.csv")
+
+        # ---------- PREPARING PARAMETERS ---------- #
+
+        # ---------- RUNNING SENSITIVITY ANALYSIS ---------- #
+
+    if run_results:
+
+        accuracy_summary = {}
+
+        # Load Parameters Results
+        for file in os.listdir(output):
+            if (
+                file.endswith(".csv")
+                and "accuracy" in file
+                and "balanced_accuracy" not in file
+            ):
+                accuracy_summary["_".join(file.split("_")[:-1])] = pd.read_csv(
+                    os.path.join(output, file), index_col=0
                 )
-            previous_accuracy = accuracy
 
-        params = list(sensitivity_analysis.keys())
-        importance_mean = []
-        importance_std = []
-        for values in sensitivity_analysis.values():
-            importance_mean.append(np.mean(np.abs(values)))
-            importance_std.append(np.std(np.abs(values)))
-        fig, ax = plt.subplots(figsize=(18, 18))
-        ax.set_xticks(rotation=90)  # Plot the bars for the mean values
-        ax.bar(params, importance_mean, yerr=importance_std, capsize=5)
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(30, 10))
 
-        # Set labels and title
-        ax.set_xlabel("Parameters name")
-        ax.set_ylabel("Morris Sensitivity")
-        ax.set_title("Morris Sensitivity Analysis for Intermediate Fusion")
+        line_color = "red"  # Color for the line plot
 
-        # Display the plot
-        plt.tight_layout()
-        plt.savefig(f"{output}/sensitivity_analysis.png", bbox_inches="tight")
+        for i, ((name, df), ax) in enumerate(
+            zip(accuracy_summary.items(), axes.ravel())
+        ):
+
+            # Scatter plot with legend=False
+            for index, row in df.T.iterrows():
+                sns.scatterplot(
+                    x=df.T.columns,
+                    y=row,
+                    label=index,
+                    ax=ax,
+                    marker="x",
+                    s=100,
+                    legend=False,
+                )
+
+            ax.set_ylim(0, 1.0)
+            ax2 = ax.twinx()
+
+            lines1, labels1 = ax.get_legend_handles_labels()
+
+            # Line plot with legend=False and specified color
+            sns.lineplot(
+                x=df.T.columns,
+                y=df.T.max(axis=0) - df.T.min(axis=0),
+                color=line_color,
+                alpha=0.5,
+                label="Max-Min",
+                ax=ax2,
+                legend=False,
+            )
+
+            # Set y-axis limits
+            ax2.set_ylim(0, 0.5)
+
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+            # Display ticks as crosses on the primary y-axis
+            ax.tick_params(
+                axis="y", direction="inout", length=10, width=2, grid_alpha=0.5
+            )
+            ax.tick_params(
+                axis="x", direction="inout", length=10, width=2, grid_alpha=0.5
+            )
+            ax2.tick_params(
+                axis="y",
+                direction="inout",
+                length=10,
+                width=2,
+                grid_alpha=0.5,
+                colors=line_color,
+            )  # Match tick colors with line color
+
+            lines2, labels2 = ax2.get_legend_handles_labels()
+
+            # Manually create a combined legend
+            ax.legend(lines1, labels1, loc=0, fontsize="small")
+            ax.set_title(name)
+            ax.grid()
+            ax2.grid()
+
+            # Set y-axis labels based on subplot position
+            if i % 3 == 0:  # leftmost subplot of each row
+                ax.set_ylabel(
+                    "accuracy", fontsize=12
+                )  # Match label color with line color
+                ax2.set_ylabel("")
+                ax2.set_yticklabels([])
+            elif i % 3 == 2:  # rightmost subplot of each row
+                ax2.set_ylabel("max - min difference", fontsize=12, color=line_color)
+                ax.set_ylabel("")
+                ax.set_yticklabels([])
+
+            else:  # middle subplot
+                ax.set_yticklabels([])
+                ax2.set_yticklabels([])
+
+                ax.set_ylabel("")
+                ax2.set_ylabel("")
+
+            if i == 4 or i == 1:
+                ax.set_xlabel("run number")
+
+        fig.suptitle("Sensitivity Analysis", size=15)
+        plt.show()
+
+        plt.savefig(output + f"/sensitivity_analysis_{classifier}.png")
