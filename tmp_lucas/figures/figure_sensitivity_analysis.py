@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.plugins.prediction import Predictions
 from autoprognosis.utils.tester import classifier_metrics
 
@@ -25,12 +26,12 @@ from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
-    run_analysis = False
+    run_analysis = True
     run_results = True
     n_runs = 5
 
-    multimodal_type = "image"
-    classifier = "cnn_fine_tune"
+    multimodal_type = "intermediate_fusion"
+    classifier = "intermediate_conv_net"
 
     output = "sensitivity_results"
 
@@ -67,6 +68,19 @@ if __name__ == "__main__":
             df_dict["tab"].reset_index(inplace=True, drop=True)
             print("Extracting Parameters")
 
+            X_train = {}
+            y_train = {}
+            X_test = {}
+            y_test = {}
+            for key, df in df_dict.items():
+                X_train_key, X_test_key = train_test_split(
+                    df, test_size=0.2, random_state=42
+                )
+                X_train[key] = X_train_key.reset_index(drop=True)
+                X_test[key] = X_test_key.reset_index(drop=True)
+
+            y_train, y_test = train_test_split(targets, test_size=0.2, random_state=42)
+
         elif multimodal_type == "image":
             df_dict = df[["image"]]
             df_dict.reset_index(inplace=True, drop=True)
@@ -79,19 +93,41 @@ if __name__ == "__main__":
 
         # ---------- PREPARING PARAMETERS ---------- #
 
-        model = Predictions(category="classifier").get(classifier)
+        if multimodal_type == "image":
+            model = Predictions(category="classifier").get(classifier)
+            params = model.hyperparameter_space_fqdn()
 
-        params = model.hyperparameter_space_fqdn()
+        elif multimodal_type == "intermediate_fusion":
+            pipeline = PipelineSelector(
+                classifier=classifier,
+                imputers=["ice"],
+                image_dimensionality_reduction=[],
+                image_processing=[],
+                fusion=[],
+                feature_selection=[],
+                feature_scaling=[],
+            )
+            model = pipeline.get_multimodal_pipeline_from_named_args(**{})
+            params = model.hyperparameter_space()[classifier]
+
         params_dict = {}
         for param in params:
             params_dict[param.name.split(".")[-1]] = param.choices
 
-        params_dict["conv_net"] = "alexnet"
+        if multimodal_type == "image":
+            params_dict["conv_net"] = "alexnet"
+        else:
+            params_dict["conv_name"] = "alexnet"
 
         # Select One parameter and evaluate the model with random set up to see how
         for current_name, current_choices in params_dict.items():
             if not isinstance(current_choices, list):
                 continue
+
+            if multimodal_type == "intermediate_fusion":
+                current_name_arg = f"prediction.classifier.{classifier}." + current_name
+            else:
+                current_name_arg = current_name
 
             evaluation_aucroc = {choice: [] for choice in current_choices}
             evaluation_accuracy = {choice: [] for choice in current_choices}
@@ -104,6 +140,8 @@ if __name__ == "__main__":
                 # For each run fix a set of random param
                 for name, choices in params_dict.items():
                     if name != current_name:
+                        if multimodal_type == "intermediate_fusion":
+                            name = f"prediction.classifier.{classifier}." + name
                         if isinstance(choices, list):
                             value = random.choice(choices)
                             random_param_selection[name] = value
@@ -112,15 +150,33 @@ if __name__ == "__main__":
 
                 # Evaluate all params value with this params
                 for choice in current_choices:
-                    random_param_selection[current_name] = choice
+                    random_param_selection[current_name_arg] = choice
 
-                    model = Predictions(category="classifier").get(
-                        classifier, **random_param_selection
-                    )
+                    if multimodal_type == "image":
+                        model = Predictions(category="classifier").get(
+                            classifier, **random_param_selection
+                        )
+                    elif multimodal_type == "intermediate_fusion":
+                        pipeline = PipelineSelector(
+                            classifier=classifier,
+                            imputers=["ice"],
+                            image_dimensionality_reduction=[],
+                            image_processing=[],
+                            fusion=[],
+                            feature_selection=[],
+                            feature_scaling=[],
+                        )
 
-                    model.fit(X_train, y_train)
+                        model = pipeline.get_multimodal_pipeline_from_named_args(
+                            **random_param_selection
+                        )
 
-                    preds = model.predict_proba(X_test)
+                    if multimodal_type == "intermediate_fusion":
+                        model.intermediate_fusion_fit(X_train, y_train)
+                        preds = model.intermediate_fusion_predict_proba(X_test)
+                    elif multimodal_type == "image":
+                        model.fit(X_train, y_train)
+                        preds = model.predict_proba(X_test)
 
                     results = evaluator.score_proba(y_test, preds)
 
@@ -157,7 +213,10 @@ if __name__ == "__main__":
                     os.path.join(output, file), index_col=0
                 )
 
-        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(30, 10))
+        if multimodal_type == "image":
+            fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(30, 10))
+        elif multimodal_type == "intermediate_fusion":
+            fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(30, 20))
 
         line_color = "red"  # Color for the line plot
 
