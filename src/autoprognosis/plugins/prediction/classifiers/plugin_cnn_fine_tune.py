@@ -164,6 +164,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         clipping_value: int = 1,
         output_size: int = None,
         weighted_cross_entropy: bool = False,
+        replace_classifier: bool = False,
     ):
 
         super(ConvNetPredefinedFineTune, self).__init__()
@@ -205,11 +206,24 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         # Replace the output layer by the given number of classes
         if hasattr(self.model, "fc"):
-            n_features_in = self.model.fc.in_features
-
+            if isinstance(self.model.fc, torch.nn.Sequential):
+                if replace_classifier:
+                    for layer in self.model.fc:
+                        if isinstance(layer, torch.nn.modules.linear.Linear):
+                            n_features_in = layer.in_features
+                else:
+                    n_features_in = self.model.fc[-1].in_features
+            else:
+                n_features_in = self.model.fc.in_features
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
-                n_features_in = self.model.classifier[-1].in_features
+                if replace_classifier:
+                    for layer in self.model.classifier:
+                        if isinstance(layer, torch.nn.modules.linear.Linear):
+                            n_features_in = layer.in_features
+                            break
+                else:
+                    n_features_in = self.model.classifier[-1].in_features
             else:
                 n_features_in = self.model.classifier.in_features
         else:
@@ -260,8 +274,12 @@ class ConvNetPredefinedFineTune(nn.Module):
                     params_.append({"params": param, "lr": lr[1]})
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
-                self.model.classifier[-1] = nn.Sequential(*additional_layers)
-                name_match = "classifier." + str(len(self.model.classifier) - 1)
+                if replace_classifier:
+                    self.model.classifier = nn.Sequential(*additional_layers)
+                    name_match = "classifier"
+                else:
+                    self.model.classifier[-1] = nn.Sequential(*additional_layers)
+                    name_match = "classifier." + str(len(self.model.classifier) - 1)
             else:
                 self.model.classifier = nn.Sequential(*additional_layers)
                 name_match = "classifier"
@@ -532,6 +550,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         n_unfrozen_layer: int = 2,
         n_additional_layers: int = 2,
         non_linear: str = "relu",
+        replace_classifier: bool = False,
         # Data Augmentation
         data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
@@ -573,6 +592,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         # CNN Architecture
         self.conv_net = conv_net
         self.n_unfrozen_layer = n_unfrozen_layer
+        self.replace_classifier = replace_classifier
         self.n_classes = None
         self.n_additional_layers = n_additional_layers
 
@@ -626,6 +646,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     "gaussian_noise",
                 ],
             ),
+            params.Categorical("replace_classifier", [True, False]),
             params.Categorical("clipping_value", [0, 1]),
         ]
 
@@ -726,6 +747,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             transformation=self.transforms_compose,
             preprocess=self.preprocess,
             clipping_value=self.clipping_value,
+            replace_classifier=self.replace_classifier,
         )
 
         self.model.train(X, y)
