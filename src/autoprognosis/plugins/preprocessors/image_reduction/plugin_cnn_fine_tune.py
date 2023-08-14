@@ -73,6 +73,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         batch_size: int = 128,
         data_augmentation: bool = "simple_strategy",
         transformation: transforms.Compose = None,
+        replace_classifier: bool = False,
         n_unfrozen_layer: int = 2,
         n_iter: int = 1000,
         n_iter_min: int = 10,
@@ -93,6 +94,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         self.n_additional_layers = n_additional_layers
         self.output_size = output_size
         self.classifier_removed = False
+        self.replace_classifier = replace_classifier
         # Model Fitting
         self.lr = LR[lr]
         self.batch_size = batch_size
@@ -147,6 +149,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             "n_unfrozen_layer",
             "lr",
             "data_augmentation",
+            "replace_classifier",
         ]
         for name in params_name:
             if kwargs.get(search_str + name, None):
@@ -182,10 +185,10 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             params.Categorical("output_size", output_size),
             # CNN Architecture
             params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [0, 1, 2, 3, 4, 5]),
-            params.Integer("n_additional_layers", 1, 3),
+            params.Categorical("lr", [0, 1, 2, 3]),
+            params.Integer("n_additional_layers", 0, 3),
             # fix the number of unfrozen layers
-            params.Integer("n_unfrozen_layer", 1, 6),
+            params.Integer("n_unfrozen_layer", 1, 10),
             # Use the auto augment policy from pytorch
             params.Categorical(
                 "data_augmentation",
@@ -200,6 +203,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                 ],
             ),
             params.Categorical("clipping_value", [0, 1]),
+            params.Categorical("replace_classifier", [True, False]),
         ]
 
     def sample_hyperparameters(cls, trial, *args: Any, **kwargs: Any):
@@ -293,6 +297,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             preprocess=self.preprocess,
             transformation=self.transforms_compose,
             output_size=self.output_size,
+            replace_classifier=self.replace_classifier,
         )
 
         self.model.train(X, y)
