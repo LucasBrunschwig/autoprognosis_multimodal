@@ -30,13 +30,13 @@ if __name__ == "__main__":
     run_results = True
     n_runs = 5
 
-    multimodal_type = "intermediate_fusion"
-    classifier = "intermediate_conv_net"
+    multimodal_type = "image"
+    classifier = "cnn_fine_tune"
 
     output = "sensitivity_results"
 
     output = output + "/" + classifier
-    os.makedirs(output, exist_ok=True)
+    os.makedirs(output, exist_ok=False)
 
     if run_analysis:
 
@@ -47,7 +47,7 @@ if __name__ == "__main__":
             data_src_="PAD-UFES",
             format_="PIL",
         )
-        df = DL.load_dataset()
+        df = DL.load_dataset(sample=False)
         print("Dataset Loaded")
 
         evaluator = classifier_metrics()
@@ -76,8 +76,8 @@ if __name__ == "__main__":
                 X_train_key, X_test_key = train_test_split(
                     df, test_size=0.2, random_state=42
                 )
-                X_train[key] = X_train_key.reset_index(drop=True)
-                X_test[key] = X_test_key.reset_index(drop=True)
+                X_train[key] = X_train_key
+                X_test[key] = X_test_key
 
             y_train, y_test = train_test_split(targets, test_size=0.2, random_state=42)
 
@@ -118,37 +118,54 @@ if __name__ == "__main__":
             params_dict["conv_net"] = "alexnet"
         else:
             params_dict["conv_name"] = "alexnet"
+            params_dict["n_units_hidden"] = 75
 
-        # Select One parameter and evaluate the model with random set up to see how
-        for current_name, current_choices in params_dict.items():
-            if not isinstance(current_choices, list):
-                continue
+        random_param_selection = {}
 
-            if multimodal_type == "intermediate_fusion":
-                current_name_arg = f"prediction.classifier.{classifier}." + current_name
-            else:
-                current_name_arg = current_name
+        # storage
+        evaluation_aucroc = {
+            name_: {choice: [] for choice in choices_}
+            for name_, choices_ in params_dict.items()
+            if isinstance(choices_, list)
+        }
+        evaluation_accuracy = {
+            name_: {choice: [] for choice in choices_}
+            for name_, choices_ in params_dict.items()
+            if isinstance(choices_, list)
+        }
+        evaluation_balanced = {
+            name_: {choice: [] for choice in choices_}
+            for name_, choices_ in params_dict.items()
+            if isinstance(choices_, list)
+        }
 
-            evaluation_aucroc = {choice: [] for choice in current_choices}
-            evaluation_accuracy = {choice: [] for choice in current_choices}
-            evaluation_balanced = {choice: [] for choice in current_choices}
+        for i in range(n_runs):
 
-            random_param_selection = {}
+            # For each run choose a set of random param
+            for name, choices in params_dict.items():
+                if multimodal_type == "intermediate_fusion":
+                    name = f"prediction.classifier.{classifier}." + name
+                if isinstance(choices, list):
+                    value = random.choice(choices)
+                    random_param_selection[name] = value
+                else:
+                    random_param_selection[name] = choices
 
-            for i in range(n_runs):
-
-                # For each run fix a set of random param
-                for name, choices in params_dict.items():
-                    if name != current_name:
-                        if multimodal_type == "intermediate_fusion":
-                            name = f"prediction.classifier.{classifier}." + name
-                        if isinstance(choices, list):
-                            value = random.choice(choices)
-                            random_param_selection[name] = value
-                        else:
-                            random_param_selection[name] = choices
+            # Select one parameter and evaluate the model with random set up to see how
+            for current_name, current_choices in params_dict.items():
+                if not isinstance(current_choices, list):
+                    continue
+                if multimodal_type == "intermediate_fusion":
+                    current_name_arg = (
+                        f"prediction.classifier.{classifier}." + current_name
+                    )
+                else:
+                    current_name_arg = current_name
 
                 # Evaluate all params value with this params
+                previous_choice = random_param_selection[current_name_arg]
+                previous_current_name = current_name_arg
+
                 for choice in current_choices:
                     random_param_selection[current_name_arg] = choice
 
@@ -156,6 +173,8 @@ if __name__ == "__main__":
                         model = Predictions(category="classifier").get(
                             classifier, **random_param_selection
                         )
+                        model.fit(X_train, y_train)
+                        preds = model.predict_proba(X_test)
                     elif multimodal_type == "intermediate_fusion":
                         pipeline = PipelineSelector(
                             classifier=classifier,
@@ -170,30 +189,32 @@ if __name__ == "__main__":
                         model = pipeline.get_multimodal_pipeline_from_named_args(
                             **random_param_selection
                         )
-
-                    if multimodal_type == "intermediate_fusion":
                         model.intermediate_fusion_fit(X_train, y_train)
                         preds = model.intermediate_fusion_predict_proba(X_test)
-                    elif multimodal_type == "image":
-                        model.fit(X_train, y_train)
-                        preds = model.predict_proba(X_test)
 
                     results = evaluator.score_proba(y_test, preds)
 
-                    evaluation_aucroc[choice].append(results["aucroc"])
-                    evaluation_accuracy[choice].append(results["accuracy"])
-                    evaluation_balanced[choice].append(results["balanced_accuracy"])
+                    evaluation_aucroc[current_name][choice].append(results["aucroc"])
+                    evaluation_accuracy[current_name][choice].append(
+                        results["accuracy"]
+                    )
+                    evaluation_balanced[current_name][choice].append(
+                        results["balanced_accuracy"]
+                    )
 
+                # reset to the previous state to keep same initial params
+                random_param_selection[previous_current_name] = previous_choice
+
+        for name_ in evaluation_accuracy.keys():
             # Save to csv for each param
-            param_summary = pd.DataFrame.from_dict(evaluation_accuracy)
-            param_summary.to_csv(f"{output}/{current_name}_accuracy.csv")
+            param_summary = pd.DataFrame.from_dict(evaluation_accuracy[name_])
+            param_summary.to_csv(f"{output}/{name_}_accuracy.csv")
 
-            param_summary = pd.DataFrame.from_dict(evaluation_accuracy)
-            param_summary.to_csv(output + "/" + current_name + "_aucroc.csv")
+            param_summary = pd.DataFrame.from_dict(evaluation_aucroc[name_])
+            param_summary.to_csv(f"{output}/{name_}_aucroc.csv")
 
-            param_summary = pd.DataFrame.from_dict(evaluation_balanced)
-            param_summary.to_csv(output + "/" + current_name + "_balanced_accuracy.csv")
-
+            param_summary = pd.DataFrame.from_dict(evaluation_balanced[name_])
+            param_summary.to_csv(f"{output}/{name_}_balanced.csv")
         # ---------- PREPARING PARAMETERS ---------- #
 
         # ---------- RUNNING SENSITIVITY ANALYSIS ---------- #
