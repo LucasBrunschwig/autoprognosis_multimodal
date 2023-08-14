@@ -36,7 +36,7 @@ if __name__ == "__main__":
     output = "sensitivity_results"
 
     output = output + "/" + classifier
-    os.makedirs(output, exist_ok=False)
+    os.makedirs(output, exist_ok=True)
 
     if run_analysis:
 
@@ -151,6 +151,7 @@ if __name__ == "__main__":
                 else:
                     random_param_selection[name] = choices
 
+            print(f"Run {i}: {random_param_selection}")
             # Select one parameter and evaluate the model with random set up to see how
             for current_name, current_choices in params_dict.items():
                 if not isinstance(current_choices, list):
