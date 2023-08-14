@@ -50,7 +50,7 @@ if __name__ == "__main__":
     if multimodal_type == "intermediate_fusion":
         dim_red = []
         classifier = ["intermediate_conv_net"]
-        study_name = f"test_new_intermediate_fusion_{classifier}_{predefined_cnn[0]}"
+        study_name = f"intermediate_fusion_{classifier}_{predefined_cnn[0]}"
 
     elif multimodal_type == "early_fusion":
         dim_red = ["cnn_fine_tune"]
