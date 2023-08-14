@@ -26,6 +26,7 @@ from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
+    random.seed(42)
     run_analysis = True
     run_results = True
     n_runs = 5
@@ -54,7 +55,7 @@ if __name__ == "__main__":
 
         targets = df[["label"]]
         targets.reset_index(inplace=True, drop=True)
-        targets = LabelEncoder().fit_transform(targets)
+        targets = LabelEncoder().fit_transform(targets.squeeze())
 
         df.drop(["label"], axis=1)
 
@@ -236,14 +237,14 @@ if __name__ == "__main__":
                 )
 
         if multimodal_type == "image":
-            fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(30, 10))
+            fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
         elif multimodal_type == "intermediate_fusion":
             fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(30, 20))
 
         line_color = "red"  # Color for the line plot
 
         for i, ((name, df), ax) in enumerate(
-            zip(accuracy_summary.items(), axes.ravel())
+            zip(accuracy_summary.items(), axes.ravel()[:-1])
         ):
 
             # Scatter plot with legend=False
@@ -304,13 +305,13 @@ if __name__ == "__main__":
             ax2.grid()
 
             # Set y-axis labels based on subplot position
-            if i % 3 == 0:  # leftmost subplot of each row
+            if i % 4 == 0:  # leftmost subplot of each row
                 ax.set_ylabel(
                     "accuracy", fontsize=12
                 )  # Match label color with line color
                 ax2.set_ylabel("")
                 ax2.set_yticklabels([])
-            elif i % 3 == 2:  # rightmost subplot of each row
+            elif i % 4 == 2:  # rightmost subplot of each row
                 ax2.set_ylabel("max - min difference", fontsize=12, color=line_color)
                 ax.set_ylabel("")
                 ax.set_yticklabels([])
@@ -322,8 +323,7 @@ if __name__ == "__main__":
                 ax.set_ylabel("")
                 ax2.set_ylabel("")
 
-            if i == 4 or i == 1:
-                ax.set_xlabel("run number")
+            ax.set_xlabel("run number")
 
         fig.suptitle("Sensitivity Analysis", size=15)
         plt.show()
