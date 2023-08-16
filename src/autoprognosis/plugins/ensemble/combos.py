@@ -580,22 +580,20 @@ class Stacking(BaseAggregator):
 
         # iterate over all base classifiers
         for i, raw_clf in enumerate(self.base_estimators):
-            modality = raw_clf.modality_type()
             # iterate over all folds
             for j in range(self.n_folds):
                 # build train and test index
                 full_idx = list(range(n_samples))
-                test_idx = index_lists[modality][j]
+                test_idx = index_lists[TABULAR_KEY][j]
                 train_idx = list_diff(full_idx, test_idx)
 
-                X_train, y_train = (
-                    X_new_modalities[modality][train_idx, :],
-                    y_new_modalities[modality][train_idx],
-                )
-                X_test, _ = (
-                    X_new_modalities[modality][test_idx, :],
-                    y_new_modalities[modality][test_idx],
-                )
+                X_train = {}
+                X_test = {}
+                for mod_ in X_new_modalities.keys():
+                    X_train[mod_] = X_new_modalities[mod_][train_idx, :]
+                    X_test[mod_] = X_new_modalities[mod_][test_idx, :]
+
+                y_train = y_new_modalities[TABULAR_KEY][train_idx]
 
                 # train the classifier
                 clf = copy.deepcopy(raw_clf)
@@ -603,13 +601,9 @@ class Stacking(BaseAggregator):
 
                 # generate the new features on the pseudo test set
                 if self.use_proba:
-                    new_features[test_idx, i] = clf.predict_proba(pd.DataFrame(X_test))[
-                        :, 1
-                    ]
+                    new_features[test_idx, i] = clf.predict_proba(X_test)[:, 1]
                 else:
-                    new_features[test_idx, i] = clf.predict(
-                        pd.DataFrame(X_test)
-                    ).squeeze()
+                    new_features[test_idx, i] = clf.predict(X_test).squeeze()
 
         y_new_comb = y_new_modalities[list(y_new_modalities.keys())[0]]
 
@@ -620,8 +614,7 @@ class Stacking(BaseAggregator):
         # train all base classifiers on the full train dataset
         # iterate over all base classifiers
         for i, clf in enumerate(self.base_estimators):
-            modality = clf.modality_type()
-            clf.fit(X_new_modalities[modality], y_new_modalities[modality])
+            clf.fit(X_new_modalities, y_new_modalities[TABULAR_KEY])
 
         return
 
@@ -742,12 +735,11 @@ class Stacking(BaseAggregator):
         # build the new features for unknown samples
         # iterate over all base classifiers
         for i, clf in enumerate(self.base_estimators):
-            modality = clf.modality_type()
             # generate the new features on the test set
             if self.use_proba:
-                new_features[:, i] = clf.predict_proba(X_modalities[modality])[:, 1]
+                new_features[:, i] = clf.predict_proba(X_modalities)[:, 1]
             else:
-                new_features[:, i] = clf.predict(X_modalities[modality]).squeeze()
+                new_features[:, i] = clf.predict(X_modalities).squeeze()
 
         return new_features
 
@@ -990,8 +982,7 @@ class SimpleClassifierAggregator(BaseAggregator):
             return
         else:
             for clf in self.base_estimators:
-                modality = clf.modality_type()
-                clf.fit(X_modalities[modality], y)
+                clf.fit(X_modalities, y)
                 clf.fitted_ = True
             return
 
@@ -1031,8 +1022,7 @@ class SimpleClassifierAggregator(BaseAggregator):
                 ValueError("Classifier should be fitted first!")
             else:
                 if hasattr(clf, "predict"):
-                    modality = clf.modality_type()
-                    all_scores[:, i] = clf.predict(X_modalities[modality])
+                    all_scores[:, i] = clf.predict(X_modalities)
                 else:
                     raise ValueError(f"{clf} does not have predict.")
 
@@ -1140,8 +1130,7 @@ class SimpleClassifierAggregator(BaseAggregator):
                 ValueError("Classifier should be fitted first!")
             else:
                 if hasattr(clf, "predict_proba"):
-                    modality = clf.modality_type()
-                    all_scores[:, :, i] = clf.predict_proba(X_modalities[modality])
+                    all_scores[:, :, i] = clf.predict_proba(X_modalities)
                 else:
                     raise ValueError(f"{clf} does not have predict_proba.")
 

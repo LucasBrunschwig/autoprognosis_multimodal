@@ -134,8 +134,7 @@ class WeightedEnsemble(BaseEnsemble):
 
     def fit_multimodal(self, X: dict, Y: pd.DataFrame):
         def fit_model(k: int) -> Any:
-            modality = self.models[k].modality_type()
-            return self.models[k].fit(X[modality], Y)
+            return self.models[k].fit(X, Y)
 
         log.debug("Fitting the WeightedEnsemble")
         self.models = dispatcher(delayed(fit_model)(k) for k in range(len(self.models)))
@@ -144,7 +143,6 @@ class WeightedEnsemble(BaseEnsemble):
             return self
 
         self.explainers = {}
-        # TODO: add for other type of classifier
         for model in self.models:
             modality_model = model.modality_type()
             for exp in self.explainer_plugins:
@@ -203,10 +201,8 @@ class WeightedEnsemble(BaseEnsemble):
 
         preds_ = []
         for k in range(len(self.models)):
-            modality = self.models[k].modality_type()
-            preds_.append(
-                self.models[k].predict_proba(X[modality], *args) * self.weights[k]
-            )
+            preds_.append(self.models[k].predict_proba(X, *args) * self.weights[k])
+
         pred_ens = np.sum(np.array(preds_), axis=0)
 
         return pd.DataFrame(pred_ens)
