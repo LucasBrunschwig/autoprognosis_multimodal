@@ -401,9 +401,15 @@ class ConvNetPredefinedFineTune(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
+            prefetch_factor=2,
+            num_workers=5,
         )
         val_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, pin_memory=True
+            test_dataset,
+            batch_size=self.batch_size,
+            pin_memory=True,
+            prefetch_factor=2,
+            num_workers=5,
         )
 
         # do training
@@ -446,8 +452,6 @@ class ConvNetPredefinedFineTune(nn.Module):
 
             train_loss = torch.Tensor(train_loss).to(DEVICE)
 
-            end_ = time.time()
-
             if self.early_stopping or i % self.n_iter_print == 0:
                 with torch.no_grad():
 
@@ -462,6 +466,8 @@ class ConvNetPredefinedFineTune(nn.Module):
                         val_loss.append(loss(preds, y_val_next).detach())
 
                     val_loss = torch.mean(torch.Tensor(val_loss))
+
+                    end_ = time.time()
 
                     if self.early_stopping:
                         if val_loss_best > val_loss:
@@ -811,7 +817,12 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
-            test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
+            test_loader = DataLoader(
+                test_dataset,
+                batch_size=self.batch_size,
+                prefetch_factor=2,
+                num_workers=5,
+            )
             for batch_test_ndx, X_test in enumerate(test_loader):
                 results = np.vstack(
                     (
