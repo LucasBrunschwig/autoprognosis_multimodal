@@ -373,7 +373,6 @@ def evaluate_multimodal_estimator(
     estimator: Any,
     X: dict,
     Y: Union[pd.Series, np.ndarray, List],
-    multimodal_type: str,
     n_folds: int = 3,
     seed: int = 0,
     pretrained: bool = False,
@@ -469,19 +468,9 @@ def evaluate_multimodal_estimator(
             model = estimator[indx]
         else:
             model = copy.deepcopy(estimator)
-            if multimodal_type == "early_fusion":
-                model.early_fusion_fit(X_train, Y_train)
-            elif multimodal_type == "intermediate_fusion":
-                model.intermediate_fusion_fit(X_train, Y_train)
-            elif multimodal_type == "late_fusion":
-                model.fit(X_train, Y_train)
+            model = model.fit(X_train, Y_train)
 
-        if multimodal_type == "early_fusion":
-            preds = model.early_fusion_predict_proba(X_test)
-        elif multimodal_type == "late_fusion":
-            preds = model.predict_proba(X_test)
-        elif multimodal_type == "intermediate_fusion":
-            preds = model.intermediate_fusion_predict_proba(X_test)
+        preds = model.predict_proba(X_test)
 
         scores = evaluator.score_proba(Y_test, preds)
         for metric in scores:

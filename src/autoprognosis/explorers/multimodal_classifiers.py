@@ -196,6 +196,7 @@ class MultimodalClassifierSeeker:
                 image_dimensionality_reduction=image_dimensionality_reduction,
                 imputers=imputers,
                 fusion=fusion,
+                multimodal_type=multimodal_type,
             )
             for plugin in classifiers
         ]
@@ -320,7 +321,6 @@ class MultimodalClassifierSeeker:
                     model,
                     X,
                     Y,
-                    multimodal_type=self.multimodal_type,
                     n_folds=self.n_folds_cv,
                     group_ids=group_ids,
                 )

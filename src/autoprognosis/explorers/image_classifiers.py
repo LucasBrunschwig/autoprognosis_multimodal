@@ -92,6 +92,7 @@ class ImageClassifierSeeker:
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
+        multimodal_type: str = None,
         random_state: int = 0,
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
@@ -123,6 +124,7 @@ class ImageClassifierSeeker:
                 preprocess_images=preprocess_images,
                 image_dimensionality_reduction=image_dimensionality_reduction,
                 image_processing=image_processing,
+                multimodal_type=multimodal_type,
             )
             for plugin in classifiers
         ]

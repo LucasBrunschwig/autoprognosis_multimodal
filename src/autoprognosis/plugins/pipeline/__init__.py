@@ -12,17 +12,11 @@ from autoprognosis.plugins import group
 from .generators import (
     _generate_change_output,
     _generate_constructor,
-    _generate_early_fusion_fit,
-    _generate_early_fusion_predict,
-    _generate_early_fusion_predict_proba,
     _generate_fit,
     _generate_get_args,
     _generate_getstate,
     _generate_hyperparameter_space_for_layer_impl,
     _generate_hyperparameter_space_impl,
-    _generate_intermediate_fusion_fit,
-    _generate_intermediate_fusion_predict,
-    _generate_intermediate_fusion_predict_proba,
     _generate_is_fitted,
     _generate_load,
     _generate_load_template,
@@ -36,30 +30,26 @@ from .generators import (
     _generate_setstate,
     _generate_type_impl,
     _get_classifier,
+    _get_multimodal_type,
     _modality_type,
 )
 
 
 class PipelineMeta(type):
     def __new__(cls: Type, name: str, plugins: Tuple[Type, ...], dct: dict) -> Any:
+
+        multimodal_type = dct["multimodal_type"]
+
         dct["__init__"] = _generate_constructor()
         dct["__setstate__"] = _generate_setstate()
         dct["__getstate__"] = _generate_getstate()
-        dct["fit"] = _generate_fit()
-        dct["early_fusion_fit"] = _generate_early_fusion_fit()
-        dct["intermediate_fusion_fit"] = _generate_intermediate_fusion_fit()
+        dct["fit"] = _generate_fit(multimodal_type)
         dct["is_fitted"] = _generate_is_fitted()
-        dct["predict"] = _generate_predict()
-        dct["early_fusion_predict"] = _generate_early_fusion_predict()
-        dct["intermediate_fusion_predict"] = _generate_intermediate_fusion_predict()
-        dct["predict_proba"] = _generate_predict_proba()
-        dct["early_fusion_predict_proba"] = _generate_early_fusion_predict_proba()
-        dct[
-            "intermediate_fusion_predict_proba"
-        ] = _generate_intermediate_fusion_predict_proba()
+        dct["predict"] = _generate_predict(multimodal_type)
+        dct["predict_proba"] = _generate_predict_proba(multimodal_type)
         dct["score"] = _generate_score()
         dct["name"] = _generate_name_impl(plugins)
-        dct["multimodal_type"] = _generate_type_impl(plugins)
+        dct["type"] = _generate_type_impl(plugins)
         dct["hyperparameter_space"] = _generate_hyperparameter_space_impl(plugins)
         dct[
             "hyperparameter_space_for_layer"
@@ -74,6 +64,7 @@ class PipelineMeta(type):
         dct["change_output"] = _generate_change_output()
         dct["modality_type"] = _modality_type()
         dct["get_classifier"] = _get_classifier()
+        dct["get_multimodal_type"] = _get_multimodal_type()
 
         dct["plugin_types"] = list(plugins)
 
@@ -104,9 +95,6 @@ class PipelineMeta(type):
     def fit(self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError("not implemented")
 
-    def early_fusion_fit(self: Any, X: pd.DataFrame, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("not implemented")
-
     def is_fitted(self: Any) -> Any:
         raise NotImplementedError("not implemented")
 
@@ -114,12 +102,6 @@ class PipelineMeta(type):
         raise NotImplementedError("not implemented")
 
     def predict_proba(*args: Any, **kwargs: Any) -> pd.DataFrame:
-        raise NotImplementedError("not implemented")
-
-    def early_fusion_predict(*args: Any, **kwargs: Any) -> pd.DataFrame:
-        raise NotImplementedError("not implemented")
-
-    def early_fusion_predict_proba(*args: Any, **kwargs: Any) -> pd.DataFrame:
         raise NotImplementedError("not implemented")
 
     def save_template(*args: Any, **kwargs: Any) -> bytes:
@@ -159,9 +141,9 @@ class PipelineMeta(type):
         raise NotImplementedError("not implemented")
 
 
-def Pipeline(plugins_str: List[str]) -> Any:
+def Pipeline(plugins_str: List[str], multimodal_type=None) -> Any:
     plugins = group(plugins_str)
 
     name = "_".join(p.name() for p in plugins)
 
-    return PipelineMeta(name, plugins, {})
+    return PipelineMeta(name, plugins, {"multimodal_type": multimodal_type})

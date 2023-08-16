@@ -233,6 +233,7 @@ class MultimodalEnsembleSeeker:
                 classifiers=image_classifiers,
                 hooks=hooks,
                 optimizer_type=optimizer_type,
+                multimodal_type=multimodal_type,
                 random_state=self.random_state,
             )
             self.tabular_seeker = ClassifierSeeker(
@@ -248,6 +249,7 @@ class MultimodalEnsembleSeeker:
                 hooks=hooks,
                 imputers=imputers,
                 optimizer_type=optimizer_type,
+                multimodal_type=self.multimodal_type,
                 random_state=self.random_state,
             )
 
@@ -288,8 +290,7 @@ class MultimodalEnsembleSeeker:
             local_fold = []
             for estimator in ensemble:
                 model = copy.deepcopy(estimator)
-                modality = model.modality_type()
-                model.fit(X_train[modality], Y_train)
+                model.fit(X_train, Y_train)
                 local_fold.append(model)
             folds.append(local_fold)
         return folds
@@ -323,7 +324,6 @@ class MultimodalEnsembleSeeker:
                     folds,
                     X,
                     Y,
-                    self.multimodal_type,
                     self.n_folds_cv,
                     pretrained=True,
                     group_ids=group_ids,
@@ -397,7 +397,6 @@ class MultimodalEnsembleSeeker:
                     stacking_ensemble,
                     X,
                     Y,
-                    self.multimodal_type,
                     self.n_folds_cv,
                     group_ids=group_ids,
                 )["raw"][self.metric][0]
@@ -418,7 +417,6 @@ class MultimodalEnsembleSeeker:
                     aggr_ensemble,
                     X,
                     Y,
-                    multimodal_type=self.multimodal_type,
                     n_folds=self.n_folds_cv,
                     group_ids=group_ids,
                 )["raw"][self.metric][0]
@@ -458,20 +456,25 @@ class MultimodalEnsembleSeeker:
             # Train the classifier - provide X
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
             scores = []
-
+            ensembles = []
             if len(best_models) > 1:
                 for model in best_models:
                     try:
-                        model_score = evaluate_multimodal_estimator(
+                        results = evaluate_multimodal_estimator(
                             model,
                             X,
                             Y,
-                            multimodal_type=self.multimodal_type,
                             n_folds=self.n_folds_cv,
                             group_ids=group_ids,
-                        )["raw"][self.metric][0]
+                        )
+                        model_score = results["raw"][self.metric][0]
+
                         log.info(f"Model: {model.name()} --> {model_score}")
 
+                        for name, metric in results["str"].items():
+                            log.info(f"{name} {metric}")
+
+                        ensembles.append(model)
                         scores.append(model_score)
                     except Exception as e:
                         log.error(f"Could not be fitted: {model.name()} - {e}")
@@ -479,7 +482,19 @@ class MultimodalEnsembleSeeker:
                 if self.hooks.cancel():
                     raise StudyCancelled("Classifier search cancelled")
 
-                return best_models[np.argmax(scores)]
+                weighted_ensemble, weighted_ens_score = self.search_weights(
+                    best_models, X, Y, group_ids=group_ids
+                )
+
+                log.info(
+                    f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
+                )
+
+                scores.append(weighted_ens_score)
+                ensembles.append(weighted_ensemble)
+
+                return ensembles[np.argmax(scores)]
+
             else:
                 return best_models[0]
 

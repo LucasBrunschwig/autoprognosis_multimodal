@@ -133,6 +133,7 @@ class ClassifierSeeker:
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
+        multimodal_type: str = None,
         random_state: int = 0,
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
@@ -164,6 +165,7 @@ class ClassifierSeeker:
                 feature_scaling=feature_scaling,
                 feature_selection=feature_selection,
                 imputers=imputers,
+                multimodal_type=multimodal_type,
             )
             for plugin in classifiers
         ]

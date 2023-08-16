@@ -461,7 +461,6 @@ class MultimodalStudy(Study):
                 current_model,
                 self.search_multimodal_X,
                 self.search_Y,
-                self.multimodal_type,
                 metric=self.metric,
                 group_ids=self.search_group_ids,
                 n_folds=self.n_folds_cv,
@@ -532,11 +531,6 @@ class MultimodalStudy(Study):
         self.Y = LabelEncoder().fit_transform(self.Y)
         self.Y = pd.Series(self.Y).reset_index(drop=True)
 
-        if self.multimodal_type == "early_fusion":
-            model.early_fusion_fit(self.multimodal_X, self.Y)
-        elif self.multimodal_type == "intermediate_fusion":
-            model.intermediate_fusion_fit(self.multimodal_X, self.Y)
-        else:  # late fusion
-            model.fit(self.multimodal_X, self.Y)
+        model.fit(self.multimodal_X, self.Y)
 
         return model

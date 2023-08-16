@@ -56,11 +56,13 @@ class PipelineSelector:
         preprocess_images: bool = True,
         image_processing: List[str] = [],
         image_dimensionality_reduction: List[str] = [],
+        multimodal_type: str = None,
         fusion: List[str] = [],
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
     ) -> None:
         self.calibration = calibration
         self.preprocess_image = preprocess_images
+        self.multimodal_type = multimodal_type
         self.imputers = [Imputers().get_type(plugin) for plugin in imputers]
         self.feature_scaling = [
             Preprocessors(category="feature_scaling").get_type(plugin)
@@ -302,7 +304,7 @@ class PipelineSelector:
         return self.get_pipeline_from_template(model_list, args)
 
     def get_pipeline_from_template(self, model_list: List, args: Dict) -> PipelineMeta:
-        return Pipeline(model_list)(args)
+        return Pipeline(model_list, self.multimodal_type)(args)
 
     def get_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -356,7 +358,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def get_image_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -399,7 +401,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def get_multimodal_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -498,7 +500,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def remove_tabular_processing(self):
         """This function removes the tabular processing steps if there are no tabular data"""
