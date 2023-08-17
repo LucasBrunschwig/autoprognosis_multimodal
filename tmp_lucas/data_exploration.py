@@ -3,6 +3,7 @@ from loader import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.stats import chi2_contingency
 import seaborn as sns
 from sklearn.preprocessing import LabelEncoder
 
@@ -24,19 +25,83 @@ DL = DataLoader(
 )
 
 
+def cramers_v(x, y):
+    """Compute Cramér's V statistic for categorial-categorial association."""
+    confusion_matrix = pd.crosstab(x, y)
+    chi2 = chi2_contingency(confusion_matrix)[0]
+    n = confusion_matrix.sum().sum()
+    phi2 = chi2 / n
+    r, k = confusion_matrix.shape
+    phi2corr = max(0, phi2 - ((k - 1) * (r - 1)) / (n - 1))
+    rcorr = r - ((r - 1) ** 2) / (n - 1)
+    kcorr = k - ((k - 1) ** 2) / (n - 1)
+    return np.sqrt(phi2corr / min((kcorr - 1), (rcorr - 1)))
+
+
 def exploratory_analysis():
     df = DL.load_dataset(raw=True)
+
+    for column in df.columns.difference(["image"]):
+        df[column].replace("UNK", np.nan, inplace=True)
+
+    correlation_known = []
+    labels_known = []
+    for column in df.columns.difference(["image", "label"]):
+        if sum(df[column].isna()):
+            print(column, "unknown")
+            # print(df[["label", column]][df[column].isna()]["label"].value_counts())
+            feature = df[~df[column].isna()][column]
+            if column in ["diameter_1", "diameter_2"]:
+                feature = pd.cut(df[column], bins=20, labels=range(20))
+            correlation_known.append(cramers_v(feature, df["label"]))
+            labels_known.append(column.replace("_", " "))
+        else:
+            print(column, "known")
+            feature = df[column]
+            if column == "age":
+                feature = pd.cut(df[column], bins=30, labels=range(30))
+            correlation_known.append(cramers_v(feature, df["label"]))
+            labels_known.append(column.replace("_", " "))
+
+    # Sort values in descending order and get the indices
+    sorted_indices = sorted(
+        range(len(correlation_known)), key=lambda k: correlation_known[k], reverse=True
+    )
+
+    # Rearrange values and labels based on the sorted indices
+    sorted_values = [correlation_known[i] for i in sorted_indices]
+    sorted_labels = [labels_known[i] for i in sorted_indices]
+
+    sns.set_theme()
+
+    # Plot
+    plt.figure(figsize=(10, 10))
+    plt.bar(
+        sorted_labels,
+        sorted_values,
+        width=0.5,
+    )
+    plt.xlabel("Labels", fontsize=14)
+    plt.xticks(rotation=90, fontsize=14)  # Rotate x-axis labels by 90 degrees
+    plt.ylabel("Cramer Coefficient", fontsize=14)
+    plt.title("Cramer Coefficient for metadata and diagnoses", fontsize=14)
+    plt.ylim(0, 1.0)
+    plt.grid()
+    plt.savefig(SAVE_RESULTS + r"\cramer.png", bbox_inches="tight")
 
     df_image = df["image"]
     pixels_ = []
     for image in df_image:
         pixels_.append(image.size[0])
 
-    sns.set_theme()
+    print("min resolution", np.min(pixels_))
+    print("max resolution", np.max(pixels_))
+
+    plt.figure()
     plt.hist(pixels_, bins=50)
     plt.ylabel("counts")
     plt.xlabel("resolution (n x n)")
-    plt.savefig(SAVE_RESULTS + r"\image_resolution.png")
+    plt.savefig(SAVE_RESULTS + r"\image_resolution.png", bbox_inches="tight")
 
     labels = df.label.value_counts().index.tolist()
 
@@ -59,7 +124,7 @@ def exploratory_analysis():
     na_perc_df = pd.DataFrame(na_perc, index=columns, columns=labels)
     plt.figure()
     sns.heatmap(na_perc_df, cmap="coolwarm", annot=True, cbar=False)
-    plt.savefig(SAVE_RESULTS + r"\missing_features.png")
+    plt.savefig(SAVE_RESULTS + r"\missing_features.png", bbox_inches="tight")
 
     # One plot for correlation between diagnosis and region parts
     na_perc = np.round(na_perc, decimals=3)
@@ -74,7 +139,7 @@ def exploratory_analysis():
     region_perc_df = pd.DataFrame(region_perc, index=regions, columns=labels)
     plt.figure()
     sns.heatmap(region_perc_df, cmap="coolwarm", annot=True, cbar=False)
-    plt.savefig(SAVE_RESULTS + r"\regions_vs_diagnoses.png")
+    plt.savefig(SAVE_RESULTS + r"\regions_vs_diagnoses.png", bbox_inches="tight")
 
     # Correlation between biopsied and classes
     # One plot for correlation between diagnosis and region parts
@@ -90,7 +155,7 @@ def exploratory_analysis():
     biopsied_perc_df = pd.DataFrame(biopsied_perc, index=biopsied, columns=labels)
     plt.figure()
     sns.heatmap(biopsied_perc_df, cmap="coolwarm", annot=True, cbar=False)
-    plt.savefig(SAVE_RESULTS + r"\biopsied_vs_diagnoses.png")
+    plt.savefig(SAVE_RESULTS + r"\biopsied_vs_diagnoses.png", bbox_inches="tight")
 
 
 def correlation_images(df):

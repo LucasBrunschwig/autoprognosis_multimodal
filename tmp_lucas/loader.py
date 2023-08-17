@@ -79,8 +79,8 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
             if img_name.endswith(".png"):
                 img_ = Image.open(os.path.join(dirpath, img_name))
                 img_ = img_.convert("RGB")
-                img_ = shade_of_gray_cc(img_)
-                img_ = img_.resize((300, 300))
+                # img_ = shade_of_gray_cc(img_)
+                # img_ = img_.resize((300, 300))
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
@@ -231,17 +231,30 @@ class DataLoader:
         # Remove features only present in cancerous patients
 
         # Transform df into suitable numeric values
-        one_hot_encoding = False
-        drop_features = True
+        metablock_preprocess = True
+        drop_features = False
         drop_rows = False
-
         if not raw:
-            if one_hot_encoding:
+            if metablock_preprocess:
                 categorical_var = [
+                    "smoke",
+                    "drink",
                     "background_father",
                     "background_mother",
+                    "pesticide",
                     "gender",
+                    "skin_cancer_history",
+                    "cancer_history",
+                    "has_piped_water",
+                    "has_sewage_system",
                     "region",
+                    "itch",
+                    "grew",
+                    "hurt",
+                    "changed",
+                    "bleed",
+                    "elevation",
+                    "fitspatrick",
                 ]
                 for col in df.columns:
                     if col in categorical_var:
@@ -249,11 +262,14 @@ class DataLoader:
                         df.drop(col, axis=1, inplace=True)
                         df = df.join(tmp_one_hot)
 
+                    else:
+                        df[col].replace("UNK", 0.0, inplace=True)
+                        df[col].replace(np.nan, 0.0, inplace=True)
+
                 # Remove Unknown and convert False True to integers
-                df.replace("UNK", np.nan, inplace=True)
                 df_images = df.image.to_frame()
                 df.drop("image", axis=1, inplace=True)
-                df.replace({False: 0, True: 1, "False": 0, "True": 0}, inplace=True)
+                df.replace({False: 0, True: 1, "False": 0, "True": 1}, inplace=True)
                 df = df_images.join(df)
 
             # Pacheto paper
