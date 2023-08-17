@@ -497,7 +497,11 @@ class ConvNetPredefinedFineTune(nn.Module):
                 self.model.fc = nn.Identity()
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.Sequential):
-                self.model.classifier[-1][-1] = nn.Identity()
+                if isinstance(self.model.classifier[-1], torch.nn.Sequential):
+                    self.model.classifier[-1][-1] = nn.Identity()
+                else:
+                    self.model.classifier[-1] = nn.Identity()
+
             elif isinstance(self.model.classifier, torch.nn.Linear):
                 self.model.classifier = nn.Identity()
             else:
