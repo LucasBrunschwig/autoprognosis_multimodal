@@ -3,6 +3,7 @@
 from torchvision.models import (
     alexnet,
     densenet121,
+    efficientnet_b4,
     mobilenet_v3_large,
     resnet34,
     resnet50,
@@ -70,6 +71,7 @@ CNN = [
     "vgg16_bn",
     "mobilenet_v3_large",
     "densenet121",
+    "efficientnet_b4",
 ]
 
 CNN_MODEL = {
@@ -81,6 +83,7 @@ CNN_MODEL = {
     "vgg16_bn": vgg16_bn,
     "mobilenet_v3_large": mobilenet_v3_large,
     "densenet121": densenet121,
+    "efficientnet_b4": efficientnet_b4,
 }
 
 WEIGHTS = {
@@ -93,6 +96,7 @@ WEIGHTS = {
     "vgg16_bn": "VGG16_BN_Weights.DEFAULT",
     "vgg19": "VGG19_Weights.DEFAULT",
     "vgg13": "VGG13_Weights.DEFAULT",
+    "efficientnet_b4": "EfficientNet_B4_Weights.DEFAULT",
 }
 
 percentile_val = 1.96
