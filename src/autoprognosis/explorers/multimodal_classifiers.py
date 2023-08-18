@@ -416,6 +416,11 @@ class MultimodalClassifierSeeker:
             np.argmax(best_score)
         ]
 
+        log.info(
+            f"Best LR parameters: {estimator.name() + '.' + str(output_size)}: "
+            f"{params[np.argmax(best_score)]}"
+        )
+
     def lr_search(self, X: dict, Y: pd.Series, group_ids: Optional[pd.Series]):
 
         self._should_continue()
