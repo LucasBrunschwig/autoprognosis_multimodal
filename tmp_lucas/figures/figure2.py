@@ -32,7 +32,7 @@ if __name__ == "__main__":
     # Use a subprocess to free memory
 
     DL = DataLoader(
-        path_=r"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\data",
+        path_="../../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
@@ -42,7 +42,9 @@ if __name__ == "__main__":
     df = df[df.columns.difference(["image"])]
 
     classifier = "logistic_regression"
-    study_name = f"tabular_{classifier}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
+    study_name = (
+        f"tabular_{classifier}_pacheco"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
+    )
 
     if train_model:
         study = ClassifierStudy(
@@ -51,7 +53,7 @@ if __name__ == "__main__":
             target="label",  # the label column in the dataset
             sample_for_search=False,  # no Sampling
             n_folds_cv=5,
-            num_iter=200,
+            num_iter=1,
             metric="aucroc",
             classifiers=[classifier],
             timeout=int(10 * 3600),
