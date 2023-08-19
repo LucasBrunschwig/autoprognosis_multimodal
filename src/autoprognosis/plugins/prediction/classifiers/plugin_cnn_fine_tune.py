@@ -269,9 +269,15 @@ class ConvNetPredefinedFineTune(nn.Module):
             self.model.to(DEVICE)
             for name, param in self.model.named_parameters():
                 if "fc" in name:
-                    params_.append({"params": param, "lr": lr[0]})
+                    param.requires_grad = True
+                    params_.append(
+                        {"params": param, "lr": lr[0], "weight_decay": weight_decay}
+                    )
                 elif param.requires_grad:
-                    params_.append({"params": param, "lr": lr[1]})
+                    params_.append(
+                        {"params": param, "lr": lr[1], "weight_decay": weight_decay}
+                    )
+
         elif hasattr(self.model, "classifier"):
             if isinstance(self.model.classifier, torch.nn.modules.Sequential):
                 if replace_classifier:
