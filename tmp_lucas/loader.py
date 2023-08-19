@@ -58,7 +58,9 @@ def crop_center(image, size):
     return cropped_image
 
 
-def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
+def read_folder(
+    dirpath: Union[Path, str], img_format: str = "PIL", full_size: bool = False
+) -> dict:
     """Read zipped images where the filename corresponds to the id.
 
     Args:
@@ -80,7 +82,8 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
                 img_ = Image.open(os.path.join(dirpath, img_name))
                 img_ = img_.convert("RGB")
                 img_ = shade_of_gray_cc(img_)
-                img_ = img_.resize((300, 300))
+                if not full_size:
+                    img_ = img_.resize((300, 300))
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
@@ -89,43 +92,6 @@ def read_folder(dirpath: Union[Path, str], img_format: str = "PIL") -> dict:
                     raise NotImplementedError("Future implementations")
                 images.update({os.path.basename(img_name): img_})
 
-    except zipfile.BadZipFile:
-        log.error("Error: Zip file is corrupted")
-
-    return images
-
-
-def read_zip(filename: Union[Path, str], img_format: str = "PIL") -> dict:
-    """Read zipped images where the filename corresponds to the id.
-
-    Args:
-        filename: name of the file (.zip)
-        img_format: which format would you like to work with (
-                    "PIL": PIL.Image.Image, "OpenCV": OpenCV,
-                    "Numpy": NumPy.ndarray, "Tensor": PyTorch.Tensor)
-
-    Returns:
-        images: dictionary  {id : image}
-
-    """
-
-    images = {}
-    try:
-        with zipfile.ZipFile(filename, "r") as file:
-            for img_name in file.namelist():
-                if img_name.endswith(".png"):
-                    try:
-                        img_ = Image.open(file.open(img_name))
-                        img_ = img_.convert("RGB")
-                        if img_format.upper() == "NUMPY":
-                            img_ = np.asarray(img_)
-                        elif img_format.upper() == "TENSOR":
-                            img_ = transforms.PILToTensor()(img_)
-                        elif img_format.upper() == "OPENCV":
-                            raise NotImplementedError("Future implementations")
-                        images.update({os.path.basename(img_name): img_})
-                    except ValueError:
-                        log.info("empty images")
     except zipfile.BadZipFile:
         log.error("Error: Zip file is corrupted")
 
@@ -147,7 +113,13 @@ class DataLoader:
         self.labels = None
 
     def load_dataset(
-        self, split_images=True, classes: list = None, sample: bool = False, raw=False
+        self,
+        split_images=True,
+        classes: list = None,
+        sample: bool = False,
+        raw: bool = False,
+        pacheco: bool = False,
+        full_size: bool = False,
     ):
         """Returns the loaded dataset based on the source input
 
@@ -163,13 +135,24 @@ class DataLoader:
         # Different loaders for different sources
         if self.SOURCE == "PAD-UFES":
             self._load_pad_ufes_dataset(
-                split_images=split_images, classes=classes, sample=sample, raw=raw
+                split_images=split_images,
+                classes=classes,
+                sample=sample,
+                raw=raw,
+                pacheco=pacheco,
+                full_size=full_size,
             )
 
         return self.df
 
     def _load_pad_ufes_dataset(
-        self, split_images: bool, classes: list, sample: bool, raw: bool
+        self,
+        split_images: bool,
+        classes: list,
+        sample: bool,
+        raw: bool,
+        pacheco: bool,
+        full_size: bool,
     ):
         """This loader will load the zipped images and metadata and returns 3 lists
 
@@ -193,9 +176,9 @@ class DataLoader:
 
         # Load Images as dictionary
         if sample:
-            images_dict = read_folder(self.PATH / "imgs_part_1", self.format)
+            images_dict = read_folder(self.PATH / "imgs_part_1", self.format, full_size)
         else:
-            images_dict = read_folder(self.PATH / "imgs", self.format)
+            images_dict = read_folder(self.PATH / "imgs", self.format, full_size)
 
         images_df = pd.DataFrame.from_dict(
             images_dict, orient="index", columns=["image"], dtype=object
@@ -231,11 +214,8 @@ class DataLoader:
         # Remove features only present in cancerous patients
 
         # Transform df into suitable numeric values
-        metablock_preprocess = True
-        drop_features = False
-        drop_rows = False
         if not raw:
-            if metablock_preprocess:
+            if pacheco:
                 categorical_var = [
                     "smoke",
                     "drink",
@@ -273,7 +253,7 @@ class DataLoader:
                 df = df_images.join(df)
 
             # Pacheto paper
-            elif drop_features:
+            else:
                 incomplete_features = []
                 for column in df.columns:
                     if sum(df[column].isna()) and column not in [
@@ -298,11 +278,6 @@ class DataLoader:
                         tmp.drop([column + "_UNK"], axis=1, inplace=True)
                     df.drop(column, axis=1, inplace=True)
                     df = df.join(tmp)
-
-            # drop incomplete rows
-            elif drop_rows:
-                for ix, row in df.iterrows():
-                    pass
 
         if classes is not None:
             df = df[df["label"].isin(classes)]
