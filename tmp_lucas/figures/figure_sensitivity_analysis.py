@@ -26,12 +26,13 @@ from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
-    random.seed(42)
     run_analysis = True
     run_results = True
     n_runs = 5
 
-    multimodal_type = "intermediate"
+    random_seeds = [0, 42, 100, 59, 74]
+
+    multimodal_type = "intermediate_fusion"
     classifier = "intermediate_conv_net"
 
     output = "sensitivity_results"
@@ -115,11 +116,12 @@ if __name__ == "__main__":
         for param in params:
             params_dict[param.name.split(".")[-1]] = param.choices
 
-        if multimodal_type == "image":
-            params_dict["conv_net"] = "alexnet"
-        else:
+        if multimodal_type == "intermediate_fusion":
             params_dict["conv_name"] = "alexnet"
             params_dict["n_units_hidden"] = 75
+
+        else:
+            params_dict["conv_net"] = "alexnet"
 
         random_param_selection = {}
 
@@ -142,15 +144,19 @@ if __name__ == "__main__":
 
         for i in range(n_runs):
 
+            random.seed(random_seeds[i])
+
             # For each run choose a set of random param
             for name, choices in params_dict.items():
                 if multimodal_type == "intermediate_fusion":
-                    name = f"prediction.classifier.{classifier}." + name
+                    name_arg = f"prediction.classifier.{classifier}." + name
+                else:
+                    name_arg = name
                 if isinstance(choices, list):
                     value = random.choice(choices)
-                    random_param_selection[name] = value
+                    random_param_selection[name_arg] = value
                 else:
-                    random_param_selection[name] = choices
+                    random_param_selection[name_arg] = choices
 
             print(f"Run {i}: {random_param_selection}")
             # Select one parameter and evaluate the model with random set up to see how
@@ -170,7 +176,7 @@ if __name__ == "__main__":
 
                 for choice in current_choices:
                     random_param_selection[current_name_arg] = choice
-
+                    print(current_name_arg, choice)
                     if multimodal_type == "image":
                         model = Predictions(category="classifier").get(
                             classifier, **random_param_selection
@@ -186,6 +192,7 @@ if __name__ == "__main__":
                             fusion=[],
                             feature_selection=[],
                             feature_scaling=[],
+                            multimodal_type=multimodal_type,
                         )
 
                         model = pipeline.get_multimodal_pipeline_from_named_args(
