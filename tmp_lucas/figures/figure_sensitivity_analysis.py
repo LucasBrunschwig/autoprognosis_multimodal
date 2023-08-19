@@ -31,8 +31,8 @@ if __name__ == "__main__":
     run_results = True
     n_runs = 5
 
-    multimodal_type = "image"
-    classifier = "cnn_fine_tune"
+    multimodal_type = "intermediate"
+    classifier = "intermediate_conv_net"
 
     output = "sensitivity_results"
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
             data_src_="PAD-UFES",
             format_="PIL",
         )
-        df = DL.load_dataset(sample=False)
+        df = DL.load_dataset(sample=False, pacheco=False, full_size=False)
         print("Dataset Loaded")
 
         evaluator = classifier_metrics()
@@ -239,7 +239,7 @@ if __name__ == "__main__":
         if multimodal_type == "image":
             fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
         elif multimodal_type == "intermediate_fusion":
-            fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(30, 20))
+            fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(30, 20))
 
         line_color = "red"  # Color for the line plot
 
@@ -311,7 +311,7 @@ if __name__ == "__main__":
                 )  # Match label color with line color
                 ax2.set_ylabel("")
                 ax2.set_yticklabels([])
-            elif i % 4 == 2:  # rightmost subplot of each row
+            elif i % 4 == 3:  # rightmost subplot of each row
                 ax2.set_ylabel("max - min difference", fontsize=12, color=line_color)
                 ax.set_ylabel("")
                 ax.set_yticklabels([])
