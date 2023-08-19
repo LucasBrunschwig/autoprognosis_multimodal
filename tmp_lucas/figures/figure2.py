@@ -32,19 +32,17 @@ if __name__ == "__main__":
     # Use a subprocess to free memory
 
     DL = DataLoader(
-        path_="../../data",
+        path_=r"../../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
 
-    df = DL.load_dataset(raw=False, sample=False)
+    df = DL.load_dataset(raw=False, sample=True, pacheco=False, full_size=False)
 
     df = df[df.columns.difference(["image"])]
 
     classifier = "logistic_regression"
-    study_name = (
-        f"tabular_{classifier}_pacheco"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
-    )
+    study_name = f"tabular_{classifier}"  # _{datetime.now().strftime('%Y-%m-%d-%H')}"
 
     if train_model:
         study = ClassifierStudy(
@@ -53,7 +51,7 @@ if __name__ == "__main__":
             target="label",  # the label column in the dataset
             sample_for_search=False,  # no Sampling
             n_folds_cv=5,
-            num_iter=1,
+            num_iter=200,
             metric="aucroc",
             classifiers=[classifier],
             timeout=int(10 * 3600),
@@ -63,7 +61,7 @@ if __name__ == "__main__":
 
         study.fit()
 
-    model = load_model_from_file("..\\" + study_name + r"\model.p")
+    model = load_model_from_file("../" + study_name + r"/model.p")
 
     df.reset_index(drop=True, inplace=True)
     df_label = df.label
@@ -110,9 +108,7 @@ if __name__ == "__main__":
     plt.xlabel("Predicted Diagnoses")
     plt.ylabel("True Diagnoses")
     plt.title("Confusion Matrix for Skin Lesion Classification")
-    plt.savefig(
-        rf"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\results\confusion_matrix_{classifier}.png"
-    )
+    plt.savefig(results_dir + f"confusion_matrix_{classifier}.png")
     plt.figure(figsize=(8, 6))
 
     # Test the explainer on test data
