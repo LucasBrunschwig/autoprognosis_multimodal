@@ -196,6 +196,7 @@ class ConvIntermediateNet(nn.Module):
         clipping_value: int = 1,
         batch_norm: bool = False,
         early_stopping: bool = True,
+        replace_classifier: bool = False,
     ) -> None:
         super(ConvIntermediateNet, self).__init__()
 
@@ -262,14 +263,25 @@ class ConvIntermediateNet(nn.Module):
 
         # Replace the output layer by the given number of classes
         if hasattr(self.image_model, "fc"):
-            if isinstance(self.image_model.fc, torch.nn.Sequential):
-                n_features_in = self.image_model.fc[-1].in_features
+            if isinstance(self.image.model.fc, torch.nn.Sequential):
+                if replace_classifier:
+                    for layer in self.image_model.fc:
+                        if isinstance(layer, torch.nn.modules.linear.Linear):
+                            n_features_in = layer.in_features
+                else:
+                    n_features_in = self.image_model.fc[-1].in_features
             else:
-                n_features_in = self.image_model.fc.in_features
+                n_features_in = self.image.model.fc.in_features
 
         elif hasattr(self.image_model, "classifier"):
-            if isinstance(self.image_model.classifier, torch.nn.Sequential):
-                n_features_in = self.image_model.classifier[-1].in_features
+            if isinstance(self.image.model.classifier, torch.nn.Sequential):
+                if replace_classifier:
+                    for layer in self.image_model.classifier:
+                        if isinstance(layer, torch.nn.modules.linear.Linear):
+                            n_features_in = layer.in_features
+                            break
+                else:
+                    n_features_in = self.image_model.classifier[-1].in_features
             else:
                 n_features_in = self.image_model.classifier.in_features
         else:
@@ -278,23 +290,27 @@ class ConvIntermediateNet(nn.Module):
         # The first intermediate layer depends on the last output
         n_intermediate = int((n_features_in // 2))
 
-        additional_layers = [
-            nn.Linear(n_features_in, n_intermediate),
-            NL(),
-            nn.Dropout(p=dropout, inplace=False),
-        ]
+        additional_layers = []
+        if n_img_layer > 0:
+            additional_layers = [
+                nn.Linear(n_features_in, n_intermediate),
+                NL(),
+                nn.Dropout(p=dropout, inplace=False),
+            ]
 
-        for i in range(n_img_layer - 1):
-            additional_layers.extend(
-                [
-                    nn.Linear(n_intermediate, int(n_intermediate / 2)),
-                    NL(),
-                    nn.Dropout(p=dropout, inplace=False),
-                ]
-            )
-            n_intermediate = int(n_intermediate / 2)
-        n_img_out = int(n_intermediate // 2)
-        additional_layers.append(nn.Linear(n_intermediate, n_img_out))
+            for i in range(n_img_layer - 1):
+                additional_layers.extend(
+                    [
+                        nn.Linear(n_intermediate, int(n_intermediate / 2)),
+                        NL(),
+                        nn.Dropout(p=dropout, inplace=False),
+                    ]
+                )
+                n_intermediate = int(n_intermediate / 2)
+            n_img_out = int(n_intermediate // 2)
+            additional_layers.append(nn.Linear(n_intermediate, n_img_out))
+        else:
+            additional_layers.append(nn.Linear(n_features_in, n_features_in // 2))
 
         name_match = None
         if hasattr(self.image_model, "fc"):
@@ -306,12 +322,12 @@ class ConvIntermediateNet(nn.Module):
                 name_match = "fc"
 
         elif hasattr(self.image_model, "classifier"):
-            if isinstance(self.image_model.classifier, torch.nn.modules.Sequential):
-                self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
-                name_match = "classifier." + str(len(self.image_model.classifier) - 1)
-            else:
+            if replace_classifier:
                 self.image_model.classifier = nn.Sequential(*additional_layers)
                 name_match = "classifier"
+            else:
+                self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
+                name_match = "classifier." + str(len(self.model.classifier) - 1)
 
         if name_match is None:
             raise ValueError("Unsupported Architecture")
@@ -447,30 +463,24 @@ class ConvIntermediateNet(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            # prefetch_factor=3,
-            # num_workers=5,
+            prefetch_factor=2,
+            num_workers=5,
         )
         test_loader = DataLoader(
             test_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            # prefetch_factor=3,
-            # num_workers=5,
+            prefetch_factor=2,
+            num_workers=5,
         )
 
         # do training
         val_loss_best = 999999
         patience = 0
 
-        # TMP LUCAS
-        # label_counts = torch.bincount(y)
-        # class_weights = 1. / label_counts.float()
-        # class_weights = class_weights / class_weights.sum()
-        # class_weights = class_weights.to(DEVICE)
-        # loss = nn.CrossEntropyLoss(weight=class_weights)
         loss = nn.CrossEntropyLoss()
 
-        for i in range(self.n_iter):
+        for i in range(50):
             train_loss = []
 
             start_ = time.time()
@@ -800,6 +810,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         batch_norm: bool = True,
         early_stopping: bool = True,
         pretrain_image_model: bool = False,
+        replace_classifier: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -822,6 +833,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.data_augmentation = data_augmentation
         self.image_transformation = None
         self.pretrain_image_model = pretrain_image_model
+        self.replace_classifier = replace_classifier
 
         weights = models.get_weight(WEIGHTS[self.conv_name.lower()])
         self.preprocess = weights.transforms(antialias=True)
@@ -856,7 +868,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             # Network for Tabular and Image network
             params.Categorical("tab_reduction_ratio", [1.0, 2.0, 4.0]),
             params.Integer("n_tab_layer", 0, 3),
-            params.Integer("n_img_layer", 1, 3),
+            params.Integer("n_img_layer", 0, 3),
             params.Categorical("conv_name", CNN),
             # Final Classifiers
             params.Integer("n_layers_hidden", 1, 4),
@@ -865,20 +877,21 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
             params.Categorical("dropout", [0, 0.1, 0.2, 0.4]),
-            params.Integer("n_unfrozen_layers", 1, 6),
+            params.Integer("n_unfrozen_layers", 1, 8),
             params.Categorical("pretrain_image_model", [True, False]),
+            params.Categorical("replace_classifier", [True, False]),
             # Data Augmentation
             params.Categorical(
                 "data_augmentation",
                 [
                     "",
                     # "autoaugment_cifar10",
-                    # "autoaugment_imagenet",
+                    "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
                     "simple_strategy",
                     "gaussian_noise",
-                    # "color_jittering",
+                    "color_jittering",
                 ],
             ),
         ]
@@ -983,6 +996,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             batch_norm=self.batch_norm,
             early_stopping=self.early_stopping,
             preprocess=self.preprocess,
+            replace_classifier=self.replace_classifier,
         )
 
         X_img = X[IMAGE_KEY]
@@ -1005,7 +1019,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             test_dataset = TestTensorDataset(
                 X_tab, X_img, weight_transform=self.preprocess
             )
-            test_loader = DataLoader(test_dataset, batch_size=100, pin_memory=False)
+            test_loader = DataLoader(test_dataset, batch_size=100, pin_memory=True)
             for batch_test_ndx, X_test in enumerate(test_loader):
                 X_tab, X_img = X_test
                 results = np.vstack(
