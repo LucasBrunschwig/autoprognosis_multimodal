@@ -263,7 +263,7 @@ class ConvIntermediateNet(nn.Module):
 
         # Replace the output layer by the given number of classes
         if hasattr(self.image_model, "fc"):
-            if isinstance(self.image.model.fc, torch.nn.Sequential):
+            if isinstance(self.image_model.fc, torch.nn.Sequential):
                 if replace_classifier:
                     for layer in self.image_model.fc:
                         if isinstance(layer, torch.nn.modules.linear.Linear):
@@ -271,10 +271,10 @@ class ConvIntermediateNet(nn.Module):
                 else:
                     n_features_in = self.image_model.fc[-1].in_features
             else:
-                n_features_in = self.image.model.fc.in_features
+                n_features_in = self.image_model.fc.in_features
 
         elif hasattr(self.image_model, "classifier"):
-            if isinstance(self.image.model.classifier, torch.nn.Sequential):
+            if isinstance(self.image_model.classifier, torch.nn.Sequential):
                 if replace_classifier:
                     for layer in self.image_model.classifier:
                         if isinstance(layer, torch.nn.modules.linear.Linear):
