@@ -311,6 +311,7 @@ class ConvIntermediateNet(nn.Module):
             additional_layers.append(nn.Linear(n_intermediate, n_img_out))
         else:
             additional_layers.append(nn.Linear(n_features_in, n_features_in // 2))
+            n_img_out = int(n_features_in // 2)
 
         name_match = None
         if hasattr(self.image_model, "fc"):
