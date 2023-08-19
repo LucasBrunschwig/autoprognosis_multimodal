@@ -191,8 +191,8 @@ if __name__ == "__main__":
                         model = pipeline.get_multimodal_pipeline_from_named_args(
                             **random_param_selection
                         )
-                        model.intermediate_fusion_fit(X_train, y_train)
-                        preds = model.intermediate_fusion_predict_proba(X_test)
+                        model.fit(X_train, y_train)
+                        preds = model.predict_proba(X_test)
 
                     results = evaluator.score_proba(y_test, preds)
 
