@@ -328,7 +328,7 @@ class ConvIntermediateNet(nn.Module):
                 name_match = "classifier"
             else:
                 self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
-                name_match = "classifier." + str(len(self.model.classifier) - 1)
+                name_match = "classifier." + str(len(self.image_model.classifier) - 1)
 
         if name_match is None:
             raise ValueError("Unsupported Architecture")
