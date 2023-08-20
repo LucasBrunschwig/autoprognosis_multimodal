@@ -17,7 +17,7 @@ from autoprognosis.utils.serialization import load_model_from_file, save_model_t
 from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
-
+    # This script is for late fusion
     train_model = True
     explain = True
     fit_model = True
@@ -31,20 +31,22 @@ if __name__ == "__main__":
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
-    # Use a subprocess to free memory
-
     DL = DataLoader(
         path_=r"../../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
 
-    df = DL.load_dataset(raw=False, sample=False)
+    df = DL.load_dataset(raw=False, sample=False, pacheco=True, full_size=False)
 
-    classifier = "cnn"
+    print(
+        f"GB available after loading data: {psutil.virtual_memory().available / 1073741824:.2f}"
+    )
+
+    classifier = "cnn_fine_tune"
     predefined_cnn = ["alexnet"]
     tabular = "neural_nets"
-    study_name = f"late_fusion_{classifier}_{predefined_cnn[0]}_{tabular}"
+    study_name = f"late_fusion_{classifier}_{predefined_cnn[0]}_{tabular}_pacheco"
 
     if train_model:
         study = MultimodalStudy(
