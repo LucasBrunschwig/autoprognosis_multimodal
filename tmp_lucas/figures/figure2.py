@@ -56,12 +56,12 @@ if __name__ == "__main__":
             classifiers=[classifier],
             timeout=int(10 * 3600),
             num_study_iter=1,
-            workspace=r"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\autoprognosis_multimodal\tmp_lucas",
+            workspace="tmp/",
         )
 
         study.fit()
 
-    model = load_model_from_file("../" + study_name + r"/model.p")
+    model = load_model_from_file("tmp/" + study_name + r"/model.p")
 
     df.reset_index(drop=True, inplace=True)
     df_label = df.label
