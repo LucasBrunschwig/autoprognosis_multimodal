@@ -450,7 +450,40 @@ class MultimodalEnsembleSeeker:
         elif self.multimodal_type == "early_fusion":
 
             # Optimize the learned representation
-            self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+            predefined = True
+            if not predefined:
+                self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+            else:
+                self.seeker.best_representation["cnn_fine_tune.50"] = {
+                    "output_size": 50,
+                    "conv_net": "alexnet",
+                    "lr": 3,
+                    "n_additional_layers": 1,
+                    "n_unfrozen_layer": 6,
+                    "data_augmentation": "gaussian_noise",
+                    "clipping_value": 1,
+                    "replace_classifier": True,
+                }
+                self.seeker.best_representation["cnn_fine_tune.100"] = {
+                    "output_size": 100,
+                    "conv_net": "alexnet",
+                    "lr": 1,
+                    "n_additional_layers": 1,
+                    "n_unfrozen_layer": 6,
+                    "data_augmentation": "gaussian_noise",
+                    "clipping_value": 1,
+                    "replace_classifier": False,
+                }
+                self.seeker.best_representation["cnn_fine_tune.300"] = {
+                    "output_size": 300,
+                    "conv_net": "alexnet",
+                    "lr": 1,
+                    "n_additional_layers": 1,
+                    "n_unfrozen_layer": 8,
+                    "data_augmentation": "autoaugment_imagenet",
+                    "clipping_value": 1,
+                    "replace_classifier": False,
+                }
             # Pretrain and predict learned representation and use (LR key) if this works
             self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
             # Train the classifier - provide X
