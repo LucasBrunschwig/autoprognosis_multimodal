@@ -522,7 +522,7 @@ class MultimodalStudy(Study):
             )
             return None
 
-        return best_model
+        return best_model, metrics
 
     def fit(self) -> Any:
         """Run the study and train the model. The call returns the fitted model."""
