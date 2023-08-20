@@ -45,31 +45,29 @@ if __name__ == "__main__":
     multimodal_type = "early_fusion"
     dim_red = ["cnn_fine_tune"]
     classifier = ["neural_nets"]
-    # unique_variable = [
-    #                 "background_father",
-    #                 "age",
-    #                 "diameter_1",
-    #                 "diameter_2",
-    #                 "smoke",
-    #                 "drink",
-    #                 "background_mother",
-    #                 "pesticide",
-    #                 "gender",
-    #                 "skin_cancer_history",
-    #                 "cancer_history",
-    #                 "has_piped_water",
-    #                 "has_sewage_system",
-    #                 "region",
-    #                 "itch",
-    #                 "grew",
-    #                 "hurt",
-    #                 "changed",
-    #                 "bleed",
-    #                 "elevation",
-    #                 "fitspatrick",
-    #             ]
-
-    unique_variable = ["background_father", "age", "diameter_1"]
+    unique_variable = [
+        "background_father",
+        "age",
+        "diameter_1",
+        "diameter_2",
+        "smoke",
+        "drink",
+        "background_mother",
+        "pesticide",
+        "gender",
+        "skin_cancer_history",
+        "cancer_history",
+        "has_piped_water",
+        "has_sewage_system",
+        "region",
+        "itch",
+        "grew",
+        "hurt",
+        "changed",
+        "bleed",
+        "elevation",
+        "fitspatrick",
+    ]
 
     results = {}
 
@@ -106,7 +104,7 @@ if __name__ == "__main__":
                 image_dimensionality_reduction=dim_red,
                 imputers=["ice"],
                 n_folds_cv=5,
-                num_iter=1,
+                num_iter=100,
                 metric="aucroc",
                 classifiers=classifier,
                 timeout=int(3000 * 3600),
