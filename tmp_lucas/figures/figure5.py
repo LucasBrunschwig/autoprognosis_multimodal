@@ -53,7 +53,7 @@ if __name__ == "__main__":
         study_name = f"intermediate_fusion_{classifier}_{predefined_cnn[0]}"
 
     elif multimodal_type == "early_fusion":
-        dim_red = ["cnn_imagenet"]
+        dim_red = ["cnn_fine_tune"]
         classifier = ["neural_nets", "random_forest"]
         study_name = f"early_fusion_{dim_red[0]}_{predefined_cnn[0]}_{classifier[0]}_{classifier[1]}"
 
