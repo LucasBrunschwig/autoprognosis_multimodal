@@ -15,6 +15,7 @@ def build_model_pipeline(
     preprocess_images=False,
     image_processing=[],
     image_dimensionality_reduction=[],
+    multimodal_type=None,
     fusion=[],
     classifier_category="classifier",
 ):
@@ -28,6 +29,7 @@ def build_model_pipeline(
         preprocess_images,
         image_processing,
         image_dimensionality_reduction,
+        multimodal_type,
         fusion,
         classifier_category,
     )
@@ -88,7 +90,8 @@ def build_image_from_dict(params_):
         "classifier_category",
     ]
 
-    pipeline_params = {}
+    pipeline_params = {"multimodal_type": None}
+
     for name, value in params_.items():
         if name in pipeline_params_name:
             if name == "prediction":
@@ -103,14 +106,15 @@ def build_image_from_dict(params_):
     # Select the correct params
     named_params = {}
     for name in pipeline_params.keys():
-        params = params_[name]["params"]
-        for param in potential_params:
-            named_param = param.name
-            if (
-                named_param.split(".")[-1] in params.keys()
-                and named_param.split(".")[0] == name
-            ):
-                named_params[named_param] = params[named_param.split(".")[-1]]
+        if name != "multimodal_type":
+            params = params_[name]["params"]
+            for param in potential_params:
+                named_param = param.name
+                if (
+                    named_param.split(".")[-1] in params.keys()
+                    and named_param.split(".")[0] == name
+                ):
+                    named_params[named_param] = params[named_param.split(".")[-1]]
 
     estimator_ = pipeline.get_image_pipeline_from_named_args(**named_params)
 
