@@ -75,7 +75,7 @@ if __name__ == "__main__":
         if column in ["image", "label"]:
             continue
 
-        results[column] = {"auc": None, "acc": None, "bacc": None}
+        results[column] = {}
 
         study_name = (
             f"early_fusion_{dim_red[0]}_{predefined_cnn[0]}_{classifier[0]}_{column}"
@@ -120,7 +120,7 @@ if __name__ == "__main__":
                 elif metric == "accuracy":
                     results[column]["accuracy"] = value
                 elif metric == "balanced_accuracy":
-                    results[column]["accuracy"] = value
+                    results[column]["balanced_accuracy"] = value
 
             print(results)
 
