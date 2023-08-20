@@ -40,7 +40,7 @@ if __name__ == "__main__":
         format_="PIL",
     )
 
-    df = DL.load_dataset(raw=False, sample=False)
+    df = DL.load_dataset(raw=False, sample=False, pacheco=False, full_size=False)
 
     print("Loaded Images")
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
             classifiers=classifier,
             timeout=int(3000 * 3600),
             num_study_iter=1,
-            workspace="../",
+            workspace="tmp_intermediate/",
         )
 
         study.run()
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         with open(predefined_model, "r") as file:
             predefined_model = json.load(file)
 
-        # does not work because we need normalizer and imputation
+        # does not work because we need normalizer and imputation parameters
         model = build_intermediate_fusion_from_dict(predefined_model)
 
         X, y = dataset_to_multimodal(df, image=["image"], label="label")
