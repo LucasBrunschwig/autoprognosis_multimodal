@@ -38,7 +38,11 @@ from .generators import (
 class PipelineMeta(type):
     def __new__(cls: Type, name: str, plugins: Tuple[Type, ...], dct: dict) -> Any:
 
-        multimodal_type = dct["multimodal_type"]
+        multimodal_type = "_".join(name.split("_")[-2:])
+        # if not multimodal remove the None from the name
+        if "fusion" not in multimodal_type:
+            multimodal_type = None
+            name = "_".join(name.split("_")[:-1])
 
         dct["__init__"] = _generate_constructor()
         dct["__setstate__"] = _generate_setstate()
@@ -146,4 +150,5 @@ def Pipeline(plugins_str: List[str], multimodal_type=None) -> Any:
 
     name = "_".join(p.name() for p in plugins)
 
-    return PipelineMeta(name, plugins, {"multimodal_type": multimodal_type})
+    name += f"_{multimodal_type}"
+    return PipelineMeta(name, plugins, {})
