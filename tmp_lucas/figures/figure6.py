@@ -7,6 +7,8 @@
 import os
 
 # third party
+import pandas as pd
+
 # Third-Party
 import psutil
 
@@ -46,12 +48,12 @@ if __name__ == "__main__":
     dim_red = ["cnn_fine_tune"]
     classifier = ["neural_nets"]
     unique_variable = [
-        "background_father",
         "age",
         "diameter_1",
         "diameter_2",
         "smoke",
         "drink",
+        "background_father",
         "background_mother",
         "pesticide",
         "gender",
@@ -86,51 +88,53 @@ if __name__ == "__main__":
             if column_one_hot.startswith(column):
                 variable.append(column_one_hot)
 
-            print(variable)
+        print(variable)
 
-            # Select the variable you would like to test
-            df_sub = df[["image", "label"] + variable]
+        # Select the variable you would like to test
+        df_sub = df[["image", "label"] + variable]
 
-            column_one_hot = []
-            if train_model:
-                try:
-                    print("Started Training")
-                    study = MultimodalStudy(
-                        study_name=study_name,
-                        dataset=df_sub,  # pandas DataFrame
-                        multimodal_type=multimodal_type,
-                        image="image",
-                        target="label",  # the label column in the dataset
-                        sample_for_search=False,  # no Sampling
-                        predefined_cnn=predefined_cnn,
-                        feature_selection=[],
-                        image_processing=[],
-                        image_dimensionality_reduction=dim_red,
-                        imputers=["ice"],
-                        n_folds_cv=5,
-                        num_iter=100,
-                        metric="aucroc",
-                        classifiers=classifier,
-                        timeout=int(3000 * 3600),
-                        num_study_iter=1,
-                        workspace="tmp_early_fusion/",
-                    )
+        column_one_hot = []
+        if train_model:
+            try:
+                print("Started Training")
+                study = MultimodalStudy(
+                    study_name=study_name,
+                    dataset=df_sub,  # pandas DataFrame
+                    multimodal_type=multimodal_type,
+                    image="image",
+                    target="label",  # the label column in the dataset
+                    sample_for_search=False,  # no Sampling
+                    predefined_cnn=predefined_cnn,
+                    feature_selection=[],
+                    image_processing=[],
+                    image_dimensionality_reduction=dim_red,
+                    imputers=["ice"],
+                    n_folds_cv=5,
+                    num_iter=100,
+                    metric="aucroc",
+                    classifiers=classifier,
+                    timeout=int(3000 * 3600),
+                    num_study_iter=1,
+                    workspace="tmp_early_fusion/",
+                )
 
-                    model, metrics = study.run()
+                model, metrics = study.run()
 
-                    for metric, value in metrics["str"].items():
-                        if metric == "aucroc":
-                            results[column]["aucroc"] = value
-                        elif metric == "accuracy":
-                            results[column]["accuracy"] = value
-                        elif metric == "balanced_accuracy":
-                            results[column]["balanced_accuracy"] = value
+                for metric, value in metrics["str"].items():
+                    if metric == "aucroc":
+                        results[column]["aucroc"] = value
+                    elif metric == "accuracy":
+                        results[column]["accuracy"] = value
+                    elif metric == "balanced_accuracy":
+                        results[column]["balanced_accuracy"] = value
 
-                    print(results)
-                except Exception as e:
-                    print(f"Error with {column} - {column_one_hot}: {e}")
+                print(f"Results {column}: {results[column]}")
+            except Exception as e:
+                print(f"Error with {column} - {column_one_hot}: {e}")
 
         print(results)
+        df_results = pd.DataFrame.from_dict(results, orient="index")
+        df_results.to_csv("one_feature_early_fusion.csv")
         # Here we get a model and we can evaluate estimator of the model
         # But we could also just 21 - optimization
         #  - this means 21 * 5 cnn fitting
