@@ -877,7 +877,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             # Training and global parameters
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
-            params.Categorical("dropout", [0, 0.1, 0.2, 0.4]),
+            params.Categorical("dropout", [0.0, 0.1, 0.2, 0.4]),
             params.Integer("n_unfrozen_layers", 1, 8),
             params.Categorical("pretrain_image_model", [True, False]),
             params.Categorical("replace_classifier", [True, False]),
@@ -985,6 +985,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             n_inter_hidden=self.n_neurons,
             n_layers_hidden=self.n_layers_hidden,
             n_units_hidden=self.n_units_hidden,
+            n_unfrozen_layer=self.n_unfrozen_layers,
             transform=self.transforms_compose,
             lr=self.lr,
             weight_decay=self.weight_decay,
