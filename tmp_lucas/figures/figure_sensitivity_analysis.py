@@ -130,16 +130,19 @@ if __name__ == "__main__":
             name_: {choice: [] for choice in choices_}
             for name_, choices_ in params_dict.items()
             if isinstance(choices_, list)
+            if name_ in ["n_unfrozen_layers", "dropout"]
         }
         evaluation_accuracy = {
             name_: {choice: [] for choice in choices_}
             for name_, choices_ in params_dict.items()
             if isinstance(choices_, list)
+            if name_ in ["n_unfrozen_layers", "dropout"]
         }
         evaluation_balanced = {
             name_: {choice: [] for choice in choices_}
             for name_, choices_ in params_dict.items()
             if isinstance(choices_, list)
+            if name_ in ["n_unfrozen_layers", "dropout"]
         }
 
         for i in range(n_runs):
@@ -159,9 +162,13 @@ if __name__ == "__main__":
                     random_param_selection[name_arg] = choices
 
             print(f"Run {i}: {random_param_selection}")
+
             # Select one parameter and evaluate the model with random set up to see how
             for current_name, current_choices in params_dict.items():
-                if not isinstance(current_choices, list):
+                if not isinstance(current_choices, list) and current_name not in [
+                    "n_unfrozen_layers",
+                    "dropout",
+                ]:
                     continue
                 if multimodal_type == "intermediate_fusion":
                     current_name_arg = (
