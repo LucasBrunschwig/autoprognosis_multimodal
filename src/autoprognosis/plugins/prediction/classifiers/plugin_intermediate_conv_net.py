@@ -197,6 +197,7 @@ class ConvIntermediateNet(nn.Module):
         batch_norm: bool = False,
         early_stopping: bool = True,
         replace_classifier: bool = False,
+        latent_representation: int = 50,
     ) -> None:
         super(ConvIntermediateNet, self).__init__()
 
@@ -307,11 +308,10 @@ class ConvIntermediateNet(nn.Module):
                     ]
                 )
                 n_intermediate = int(n_intermediate / 2)
-            n_img_out = int(n_intermediate // 2)
-            additional_layers.append(nn.Linear(n_intermediate, n_img_out))
+
+            additional_layers.append(nn.Linear(n_intermediate, latent_representation))
         else:
-            additional_layers.append(nn.Linear(n_features_in, n_features_in // 2))
-            n_img_out = int(n_features_in // 2)
+            additional_layers.append(nn.Linear(n_features_in, latent_representation))
 
         name_match = None
         if hasattr(self.image_model, "fc"):
@@ -343,7 +343,7 @@ class ConvIntermediateNet(nn.Module):
                     {"params": param, "lr": lr / 10, "weight_decay": weight_decay}
                 )
 
-        n_unit_in = n_tab_out + n_img_out
+        n_unit_in = n_tab_out + latent_representation
 
         # Classifier Net
         if n_layers_hidden > 0:
@@ -794,6 +794,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_img_layer: int = 2,
         conv_name: str = "alexnet",
         n_neurons: int = 64,
+        latent_representation: int = 50,
         n_layers_hidden: int = 1,
         n_units_hidden: int = 100,
         dropout: float = 0.4,
@@ -821,6 +822,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.n_tab_layer = n_tab_layer
         self.n_img_layer = n_img_layer
         self.n_neurons = n_neurons
+        self.latent_representation = latent_representation
         self.non_linear = nonlin
         self.n_layers_hidden = n_layers_hidden
         self.n_units_hidden = n_units_hidden
@@ -868,6 +870,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         return [
             # Network for Tabular and Image network
             params.Categorical("tab_reduction_ratio", [1.0, 2.0, 4.0]),
+            params.Integer("latent_representation", 25, 125),
             params.Integer("n_tab_layer", 0, 4),
             params.Integer("n_img_layer", 0, 4),
             params.Categorical("conv_name", CNN),
@@ -999,6 +1002,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             early_stopping=self.early_stopping,
             preprocess=self.preprocess,
             replace_classifier=self.replace_classifier,
+            latent_representation=self.latent_representation,
         )
 
         X_img = X[IMAGE_KEY]
