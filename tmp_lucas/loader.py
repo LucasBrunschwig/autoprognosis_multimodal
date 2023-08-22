@@ -1,5 +1,4 @@
 # stdlib
-import argparse
 import logging
 import os
 from pathlib import Path
@@ -12,6 +11,7 @@ from PIL import Image
 import cv2
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import StratifiedGroupKFold
 from torchvision import transforms
 
 # autoprognosis absolute
@@ -143,7 +143,19 @@ class DataLoader:
                 full_size=full_size,
             )
 
-        return self.df
+        # As stated in Pacheco
+        groups = ["_".join(patient.split("_")[0:2]) for patient in list(self.df.index)]
+        skf = StratifiedGroupKFold(n_splits=6, shuffle=True, random_state=8)
+        self.df["folder"] = None
+        for folder_number, (train_idx, val_idx) in enumerate(
+            skf.split(np.zeros(len(self.df)), self.df.label, groups)
+        ):
+            self.df.iloc[val_idx, self.df.columns.get_loc("folder")] = folder_number + 1
+
+        df_train = self.df[self.df["folder"] == 6]
+        df_test = self.df[self.df["folder"] != 6]
+
+        return df_train, df_test
 
     def _load_pad_ufes_dataset(
         self,
@@ -307,25 +319,3 @@ class DataLoader:
         indices = random.sample(range(0, len(self.df)), n)
 
         return self.df.iloc[indices, :]
-
-
-if __name__ == "__main__":
-
-    # Create a temporary parser
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--input_dir",
-        help="provide the directory where dataset is stored",
-        type=str,
-        default="",
-    )
-    parser.add_argument("--data_src", help="provide the data source type")
-    args = parser.parse_args()
-
-    data_src = args.data_src
-    input_dir = args.input_dir
-
-    DL = DataLoader(input_dir, data_src)
-    DL.load_dataset()
-
-    # DL.summary()
