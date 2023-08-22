@@ -868,18 +868,18 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         return [
             # Network for Tabular and Image network
             params.Categorical("tab_reduction_ratio", [1.0, 2.0, 4.0]),
-            params.Integer("n_tab_layer", 0, 3),
-            params.Integer("n_img_layer", 0, 3),
+            params.Integer("n_tab_layer", 0, 4),
+            params.Integer("n_img_layer", 0, 4),
             params.Categorical("conv_name", CNN),
             # Final Classifiers
             params.Integer("n_layers_hidden", 1, 4),
             params.Integer("n_units_hidden", 50, 100),
             # Training and global parameters
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
-            params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
+            # params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
             params.Categorical("dropout", [0.0, 0.1, 0.2, 0.4]),
             params.Integer("n_unfrozen_layers", 1, 8),
-            params.Categorical("pretrain_image_model", [True, False]),
+            # params.Categorical("pretrain_image_model", [True, False]),
             params.Categorical("replace_classifier", [True, False]),
             # Data Augmentation
             params.Categorical(
