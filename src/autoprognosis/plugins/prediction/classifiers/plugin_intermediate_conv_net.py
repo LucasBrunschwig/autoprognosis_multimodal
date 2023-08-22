@@ -870,7 +870,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         return [
             # Network for Tabular and Image network
             params.Categorical("tab_reduction_ratio", [1.0, 2.0, 4.0]),
-            params.Integer("latent_representation", 25, 125),
+            params.Integer("latent_representation", 25, 175),
             params.Integer("n_tab_layer", 0, 4),
             params.Integer("n_img_layer", 0, 4),
             params.Categorical("conv_name", CNN),
