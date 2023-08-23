@@ -391,7 +391,7 @@ class MultimodalEnsembleSeeker:
 
             else:
                 neural_nets = PipelineSelector(
-                    classifier="neural_nets",
+                    classifier="random_forest",
                     imputers=["ice"],
                     feature_selection=default_feature_selection_names,
                     feature_scaling=default_feature_scaling_names,
