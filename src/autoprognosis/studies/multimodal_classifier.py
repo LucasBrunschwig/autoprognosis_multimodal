@@ -309,6 +309,8 @@ class MultimodalStudy(Study):
                 image = [image]
             non_tabular_column.extend(image)
             self.multimodal_key[IMAGE_KEY] = image
+        if group_id is not None:
+            non_tabular_column.extend([group_id])
 
         self.multimodal_key[TABULAR_KEY] = dataset.columns.difference(
             non_tabular_column + [target]
