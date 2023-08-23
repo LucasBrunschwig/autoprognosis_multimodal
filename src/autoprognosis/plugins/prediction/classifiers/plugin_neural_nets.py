@@ -280,7 +280,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
         lr: float = 1e-3,
         weight_decay: float = 1e-3,
         n_iter: int = 1000,
-        batch_size: int = 128,
+        batch_size: int = 100,
         n_iter_print: int = 10,
         patience: int = 10,
         n_iter_min: int = 100,
