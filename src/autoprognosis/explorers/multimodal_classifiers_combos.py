@@ -21,12 +21,12 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
+from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.plugins.ensemble.classifiers import (
     AggregatingEnsemble,
     BaseEnsemble,
-    StackingEnsemble,
     WeightedEnsemble,
 )
 from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
@@ -370,43 +370,95 @@ class MultimodalEnsembleSeeker:
         if self.multimodal_type == "late_fusion":
 
             # Optimal Image Models
-            best_image_models = self.image_seeker.search(
-                X[IMAGE_KEY], Y, group_ids=group_ids
-            )
+            predefined = True
+            if not predefined:
 
-            # Optimal Tabular Models
-            best_tabular_models = self.tabular_seeker.search(
-                X[TABULAR_KEY], Y, group_ids=group_ids
-            )
+                # Optimal Image Models
+                best_image_models = self.image_seeker.search(
+                    X[IMAGE_KEY], Y, group_ids=group_ids
+                )
 
-            if not isinstance(best_image_models, list):
-                best_image_models = [best_image_models]
-            if not isinstance(best_tabular_models, list):
-                best_tabular_models = [best_tabular_models]
+                # Optimal Tabular Models
+                best_tabular_models = self.tabular_seeker.search(
+                    X[TABULAR_KEY], Y, group_ids=group_ids
+                )
 
-            best_models = best_tabular_models + best_image_models
+                if not isinstance(best_image_models, list):
+                    best_image_models = [best_image_models]
+                if not isinstance(best_tabular_models, list):
+                    best_tabular_models = [best_tabular_models]
+                best_models = best_tabular_models + best_image_models
+
+            else:
+                neural_nets = PipelineSelector(
+                    classifier="neural_nets",
+                    imputers=["ice"],
+                    feature_selection=default_feature_selection_names,
+                    feature_scaling=default_feature_scaling_names,
+                    multimodal_type="late_fusion",
+                )
+
+                # Random Forest Evolution
+                tabular_model = neural_nets.get_pipeline_from_named_args(
+                    **{
+                        "prediction.classifier.random_forest.imputation_candidate.ice": "ice",
+                        "imputer.default.ice.max_iter": 900,
+                        "imputer.default.ice.tol": 0.01,
+                        "imputer.default.ice.initial_strategy": 0,
+                        "imputer.default.ice.imputation_order": 4,
+                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+                        "prediction.classifier.random_forest.feature_selection_candidate.fast_ica_nop_pca": "fast_ica",
+                        "preprocessor.dimensionality_reduction.pca.n_components": 6,
+                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 10,
+                        "prediction.classifier.random_forest.criterion": 1,
+                        "prediction.classifier.random_forest.n_estimators": 9990,
+                        "prediction.classifier.random_forest.max_depth": 7,
+                        "prediction.classifier.random_forest.min_samples_split": 2,
+                        "prediction.classifier.random_forest.bootstrap": "True",
+                        "prediction.classifier.random_forest.min_samples_leaf": 5,
+                    }
+                )
+
+                cnn_fine_tune = PipelineSelector(
+                    classifier="cnn_fine_tune", multimodal_type="late_fusion"
+                )
+
+                image_model = cnn_fine_tune.get_image_pipeline_from_named_args(
+                    **{
+                        "prediction.classifier.conv_net": "alexnet",
+                        "prediction.classifier.n_additional_layers": 2,
+                        "prediction.classifier.lr": 1,
+                        "prediction.classifier.n_unfrozen_layer": 7,
+                        "prediction.classifier.weighted_cross_entropy": False,
+                        "prediction.classifier.data_augmentation": "trivial_augment",
+                        "prediction.classifier.replace_classifier": False,
+                        "prediction.classifier.clipping_value": 0,
+                    }
+                )
+
+                best_models = [image_model, tabular_model]
 
             scores = []
             ensembles: list = []
 
-            try:
-                stacking_ensemble = StackingEnsemble(
-                    best_models, meta_model=best_models[0], use_proba=True
-                )
-                stacking_ens_score = evaluate_multimodal_estimator(
-                    stacking_ensemble,
-                    X,
-                    Y,
-                    self.n_folds_cv,
-                    group_ids=group_ids,
-                )["raw"][self.metric][0]
-                log.info(
-                    f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
-                )
-                scores.append(stacking_ens_score)
-                ensembles.append(stacking_ensemble)
-            except BaseException as e:
-                log.info(f"StackingEnsemble failed {e}")
+            # try:
+            #     stacking_ensemble = StackingEnsemble(
+            #         best_models, meta_model=best_models[0], use_proba=True
+            #     )
+            #     stacking_ens_score = evaluate_multimodal_estimator(
+            #         stacking_ensemble,
+            #         X,
+            #         Y,
+            #         self.n_folds_cv,
+            #         group_ids=group_ids,
+            #     )["raw"][self.metric][0]
+            #     log.info(
+            #         f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
+            #     )
+            #     scores.append(stacking_ens_score)
+            #     ensembles.append(stacking_ensemble)
+            # except BaseException as e:
+            #     log.info(f"StackingEnsemble failed {e}")
 
             if self.hooks.cancel():
                 raise StudyCancelled("Classifier search cancelled")
