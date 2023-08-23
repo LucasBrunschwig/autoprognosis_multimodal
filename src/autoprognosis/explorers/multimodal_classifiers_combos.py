@@ -391,7 +391,7 @@ class MultimodalEnsembleSeeker:
 
             else:
                 neural_nets = PipelineSelector(
-                    classifier="random_forest",
+                    classifier="neural_nets",
                     imputers=["ice"],
                     feature_selection=default_feature_selection_names,
                     feature_scaling=default_feature_scaling_names,
@@ -401,16 +401,16 @@ class MultimodalEnsembleSeeker:
                 # Random Forest Evolution
                 tabular_model = neural_nets.get_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
-                        "prediction.classifier.random_forest.feature_selection_candidate.fast_ica_nop_pca": "nop",
-                        "preprocessor.dimensionality_reduction.pca.n_components": 2,
-                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 1,
-                        "prediction.classifier.random_forest.criterion": 0,
-                        "prediction.classifier.random_forest.n_estimators": 460,
-                        "prediction.classifier.random_forest.max_depth": 7,
-                        "prediction.classifier.random_forest.min_samples_split": 2,
-                        "prediction.classifier.random_forest.bootstrap": "False",
-                        "prediction.classifier.random_forest.min_samples_leaf": 2,
+                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "minmax_scaler",
+                        "prediction.classifier.neural_nets.feature_selection_candidate.fast_ica_nop_pca": "nop",
+                        "preprocessor.dimensionality_reduction.pca.n_components": 7,
+                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 10,
+                        "prediction.classifier.neural_nets.n_layers_hidden": 1,
+                        "prediction.classifier.neural_nets.n_units_hidden": 86,
+                        "prediction.classifier.neural_nets.lr": 0.0001,
+                        "prediction.classifier.neural_nets.weight_decay": 0.001,
+                        "prediction.classifier.neural_nets.dropout": 0.1,
+                        "prediction.classifier.neural_nets.clipping_value": 1,
                     }
                 )
 
