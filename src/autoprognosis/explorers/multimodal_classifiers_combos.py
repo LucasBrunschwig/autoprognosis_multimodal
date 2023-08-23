@@ -420,14 +420,14 @@ class MultimodalEnsembleSeeker:
 
                 image_model = cnn_fine_tune.get_image_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.conv_net": "alexnet",
-                        "prediction.classifier.n_additional_layers": 2,
-                        "prediction.classifier.lr": 1,
-                        "prediction.classifier.n_unfrozen_layer": 7,
-                        "prediction.classifier.weighted_cross_entropy": False,
-                        "prediction.classifier.data_augmentation": "trivial_augment",
-                        "prediction.classifier.replace_classifier": False,
-                        "prediction.classifier.clipping_value": 0,
+                        "prediction.classifier.cnn_fine_tune.conv_net": "alexnet",
+                        "prediction.classifier.cnn_fine_tune.n_additional_layers": 2,
+                        "prediction.classifier.cnn_fine_tune.lr": 1,
+                        "prediction.classifier.cnn_fine_tune.n_unfrozen_layer": 7,
+                        "prediction.classifier.cnn_fine_tune.weighted_cross_entropy": False,
+                        "prediction.classifier.cnn_fine_tune.data_augmentation": "trivial_augment",
+                        "prediction.classifier.cnn_fine_tune.replace_classifier": False,
+                        "prediction.classifier.cnn_fine_tune.clipping_value": 0,
                     }
                 )
 
