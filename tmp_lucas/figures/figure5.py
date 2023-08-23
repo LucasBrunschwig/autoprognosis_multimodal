@@ -8,11 +8,9 @@ import json
 import os
 
 # third party
-# Third-Party
 import psutil
 
 # autoprognosis absolute
-# Absolute autoprognosis
 from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 from autoprognosis.utils.default_modalities import dataset_to_multimodal
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
@@ -40,8 +38,13 @@ if __name__ == "__main__":
         format_="PIL",
     )
 
-    df = DL.load_dataset(raw=False, sample=False, pacheco=False, full_size=False)
-
+    df_train, df_test = DL.load_dataset(
+        raw=False, sample=False, pacheco=False, full_size=False
+    )
+    group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
+    df_train["patient"] = group
+    df_train.reset_index(drop=True, inplace=True)
+    df_test.reset_index(drop=True, inplace=True)
     print("Loaded Images")
 
     predefined_cnn = ["alexnet"]
@@ -61,7 +64,7 @@ if __name__ == "__main__":
         print("Started Training")
         study = MultimodalStudy(
             study_name=study_name,
-            dataset=df,  # pandas DataFrame
+            dataset=df_train,  # pandas DataFrame
             multimodal_type=multimodal_type,
             image="image",
             target="label",  # the label column in the dataset
@@ -78,6 +81,8 @@ if __name__ == "__main__":
             timeout=int(3000 * 3600),
             num_study_iter=1,
             workspace="tmp_intermediate/",
+            group_id="patient",
+            random_state=8,
         )
 
         study.run()
@@ -89,7 +94,7 @@ if __name__ == "__main__":
         # does not work because we need normalizer and imputation parameters
         model = build_intermediate_fusion_from_dict(predefined_model)
 
-        X, y = dataset_to_multimodal(df, image=["image"], label="label")
+        X, y = dataset_to_multimodal(df_train, image=["image"], label="label")
         results = evaluate_multimodal_estimator(
             X=X,
             Y=y,
@@ -97,5 +102,3 @@ if __name__ == "__main__":
             multimodal_type="intermediate_fusion",
             n_folds=5,
         )
-
-    # Figure 1:
