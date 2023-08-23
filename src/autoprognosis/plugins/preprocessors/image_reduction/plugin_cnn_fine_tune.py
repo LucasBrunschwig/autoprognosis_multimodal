@@ -140,7 +140,14 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         # Output size for early fusion optimization
-        params_output = [params.Categorical("output_size", [50, 100, 300])]
+        params_output = [
+            params.Categorical(
+                "output_size",
+                [
+                    50,
+                ],
+            )
+        ]
         # Other parameters for learning representation optimization
         search_str = "cnn_fine_tune."
         params_name = [
@@ -177,7 +184,9 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         if predefined_args.get(search_str + "output_size", None):
             output_size = predefined_args.get(search_str + "output_size")
         else:
-            output_size = [50, 100, 300]
+            output_size = [
+                50,
+            ]
         if not isinstance(output_size, list):
             output_size = [output_size]
 
