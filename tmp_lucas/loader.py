@@ -1,4 +1,5 @@
 # stdlib
+import argparse
 import logging
 import os
 from pathlib import Path
@@ -152,8 +153,10 @@ class DataLoader:
         ):
             self.df.iloc[val_idx, self.df.columns.get_loc("folder")] = folder_number + 1
 
-        df_train = self.df[self.df["folder"] == 6]
-        df_test = self.df[self.df["folder"] != 6]
+        df_train = self.df[self.df["folder"] != 5]
+        df_test = self.df[self.df["folder"] == 5]
+        df_train = df_train.drop(["folder"], axis=1)
+        df_test = df_test.drop(["folder"], axis=1)
 
         return df_train, df_test
 
@@ -319,3 +322,25 @@ class DataLoader:
         indices = random.sample(range(0, len(self.df)), n)
 
         return self.df.iloc[indices, :]
+
+
+if __name__ == "__main__":
+
+    # Create a temporary parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--input_dir",
+        help="provide the directory where dataset is stored",
+        type=str,
+        default="",
+    )
+    parser.add_argument("--data_src", help="provide the data source type")
+    args = parser.parse_args()
+
+    data_src = args.data_src
+    input_dir = args.input_dir
+
+    DL = DataLoader(input_dir, data_src)
+    DL.load_dataset()
+
+    # DL.summary()
