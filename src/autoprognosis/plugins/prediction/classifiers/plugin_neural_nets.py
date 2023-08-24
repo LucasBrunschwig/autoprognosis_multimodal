@@ -134,8 +134,6 @@ class BasicNet(nn.Module):
         else:
             layers = [nn.Linear(n_unit_in, categories_cnt)]
 
-        layers.append(nn.Softmax(dim=-1))
-
         # return final architecture
         self.model = nn.Sequential(*layers).to(DEVICE)
         self.categories_cnt = categories_cnt
@@ -170,7 +168,9 @@ class BasicNet(nn.Module):
             dataset, [train_size, test_size]
         )
 
-        loader = DataLoader(train_dataset, batch_size=self.batch_size, pin_memory=False)
+        loader = DataLoader(
+            train_dataset, batch_size=self.batch_size, pin_memory=False, drop_last=True
+        )
 
         # do training
         val_loss_best = 999999
@@ -362,17 +362,22 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            self.model.eval()
+            self.model.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
-            return self.model(X).argmax(dim=-1).detach().cpu().numpy()
+            preds = self.model(X).argmax(dim=-1).detach().cpu().numpy()
+            self.model.model.train()
+            return preds
 
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
+        self.model.model.train()
         with torch.no_grad():
             self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
-            return self.model(X).detach().cpu().numpy()
+            proba = nn.Softmax(dim=1)(self.model(X)).detach().cpu().numpy()
+            self.model.model.eval()
+            return proba
 
     def save(self) -> bytes:
         return save_model(self)
