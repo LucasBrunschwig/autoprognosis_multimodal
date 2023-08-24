@@ -184,9 +184,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         if predefined_args.get(search_str + "output_size", None):
             output_size = predefined_args.get(search_str + "output_size")
         else:
-            output_size = [
-                50,
-            ]
+            output_size = [50]
         if not isinstance(output_size, list):
             output_size = [output_size]
 
@@ -318,6 +316,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
         with torch.no_grad():
+            self.model.model.eval()
             results = np.empty((0, self.n_classes))
             test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
             test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
@@ -328,7 +327,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                         self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
                     )
                 )
-
+            self.model.model.train()
             return pd.DataFrame(results)
 
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
@@ -340,6 +339,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
         with torch.no_grad():
+            self.model.model.eval()
             results = np.empty(
                 (
                     0,
@@ -365,6 +365,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                         self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
                     )
                 )
+            self.model.model.train()
             return pd.DataFrame(results)
 
     def save(self) -> bytes:
