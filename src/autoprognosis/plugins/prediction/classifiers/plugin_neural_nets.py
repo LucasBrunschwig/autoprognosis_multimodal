@@ -362,7 +362,7 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
 
     def _predict(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> pd.DataFrame:
         with torch.no_grad():
-            self.model.model.eval()
+            self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
             preds = self.model(X).argmax(dim=-1).detach().cpu().numpy()
             self.model.model.train()
@@ -371,7 +371,6 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
-        self.model.model.eval()
         with torch.no_grad():
             self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
