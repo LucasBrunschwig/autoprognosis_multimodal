@@ -758,6 +758,16 @@ class ConvIntermediateNet(nn.Module):
     def zero_grad_model(self):
         self.image_model.zero_grad()
 
+    def eval_(self):
+        self.image_model.eval()
+        self.tab_model.eval()
+        self.classifier_model.eval()
+
+    def train_(self):
+        self.image_model.train()
+        self.tab_model.train()
+        self.classifier_model.train()
+
 
 class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
     """Classification plugin based on a simple intermediate fusion with neural nets for medical images and clinical data
@@ -1021,6 +1031,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
 
+        self.model.eval_()
         with torch.no_grad():
             X_img = X[IMAGE_KEY]
             X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float()
@@ -1040,11 +1051,12 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
                         .numpy(),
                     )
                 )
-
+            self.model.train_()
             return pd.DataFrame(results)
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
 
+        self.model.eval_()
         with torch.no_grad():
             X_img = X[IMAGE_KEY]
             X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float()
@@ -1068,7 +1080,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
                         ).astype(int),
                     )
                 )
-
+            self.model.train_()
             return pd.DataFrame(results)
 
     def get_image_model(self):
