@@ -371,12 +371,12 @@ class NeuralNetsPlugin(base.ClassifierPlugin):
     def _predict_proba(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> pd.DataFrame:
-        self.model.model.train()
+        self.model.model.eval()
         with torch.no_grad():
             self.model.eval()
             X = torch.from_numpy(np.asarray(X)).float().to(DEVICE)
             proba = nn.Softmax(dim=1)(self.model(X)).detach().cpu().numpy()
-            self.model.model.eval()
+            self.model.model.train()
             return proba
 
     def save(self) -> bytes:
