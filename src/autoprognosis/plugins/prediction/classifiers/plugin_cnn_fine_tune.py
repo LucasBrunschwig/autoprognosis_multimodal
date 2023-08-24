@@ -802,6 +802,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.cpu()
+        self.model.model.eval()
         results = torch.empty((0, self.n_classes))
         test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
@@ -815,7 +816,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 ),
                 dim=0,
             )
-
+        self.model.model.train()
         return results
 
     def _predict_proba(
@@ -824,6 +825,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
+        self.model.eval()
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
@@ -841,7 +843,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                         .numpy(),
                     )
                 )
-
+            self.model.model.train()
             return pd.DataFrame(results)
 
     def set_zero_grad(self):
