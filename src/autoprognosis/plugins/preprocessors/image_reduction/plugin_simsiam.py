@@ -63,7 +63,7 @@ class SiameseDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         image = self.base_dataset[index]
-        original_image = self.transform(image)
+        original_image = image
         modified_image = self.transform(image)
         return original_image, modified_image
 
@@ -84,11 +84,13 @@ class SimSiam(nn.Module):
         n_iter: int,
         weight_decay: float,
         early_stopping: bool,
+        n_additional_layers: int,
         n_iter_print: int,
         n_iter_min: int,
         patience: int,
-        dim=2048,
-        pred_dim=512,
+        n_classes: int,
+        output_size: int = 50,
+        pred_dim: int = 512,
     ):
         """
         dim: feature dimension (default: 2048)
@@ -107,10 +109,25 @@ class SimSiam(nn.Module):
 
         # create the encoder
         # num_classes is the output fc dimension, zero-initialize last BNs
-        self.encoder = base_encoder(num_classes=dim, zero_init_residual=True)
+        self.encoder = base_encoder(num_classes=output_size, zero_init_residual=True)
 
         # build a 3-layer projector
         prev_dim = self.encoder.fc.weight.shape[1]
+
+        additional_layers = []
+        for i in range(n_additional_layers):
+
+            additional_layers.extend(
+                [
+                    nn.Linear(prev_dim, prev_dim // 2, bias=False),
+                    nn.BatchNorm1d(prev_dim),
+                    nn.ReLU(inplace=True),
+                ]
+            )
+
+            prev_dim = prev_dim // 2
+
+        additional_layers.append(self.encoder.fc)
         self.encoder.fc = nn.Sequential(
             nn.Linear(prev_dim, prev_dim, bias=False),
             nn.BatchNorm1d(prev_dim),
@@ -119,7 +136,7 @@ class SimSiam(nn.Module):
             nn.BatchNorm1d(prev_dim),
             nn.ReLU(inplace=True),  # second layer
             self.encoder.fc,
-            nn.BatchNorm1d(dim, affine=False),
+            nn.BatchNorm1d(output_size, affine=False),
         )  # output layer
         self.encoder.fc[
             6
@@ -127,10 +144,10 @@ class SimSiam(nn.Module):
         self.encoder.to(DEVICE)
         # build a 2-layer predictor
         self.predictor = nn.Sequential(
-            nn.Linear(dim, pred_dim, bias=False),
+            nn.Linear(output_size, pred_dim, bias=False),
             nn.BatchNorm1d(pred_dim),
             nn.ReLU(inplace=True),  # hidden layer
-            nn.Linear(pred_dim, dim),
+            nn.Linear(pred_dim, n_classes),
         )  # output layer
         self.predictor.to(DEVICE)
         self.optimizer = torch.optim.Adam(
@@ -291,6 +308,7 @@ class SimSiamPlugin(base.PreprocessorPlugin):
         patience: int = 5,
         early_stopping: bool = True,
         weight_decay: float = 1e-3,
+        output_size: int = 50,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -305,6 +323,7 @@ class SimSiamPlugin(base.PreprocessorPlugin):
         self.early_stopping = early_stopping
         self.n_iter_print = n_iter_print
         self.weight_decay = weight_decay
+        self.output_size = output_size
 
     @staticmethod
     def name() -> str:
@@ -322,14 +341,21 @@ class SimSiamPlugin(base.PreprocessorPlugin):
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("output_size", [50, 100, 300]),
+            params.Integer("lr", 0, 5),
+            params.Categorical("data_augmentation", []),
+            params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
         ]
 
     @staticmethod
     def hyperparameter_lr_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         return [
             params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
+            params.Categorical("output_size", [50, 100, 300]),
+            params.Integer("lr", 0, 5),
+            params.Categorical("data_augmentation", []),
+            params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
+            params.Integer("n_layers", [1, 3]),
         ]
 
     def sample_hyperparameters(cls, trial, *args: Any, **kwargs: Any):
