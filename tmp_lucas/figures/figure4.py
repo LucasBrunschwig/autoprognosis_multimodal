@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
         # Transform into a dictionary of modalities
         df_features_train_img = df_train_features[["image"]]
-        df_features_train_tab = df_train_features.drop(["image"], axis=1)
+        df_features_train_tab = df_train_features.drop(["image", "patient"], axis=1)
         df_features_test_img = df_test_features[["image"]]
         df_features_test_tab = df_test_features.drop(["image"], axis=1)
         df_features_train = {"img": df_features_train_img, "tab": df_features_train_tab}
@@ -158,32 +158,32 @@ if __name__ == "__main__":
             rf"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\results\confusion_matrix_{classifier}.png"
         )
 
-        # # Test the explainer on test data
-        # results = model.explain_multimodal(df_features_test, df_test_label)
-        #
-        # plt.figure(figsize=(8, 6))
-        # tab_explanation = results["tab"]
-        # image_explanation = results["img"]
-        #
-        # fig, axes = plt.subplots(2, 6, figsize=(36, 12))
-        # for explainer, explanation in image_explanation.items():
-        #     for label, images in explanation.items():
-        #         image = images[0]
-        #
-        #         axes[0, label].set_title(encoder.classes_[label], fontsize=17)
-        #
-        #         axes[0, label].imshow(image[0])
-        #         axes[0, label].axis("off")
-        #
-        #         axes[1, label].imshow(image[1])
-        #         axes[1, label].axis("off")
-        #
-        #     axes[0, 0].get_yaxis().set_visible(False)
-        #     axes[1, 0].get_yaxis().set_visible(False)
-        #
-        #     # Add row names to the second row
-        #     fig.text(0.06, 0.7, "Original", ha="center", va="center", fontsize=17)
-        #     fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
-        #
-        #     plt.subplots_adjust(wspace=0.3, hspace=0.3)
-        #     plt.savefig(results_dir + "grad_cam_summary.png")
+        # Test the explainer on test data
+        results = model.explain_multimodal(df_features_test, df_test_label)
+
+        plt.figure(figsize=(8, 6))
+        tab_explanation = results["tab"]
+        image_explanation = results["img"]
+
+        fig, axes = plt.subplots(2, 6, figsize=(36, 12))
+        for explainer, explanation in image_explanation.items():
+            for label, images in explanation.items():
+                image = images[0]
+
+                axes[0, label].set_title(encoder.classes_[label], fontsize=17)
+
+                axes[0, label].imshow(image[0])
+                axes[0, label].axis("off")
+
+                axes[1, label].imshow(image[1])
+                axes[1, label].axis("off")
+
+            axes[0, 0].get_yaxis().set_visible(False)
+            axes[1, 0].get_yaxis().set_visible(False)
+
+            # Add row names to the second row
+            fig.text(0.06, 0.7, "Original", ha="center", va="center", fontsize=17)
+            fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
+
+            plt.subplots_adjust(wspace=0.3, hspace=0.3)
+            plt.savefig(results_dir + "grad_cam_summary.png")
