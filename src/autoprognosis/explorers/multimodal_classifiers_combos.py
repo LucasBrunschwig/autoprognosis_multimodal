@@ -401,16 +401,21 @@ class MultimodalEnsembleSeeker:
                 # Random Forest Evolution
                 tabular_model = neural_nets.get_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
-                        "prediction.classifier.random_forest.feature_selection_candidate.fast_ica_nop_pca": "nop",
-                        "preprocessor.dimensionality_reduction.pca.n_components": 2,
-                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 1,
-                        "prediction.classifier.random_forest.criterion": 0,
-                        "prediction.classifier.random_forest.n_estimators": 460,
+                        "prediction.classifier.random_forest.imputation_candidate.ice": "ice",
+                        "imputer.default.ice.max_iter": 900,
+                        "imputer.default.ice.tol": 0.01,
+                        "imputer.default.ice.initial_strategy": 0,
+                        "imputer.default.ice.imputation_order": 4,
+                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+                        "prediction.classifier.random_forest.feature_selection_candidate.fast_ica_nop_pca": "fast_ica",
+                        "preprocessor.dimensionality_reduction.pca.n_components": 6,
+                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 10,
+                        "prediction.classifier.random_forest.criterion": 1,
+                        "prediction.classifier.random_forest.n_estimators": 9990,
                         "prediction.classifier.random_forest.max_depth": 7,
                         "prediction.classifier.random_forest.min_samples_split": 2,
-                        "prediction.classifier.random_forest.bootstrap": "False",
-                        "prediction.classifier.random_forest.min_samples_leaf": 2,
+                        "prediction.classifier.random_forest.bootstrap": "True",
+                        "prediction.classifier.random_forest.min_samples_leaf": 5,
                     }
                 )
 
