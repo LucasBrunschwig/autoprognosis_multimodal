@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pandas as pd
 import seaborn as sns
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
@@ -26,14 +25,14 @@ from tmp_lucas import DataLoader
 
 if __name__ == "__main__":
 
-    run_analysis = True
+    run_analysis = False
     run_results = True
     n_runs = 5
 
     random_seeds = [0, 42, 100, 59, 74]
 
-    multimodal_type = "intermediate_fusion"
-    classifier = "intermediate_conv_net"
+    multimodal_type = "image"
+    classifier = "cnn_fine_tune"
 
     output = "sensitivity_results"
 
@@ -49,49 +48,47 @@ if __name__ == "__main__":
             data_src_="PAD-UFES",
             format_="PIL",
         )
-        df = DL.load_dataset(sample=False, pacheco=False, full_size=False)
+        df_train, df_test = DL.load_dataset(
+            sample=False, pacheco=False, full_size=False
+        )
         print("Dataset Loaded")
 
         evaluator = classifier_metrics()
 
-        targets = df[["label"]]
-        targets.reset_index(inplace=True, drop=True)
-        targets = LabelEncoder().fit_transform(targets.squeeze())
+        targets_test = df_test[["label"]]
+        targets_test.reset_index(inplace=True, drop=True)
+        targets_train = df_train[["label"]]
+        targets_train.reset_index(inplace=True, drop=True)
+        encoder = LabelEncoder().fit(targets_train)
+        targets_test = encoder.transform(targets_test.squeeze())
+        targets_train = encoder.transform(targets_train.squeeze())
 
-        df.drop(["label"], axis=1)
+        df_train = df_train.drop(["label"], axis=1)
+        df_test = df_test.drop(["label"], axis=1)
+
+        # ---------- PREPARING PARAMETERS ---------- #
 
         df_dict = None
         if multimodal_type == "intermediate_fusion":
-            df_dict = {
-                "img": df[["image"]],
-                "tab": df[df.columns.difference(["image"])],
+            X_train = {
+                "img": df_train[["image"]],
+                "tab": df_train[df_train.columns.difference(["image"])],
             }
-            df_dict["img"].reset_index(inplace=True, drop=True)
-            df_dict["tab"].reset_index(inplace=True, drop=True)
-            print("Extracting Parameters")
 
-            X_train = {}
-            y_train = {}
-            X_test = {}
-            y_test = {}
-            for key, df in df_dict.items():
-                X_train_key, X_test_key = train_test_split(
-                    df, test_size=0.2, random_state=42
-                )
-                X_train[key] = X_train_key
-                X_test[key] = X_test_key
-
-            y_train, y_test = train_test_split(targets, test_size=0.2, random_state=42)
+            X_test = {
+                "img": df_test[["image"]],
+                "tab": df_test[df_train.columns.difference(["image"])],
+            }
+            y_train = targets_train
+            y_test = targets_test
 
         elif multimodal_type == "image":
-            df_dict = df[["image"]]
-            df_dict.reset_index(inplace=True, drop=True)
 
-            X_train, X_test, y_train, y_test = train_test_split(
-                df_dict, targets, test_size=0.2, random_state=42
-            )
+            X_train = df_train[["image"]]
+            y_train = targets_train
 
-        # ---------- PREPARING DATASET ---------- #
+            X_test = df_test[["image"]]
+            y_test = targets_test
 
         # ---------- PREPARING PARAMETERS ---------- #
 
@@ -251,7 +248,7 @@ if __name__ == "__main__":
                 )
 
         if multimodal_type == "image":
-            fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
+            fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(30, 15))
         elif multimodal_type == "intermediate_fusion":
             fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(30, 20))
 
@@ -313,20 +310,20 @@ if __name__ == "__main__":
             lines2, labels2 = ax2.get_legend_handles_labels()
 
             # Manually create a combined legend
-            ax.legend(lines1, labels1, loc=0, fontsize="small")
-            ax.set_title(name)
+            ax.legend(lines1, labels1, loc=0, fontsize=14)
+            ax.set_title(name, fontsize=18)
             ax.grid()
             ax2.grid()
 
             # Set y-axis labels based on subplot position
             if i % 4 == 0:  # leftmost subplot of each row
                 ax.set_ylabel(
-                    "accuracy", fontsize=12
+                    "accuracy", fontsize=18
                 )  # Match label color with line color
                 ax2.set_ylabel("")
                 ax2.set_yticklabels([])
             elif i % 4 == 3:  # rightmost subplot of each row
-                ax2.set_ylabel("max - min difference", fontsize=12, color=line_color)
+                ax2.set_ylabel("max - min difference", fontsize=18, color=line_color)
                 ax.set_ylabel("")
                 ax.set_yticklabels([])
 
@@ -338,8 +335,5 @@ if __name__ == "__main__":
                 ax2.set_ylabel("")
 
             ax.set_xlabel("run number")
-
-        fig.suptitle("Sensitivity Analysis", size=15)
-        plt.show()
-
+        fig.suptitle("Sensitivity Analysis CNN fine-tuning", size=18)
         plt.savefig(output + f"/sensitivity_analysis_{classifier}.png")
