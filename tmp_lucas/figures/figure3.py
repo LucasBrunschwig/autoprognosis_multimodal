@@ -1,28 +1,68 @@
 # stdlib
+import json
 import os
 
 # third party
 import matplotlib.pyplot as plt
+import pandas as pd
 import psutil
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
+)
 from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
-from autoprognosis.studies.multimodal_classifier import MultimodalStudy
+from autoprognosis.explorers.core.defaults import (
+    default_feature_scaling_names,
+    default_feature_selection_names,
+    default_fusion,
+)
+from autoprognosis.explorers.core.selector import PipelineSelector
+from autoprognosis.plugins.explainers import Explainers
+from autoprognosis.studies.image_classifiers import ImageClassifierStudy
 from autoprognosis.utils.serialization import load_model_from_file, save_model_to_file
-from autoprognosis.utils.tester import evaluate_multimodal_estimator
+from autoprognosis.utils.tester import evaluate_estimator
 
 from tmp_lucas import DataLoader
 
-if __name__ == "__main__":
-    # This script is for late fusion. The goal is to use one model of for image and one for tabular
-    # To gain time we predefine the model parameter into multimodal_classifier_combos.py
 
-    bayesian_optimization = True
+def build_pipeline(classifier, multimodal_type):
+    return PipelineSelector(
+        classifier=classifier,
+        image_processing=[],
+        imputers=["ice"],
+        image_dimensionality_reduction=["cnn_fine_tune"],
+        feature_scaling=default_feature_scaling_names,
+        feature_selection=default_feature_selection_names,
+        multimodal_type=multimodal_type,
+        fusion=default_fusion,
+    )
+
+
+if __name__ == "__main__":
+    # This uses autoprognosis for image classification, generate grad-cam++, and confusion matrix for a given
+    # image classifier and a given predefined architecture
+    # Possibility to use a config file if you know the parameter of the model
+
+    # Bayesian Optimization
+    bayesian_optim = False
+
+    # Generate Confusion Matrix and Grad-CAM
     explain = True
+
+    # Fit the model
     fit_model = True
+
+    # cross-validation
     cross_validation = True
+
+    # Use a predefined model that was learned with BO
+    predefined_model = "../config/new_alexnet_fine_tune.json"
 
     results_dir = "figure_output/"
     os.makedirs(results_dir, exist_ok=True)
@@ -34,13 +74,13 @@ if __name__ == "__main__":
     )
 
     DL = DataLoader(
-        path_=r"../../data",
+        path_="../../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
 
     df_train, df_test = DL.load_dataset(
-        raw=False, sample=False, pacheco=False, full_size=False
+        raw=False, sample=False, pacheco=False, full_size=True
     )
     group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
     df_train["patient"] = group
@@ -50,140 +90,164 @@ if __name__ == "__main__":
         f"GB available after loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
+    # Select only images and labels
+    df_train = df_train[["image", "label", "patient"]]
+    df_test = df_test[["image", "label"]]
+
     # Classifier
     classifier = "cnn_fine_tune"
-    tabular = "neural_nets"
-    predefined_cnn = ["resnet50"]
+    predefined_cnn = ["alexnet"]
     study_name = f"image_{classifier}_{predefined_cnn[0]}"
     os.makedirs(f"tmp_image/{study_name}", exist_ok=True)
-    study_name = f"late_fusion_{classifier}_{predefined_cnn[0]}_{tabular}_pacheco"
 
-    if bayesian_optimization:
-        study = MultimodalStudy(
+    if bayesian_optim:
+        print("Training", study_name)
+        study = ImageClassifierStudy(
             study_name=study_name,
             dataset=df_train,  # pandas DataFrame
-            multimodal_type="late_fusion",
-            image="image",
             target="label",  # the label column in the dataset
             sample_for_search=False,  # no Sampling
             predefined_cnn=predefined_cnn,
-            feature_selection=[],
-            image_processing=[],
             n_folds_cv=5,
             num_iter=200,
             metric="aucroc",
-            classifiers=[tabular],
-            image_classifiers=[classifier],
+            classifiers=[classifier],
             timeout=int(10 * 3600),
             num_study_iter=1,
-            workspace="tmp_late_fusion/",
+            workspace="tmp_image/",
             random_state=8,
             group_id="patient",
         )
 
         study.run()
 
+    # Add an explainer and fit the model
+    if predefined_model:
+        print("Fit predefined model...")
+        with open(predefined_model) as f:
+            params_alexnet = json.load(f)
+        cnn_fine_tune = build_pipeline("cnn_fine_tune", None)
+        model = cnn_fine_tune.get_image_pipeline_from_named_args(**params_alexnet)
+        save_model_to_file("tmp_image/" + study_name + r"/model.p", model)
+
+    else:
+        print("Fit model generated by image study")
+        model = load_model_from_file("tmp_image/" + study_name + r"/model.p")
+
+    if cross_validation:
+        results = evaluate_estimator(
+            model,
+            df_train[["image"]],
+            df_train["label"],
+            n_folds=5,
+            group_ids=df_train["patient"],
+            seed=8,
+        )
+
+        for metric, value in results["str"].items():
+            print(metric, value)
+
     if explain:
 
         df_test_label = df_test.label
         df_test_features = df_test.drop(["label"], axis=1)
         df_train_label = df_train.label
-        df_train_features = df_test.drop(["label"], axis=1)
+        df_train_features = df_train.drop(["label", "patient"], axis=1)
 
-        encoder = LabelEncoder().fit(df_train_label)
-        df_train_label = encoder.transform(df_train_label)
-        df_test_label = encoder.transform(df_test_label)
+        # Unique LabelEncoder
+        label_encoder = LabelEncoder().fit(df_train_label)
+        df_test_label = pd.DataFrame(label_encoder.transform(df_test_label))
+        df_train_label = pd.DataFrame(label_encoder.transform(df_train_label))
 
-        # Transform into a dictionary of modalities
-        df_features_train_img = df_train_features[["image"]]
-        df_features_train_tab = df_train_features.drop(["image"], axis=1)
-        df_features_test_img = df_test_features[["image"]]
-        df_features_test_tab = df_test_features.drop(["image"], axis=1)
-        df_features_train = {"img": df_features_train_img, "tab": df_features_train_tab}
-        df_features_test = {"img": df_features_test_img, "tab": df_features_test_tab}
-
-        # Add an explainer and fit the model
         if fit_model:
-            model = load_model_from_file("tmp_late_fusion/" + study_name + r"/model.p")
-            model.explainer_plugins = ["kernel_shap", "grad_cam"]
             model.fit(df_train_features, df_train_label)
-            save_model_to_file(
-                "tmp_late_fusion/" + study_name + r"/model_trained.p", model
-            )
+            save_model_to_file(f"tmp_image/{predefined_model[0]}_trained.p", model)
         else:
-            model = load_model_from_file(
-                "late_fusion/" + study_name + r"/model_trained.p"
-            )
+            model = load_model_from_file(f"tmp_image/{predefined_model[0]}_trained.p")
 
-        if cross_validation:
-            model_cv = load_model_from_file("tmp_image/" + study_name + r"/model.p")
-            results = evaluate_multimodal_estimator(
-                model_cv,
-                df_train_features,
-                df_train_label,
-                n_folds=5,
-                seed=8,
-                group=group,
-            )
+        print("Generate Confusion Matrix")
 
-            print("5-fold CV results, seed = 42")
-            for metric, value in results["str"].items():
-                print(metric, value)
+        predictions = model.predict(df_test_features).astype(int)
+        pred_probs = model.predict_proba(df_test_features)
 
-        predictions = model.predict(df_features_test).astype(int)
-        predictions = encoder.inverse_transform(predictions)
-        df_test_label = encoder.inverse_transform(df_test_label)
+        predictions = label_encoder.inverse_transform(predictions)
+        df_test_label_num = df_test_label
+        df_test_label = label_encoder.inverse_transform(df_test_label)
         # Define class names (replace with your actual class names)
-        class_names = encoder.classes_
+        class_names = label_encoder.classes_
+        class_names_str = []
+        for name in class_names:
+            count = pd.DataFrame(df_test_label).value_counts().loc[name].values[0]
+            class_names_str.append(f"{name} ({count})")
 
         # Compute confusion matrix
-        cm = confusion_matrix(predictions, df_test_label, normalize="true")
+        cm = confusion_matrix(df_test_label, predictions, normalize="true")
 
         # Create a heatmap plot for the confusion matrix
         plt.figure(figsize=(8, 6))
         sns.heatmap(
             cm,
             annot=True,
-            fmt="d",
             cmap="Blues",
             xticklabels=class_names,
-            yticklabels=class_names,
+            yticklabels=class_names_str,
         )
 
         # Add labels, title, and axis names
         plt.xlabel("Predicted Diagnoses")
         plt.ylabel("True Diagnoses")
-        plt.title("Confusion Matrix for Skin Lesion Classification")
+        plt.title(f"Confusion Matrix for Skin Lesion Classification - {classifier}")
         plt.savefig(
-            rf"C:\Users\Lucas\Desktop\Master-Thesis-Cambridge\results\confusion_matrix_{classifier}.png"
+            results_dir + f"confusion_matrix_{classifier}_{predefined_cnn[0]}.png"
         )
 
-        # # Test the explainer on test data
-        # results = model.explain_multimodal(df_features_test, df_test_label)
-        #
-        # plt.figure(figsize=(8, 6))
-        # tab_explanation = results["tab"]
-        # image_explanation = results["img"]
-        #
-        # fig, axes = plt.subplots(2, 6, figsize=(36, 12))
-        # for explainer, explanation in image_explanation.items():
-        #     for label, images in explanation.items():
-        #         image = images[0]
-        #
-        #         axes[0, label].set_title(encoder.classes_[label], fontsize=17)
-        #
-        #         axes[0, label].imshow(image[0])
-        #         axes[0, label].axis("off")
-        #
-        #         axes[1, label].imshow(image[1])
-        #         axes[1, label].axis("off")
-        #
-        #     axes[0, 0].get_yaxis().set_visible(False)
-        #     axes[1, 0].get_yaxis().set_visible(False)
-        #
-        #     # Add row names to the second row
-        #     fig.text(0.06, 0.7, "Original", ha="center", va="center", fontsize=17)
-        #     fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
-        #
-        #     plt.subplots_adjust(wspace=0.3, hspace=0.3)
-        #     plt.savefig(results_dir + "grad_cam_summary.png")
+        accuracy = accuracy_score(predictions, df_test_label)
+        print(f"accuracy: {accuracy}")
+        balanced = balanced_accuracy_score(predictions, df_test_label)
+        print(f"balanced: {balanced}")
+        auc = roc_auc_score(
+            df_test_label_num, pred_probs, multi_class="ovr", average="micro"
+        )
+        print(f"auc: {auc}")
+        f1 = f1_score(predictions, df_test_label, average="micro")
+        print(f"f1: {f1}")
+
+        plt.figure(figsize=(8, 6))
+
+        print("Generate Grad-CAM++")
+
+        # Test the explainer on test data
+        explain = Explainers().get(
+            "grad_cam",
+            model,
+            df_test_features,
+            df_test_label,
+            prefit=True,
+            task_type="classification",
+        )
+
+        results = explain.explain(df_test_features, df_test_label, best=False)
+        fig, axes = plt.subplots(2, 6, figsize=(36, 12))
+        for label, images in results.items():
+            image = images[0]
+
+            axes[0, label].set_title(label_encoder.classes_[label], fontsize=17)
+
+            axes[0, label].imshow(image[0])
+            axes[0, label].axis("off")
+
+            axes[1, label].imshow(image[1])
+            axes[1, label].axis("off")
+
+        axes[0, 0].get_yaxis().set_visible(False)
+        axes[1, 0].get_yaxis().set_visible(False)
+
+        # Add row names to the second row
+        fig.text(0.06, 0.7, "Original", ha="center", va="center", fontsize=17)
+        fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
+
+        plt.subplots_adjust(wspace=0.3, hspace=0.3)
+        plt.savefig(
+            results_dir
+            + f"grad_cam_pp_summary_worst_{classifier}_{predefined_cnn[0]}.png"
+        )
