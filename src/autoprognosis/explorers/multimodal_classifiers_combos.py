@@ -425,7 +425,7 @@ class MultimodalEnsembleSeeker:
 
                 image_model = cnn_fine_tune.get_image_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.cnn_fine_tune.conv_net": "resnet",
+                        "prediction.classifier.cnn_fine_tune.conv_net": "resnet50",
                         "prediction.classifier.cnn_fine_tune.n_additional_layers": 1,
                         "prediction.classifier.cnn_fine_tune.lr": 0,
                         "prediction.classifier.cnn_fine_tune.n_unfrozen_layer": 8,
