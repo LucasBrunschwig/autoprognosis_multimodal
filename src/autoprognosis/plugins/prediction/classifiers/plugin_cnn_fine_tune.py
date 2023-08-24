@@ -254,6 +254,10 @@ class ConvNetPredefinedFineTune(nn.Module):
             if self.output_size:
                 additional_layers.append(nn.Linear(n_intermediate, output_size))
                 additional_layers.append(nn.Linear(output_size, n_classes))
+                additional_layers.append(nn.BatchNorm1d(output_size))
+                additional_layers[
+                    -2
+                ].bias.requires_grad = False  # hack do not use bias as it is followed
             else:
                 additional_layers.append(nn.Linear(n_intermediate, n_classes))
         else:
@@ -407,15 +411,11 @@ class ConvNetPredefinedFineTune(nn.Module):
             train_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=2,
-            num_workers=5,
         )
         val_loader = DataLoader(
             test_dataset,
             batch_size=self.batch_size,
             pin_memory=True,
-            prefetch_factor=2,
-            num_workers=5,
         )
 
         # do training
@@ -830,14 +830,15 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             test_loader = DataLoader(
                 test_dataset,
                 batch_size=self.batch_size,
-                prefetch_factor=2,
-                num_workers=5,
             )
             for batch_test_ndx, X_test in enumerate(test_loader):
                 results = np.vstack(
                     (
                         results,
-                        self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
+                        nn.Softmax(dim=1)(self.model(X_test.to(DEVICE)))
+                        .detach()
+                        .cpu()
+                        .numpy(),
                     )
                 )
 
