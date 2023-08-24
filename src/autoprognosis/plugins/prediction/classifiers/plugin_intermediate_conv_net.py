@@ -238,6 +238,7 @@ class ConvIntermediateNet(nn.Module):
                     )
                     # add final layers
             tab_layer.append(nn.Linear(n_inter_hidden, n_tab_out))
+            tab_layer.append(nn.BatchNorm1d(n_tab_out))
 
         else:
             tab_layer = [nn.Identity()]
@@ -312,6 +313,8 @@ class ConvIntermediateNet(nn.Module):
             additional_layers.append(nn.Linear(n_intermediate, latent_representation))
         else:
             additional_layers.append(nn.Linear(n_features_in, latent_representation))
+
+        additional_layers.append(nn.BatchNorm1d(latent_representation))
 
         name_match = None
         if hasattr(self.image_model, "fc"):
