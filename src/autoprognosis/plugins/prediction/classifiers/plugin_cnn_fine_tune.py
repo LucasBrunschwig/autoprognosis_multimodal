@@ -825,7 +825,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.eval()
+        self.model.model.eval()
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
