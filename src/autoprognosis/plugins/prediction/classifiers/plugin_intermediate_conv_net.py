@@ -1045,7 +1045,9 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
                 results = np.vstack(
                     (
                         results,
-                        self.model(X_tab.to(DEVICE), X_img.to(DEVICE))
+                        nn.Softmax(dim=1)(
+                            self.model(X_tab.to(DEVICE), X_img.to(DEVICE))
+                        )
                         .detach()
                         .cpu()
                         .numpy(),
