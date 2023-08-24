@@ -14,6 +14,7 @@ from autoprognosis.plugins.preprocessors import Preprocessors
 from tmp_lucas.loader import DataLoader
 
 if __name__ == "__main__":
+    # This figure is used to plot the TSNE
 
     train_model = True
     explain = True
@@ -108,17 +109,3 @@ if __name__ == "__main__":
     plt.title("T-SNE - Skin Lesions, Clinical Features")
     plt.legend()
     plt.savefig(results_dir + "tabular_tsne.png")
-
-    # # Extract Centroids
-    # group_centroids = df.groupby(label).agg({col: "mean" for col in categorical_columns})
-    # group_centroids = pd.concat([df.groupby(label)[numerical_variable].mean(), group_centroids], axis=1)
-    #
-    # pca_results = feature_reduction.fit_transform(group_centroids)
-    # pca_results.index = df.label.value_counts().index
-    #
-    #
-    # for label, row in pca_results.iterrows():
-    #     x = row.iloc[0]
-    #     y = row.iloc[1]
-    #     plt.scatter(x, y, label=label, s=100)
-    #
