@@ -253,10 +253,10 @@ class ConvNetPredefinedFineTune(nn.Module):
 
             if self.output_size:
                 additional_layers.append(nn.Linear(n_intermediate, output_size))
-                additional_layers.append(nn.Linear(output_size, n_classes))
                 additional_layers.append(nn.BatchNorm1d(output_size))
+                additional_layers.append(nn.Linear(output_size, n_classes))
                 additional_layers[
-                    -2
+                    -3
                 ].bias.requires_grad = False  # hack do not use bias as it is followed
             else:
                 additional_layers.append(nn.Linear(n_intermediate, n_classes))
