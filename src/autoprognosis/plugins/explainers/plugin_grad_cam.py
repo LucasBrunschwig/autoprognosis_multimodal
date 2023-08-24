@@ -25,7 +25,7 @@ for retry in range(2):
         install(depends)
 
 
-def get_last_conv_layer_before_classifier(model, input_size):
+def get_last_conv_layer_before_classifier(model, input_size, model_name):
 
     model.eval()  # Set the model to evaluation mode
     model.cpu()  # Set the model to cpu if it was trained on cuda
@@ -58,8 +58,11 @@ def get_last_conv_layer_before_classifier(model, input_size):
     for hook in hooks:
         hook.remove()
 
-    # Find the last convolutional layer before the classifier
-    last_conv_layer = list(activations.keys())[-1]
+    if model_name in ["alexnet"]:
+        # Find the last convolutional layer before the classifier
+        last_conv_layer = list(activations.keys())[-1]
+    elif model_name in ["resnet50"]:
+        last_conv_layer = list(activations.keys())[-2]
 
     return last_conv_layer
 
@@ -243,7 +246,12 @@ class GradCAMPlugin(ExplainerPlugin):
             raise ValueError("Not Implemented")
 
     def explain(
-        self, X: pd.DataFrame, label: pd.DataFrame, n_top=1, target_layer: str = None
+        self,
+        X: pd.DataFrame,
+        label: pd.DataFrame,
+        n_top=1,
+        target_layer: str = None,
+        best: bool = True,
     ) -> dict:
 
         if target_layer is None:
@@ -252,7 +260,7 @@ class GradCAMPlugin(ExplainerPlugin):
             n_channel = 3
             input_size = (n_channel, input_size, input_size)
             target_layer = get_last_conv_layer_before_classifier(
-                self.classifier.get_image_model(), input_size
+                self.classifier.get_image_model(), input_size, self.classifier.conv_net
             )
 
         label = pd.DataFrame(LabelEncoder().fit_transform(label))
@@ -264,8 +272,12 @@ class GradCAMPlugin(ExplainerPlugin):
         predictions["label"] = label.squeeze()
         predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
         predictions = predictions[["proba", "label"]]
-        indices = predictions.groupby("label")["proba"].nlargest(n_top)
+        if best:
+            indices = predictions.groupby("label")["proba"].nlargest(n_top)
+        else:
+            indices = predictions.groupby("label")["proba"].nsmallest(n_top)
 
+        print(indices)
         for label_, ix in indices.index:
             local_X = X.iloc[ix]
 
@@ -297,6 +309,7 @@ class GradCAMPlugin(ExplainerPlugin):
         label: pd.DataFrame,
         target_layer: str = None,
         class_names: list = None,
+        best: bool = True,
     ) -> dict:
 
         if target_layer is None:
@@ -305,7 +318,9 @@ class GradCAMPlugin(ExplainerPlugin):
             n_channels = 3
             input_size = (n_channels, input_size, input_size)
             target_layer = get_last_conv_layer_before_classifier(
-                self.estimator.stages[-1].get_model(), input_size
+                self.estimator.stages[-1].get_model(),
+                input_size,
+                self.classifier.conv_net,
             )
 
         label = pd.DataFrame(LabelEncoder().fit_transform(label))
@@ -317,7 +332,11 @@ class GradCAMPlugin(ExplainerPlugin):
         predictions["label"] = label.squeeze()
         predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
         predictions = predictions[["proba", "label"]]
-        indices = predictions.groupby("label")["proba"].nlargest(1)
+
+        if best:
+            indices = predictions.groupby("label")["proba"].nlargest(1)
+        else:
+            indices = predictions.groupby("label")["proba"].nsmallest(1)
 
         for label_, ix in indices.index:
             local_X = X.iloc[ix]
