@@ -404,7 +404,7 @@ class MultimodalClassifierSeeker:
             estimator=estimator,
             evaluation_cbk=evaluate_learning_args,
             optimizer_type=self.optimizer_type,
-            n_trials=min(100, self.num_iter),
+            n_trials=min(50, self.num_iter),
             timeout=self.timeout,
             random_state=self.random_state,
         )
