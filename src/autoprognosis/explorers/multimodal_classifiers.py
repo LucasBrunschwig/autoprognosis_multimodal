@@ -508,6 +508,9 @@ class MultimodalClassifierSeeker:
             model = all_estimators[pos_est].get_multimodal_pipeline_from_named_args(
                 **all_args[pos_est]
             )
+
+            print("best combination", **all_args[pos_est])
+
             result.append(model)
 
         return result
