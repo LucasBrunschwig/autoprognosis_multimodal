@@ -135,9 +135,3 @@ if __name__ == "__main__":
         print(results)
         df_results = pd.DataFrame.from_dict(results, orient="index")
         df_results.to_csv("one_feature_early_fusion.csv")
-        # Here we get a model and we can evaluate estimator of the model
-        # But we could also just 21 - optimization
-        #  - this means 21 * 5 cnn fitting
-        #  - this 100 * 21 * 5 neural nets
-
-    # The figure would be a plot with unique variable on the bottom and their cross-validation accuracy
