@@ -401,20 +401,15 @@ class MultimodalEnsembleSeeker:
                 # Random Forest Evolution
                 tabular_model = neural_nets.get_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.neural_nets.imputation_candidate.ice": "ice",
-                        "imputer.default.ice.max_iter": 800,
-                        "imputer.default.ice.tol": 0.0001,
-                        "imputer.default.ice.initial_strategy": 1,
-                        "imputer.default.ice.imputation_order": 4,
-                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
+                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "minmax_scaler",
                         "prediction.classifier.neural_nets.feature_selection_candidate.fast_ica_nop_pca": "nop",
-                        "preprocessor.dimensionality_reduction.pca.n_components": 2,
-                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 7,
+                        "preprocessor.dimensionality_reduction.pca.n_components": 7,
+                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 10,
                         "prediction.classifier.neural_nets.n_layers_hidden": 1,
                         "prediction.classifier.neural_nets.n_units_hidden": 86,
-                        "prediction.classifier.neural_nets.lr": 0.001,
+                        "prediction.classifier.neural_nets.lr": 0.0001,
                         "prediction.classifier.neural_nets.weight_decay": 0.001,
-                        "prediction.classifier.neural_nets.dropout": 0.2,
+                        "prediction.classifier.neural_nets.dropout": 0.1,
                         "prediction.classifier.neural_nets.clipping_value": 1,
                     }
                 )
