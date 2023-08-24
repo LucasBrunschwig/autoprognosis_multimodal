@@ -8,20 +8,40 @@ import json
 import os
 
 # third party
+import pandas as pd
 import psutil
 
 # autoprognosis absolute
+from autoprognosis.explorers.core.defaults import (
+    default_feature_scaling_names,
+    default_feature_selection_names,
+    default_fusion,
+)
+from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 from autoprognosis.utils.default_modalities import dataset_to_multimodal
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
-from tmp_lucas.build_pipeline import build_intermediate_fusion_from_dict
 from tmp_lucas.loader import DataLoader
+
+
+def build_pipeline(classifier, multimodal_type):
+    return PipelineSelector(
+        classifier=classifier,
+        image_processing=[],
+        imputers=["ice"],
+        image_dimensionality_reduction=["cnn_fine_tune"],
+        feature_scaling=default_feature_scaling_names,
+        feature_selection=default_feature_selection_names,
+        multimodal_type=multimodal_type,
+        fusion=default_fusion,
+    )
+
 
 if __name__ == "__main__":
 
-    train_model = True
-    predefined_model = None
+    train_model = False
+    predefined_model = "../config/alexnet_early_fusion_nn_high.json"
 
     results_dir = "figure_output/"
     os.makedirs(results_dir, exist_ok=True)
@@ -39,7 +59,7 @@ if __name__ == "__main__":
     )
 
     df_train, df_test = DL.load_dataset(
-        raw=False, sample=False, pacheco=False, full_size=False
+        raw=False, sample=False, pacheco=False, full_size=True
     )
     group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
     df_train["patient"] = group
@@ -57,7 +77,7 @@ if __name__ == "__main__":
 
     elif multimodal_type == "early_fusion":
         dim_red = ["cnn_fine_tune"]
-        classifier = ["neural_nets", "random_forest"]
+        classifier = "neural_nets"
         study_name = f"early_fusion_{dim_red[0]}_{predefined_cnn[0]}_{classifier[0]}_{classifier[1]}"
 
     if train_model:
@@ -92,7 +112,9 @@ if __name__ == "__main__":
             predefined_model = json.load(file)
 
         # does not work because we need normalizer and imputation parameters
-        model = build_intermediate_fusion_from_dict(predefined_model)
+        model = build_pipeline(classifier, "early_fusion")
+        model = model.get_multimodal_pipeline_from_named_args(**predefined_model)
+        df_train = df_train.drop(["patient"], axis=1)
 
         X, y = dataset_to_multimodal(df_train, image=["image"], label="label")
         results = evaluate_multimodal_estimator(
@@ -101,4 +123,9 @@ if __name__ == "__main__":
             estimator=model,
             multimodal_type="intermediate_fusion",
             n_folds=5,
+            group_ids=pd.Series(group),
+            seed=8,
         )
+
+        for metric, value in results["str"].items():
+            print(metric, value)
