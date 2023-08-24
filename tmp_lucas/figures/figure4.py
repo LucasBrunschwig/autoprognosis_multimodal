@@ -88,7 +88,7 @@ if __name__ == "__main__":
         df_test_label = df_test.label
         df_test_features = df_test.drop(["label"], axis=1)
         df_train_label = df_train.label
-        df_train_features = df_test.drop(["label"], axis=1)
+        df_train_features = df_train.drop(["label"], axis=1)
 
         encoder = LabelEncoder().fit(df_train_label)
         df_train_label = encoder.transform(df_train_label)

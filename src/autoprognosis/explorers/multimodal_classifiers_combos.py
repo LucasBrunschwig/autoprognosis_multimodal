@@ -497,7 +497,7 @@ class MultimodalEnsembleSeeker:
         elif self.multimodal_type == "early_fusion":
 
             # Optimize the learned representation
-            predefined = True
+            predefined = False
             if not predefined:
                 self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
             else:
