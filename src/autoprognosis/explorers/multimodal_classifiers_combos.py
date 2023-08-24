@@ -401,16 +401,21 @@ class MultimodalEnsembleSeeker:
                 # Random Forest Evolution
                 tabular_model = neural_nets.get_pipeline_from_named_args(
                     **{
-                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
-                        "prediction.classifier.random_forest.feature_selection_candidate.fast_ica_nop_pca": "nop",
+                        "prediction.classifier.neural_nets.imputation_candidate.ice": "ice",
+                        "imputer.default.ice.max_iter": 800,
+                        "imputer.default.ice.tol": 0.0001,
+                        "imputer.default.ice.initial_strategy": 1,
+                        "imputer.default.ice.imputation_order": 4,
+                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
+                        "prediction.classifier.neural_nets.feature_selection_candidate.fast_ica_nop_pca": "nop",
                         "preprocessor.dimensionality_reduction.pca.n_components": 2,
-                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 1,
-                        "prediction.classifier.random_forest.criterion": 0,
-                        "prediction.classifier.random_forest.n_estimators": 460,
-                        "prediction.classifier.random_forest.max_depth": 7,
-                        "prediction.classifier.random_forest.min_samples_split": 2,
-                        "prediction.classifier.random_forest.bootstrap": "False",
-                        "prediction.classifier.random_forest.min_samples_leaf": 2,
+                        "preprocessor.dimensionality_reduction.fast_ica.n_components": 7,
+                        "prediction.classifier.neural_nets.n_layers_hidden": 1,
+                        "prediction.classifier.neural_nets.n_units_hidden": 86,
+                        "prediction.classifier.neural_nets.lr": 0.001,
+                        "prediction.classifier.neural_nets.weight_decay": 0.001,
+                        "prediction.classifier.neural_nets.dropout": 0.2,
+                        "prediction.classifier.neural_nets.clipping_value": 1,
                     }
                 )
 
@@ -423,11 +428,11 @@ class MultimodalEnsembleSeeker:
                         "prediction.classifier.cnn_fine_tune.conv_net": "alexnet",
                         "prediction.classifier.cnn_fine_tune.n_additional_layers": 2,
                         "prediction.classifier.cnn_fine_tune.lr": 1,
-                        "prediction.classifier.cnn_fine_tune.n_unfrozen_layer": 7,
+                        "prediction.classifier.cnn_fine_tune.n_unfrozen_layer": 5,
                         "prediction.classifier.cnn_fine_tune.weighted_cross_entropy": False,
-                        "prediction.classifier.cnn_fine_tune.data_augmentation": "trivial_augment",
-                        "prediction.classifier.cnn_fine_tune.replace_classifier": False,
-                        "prediction.classifier.cnn_fine_tune.clipping_value": 0,
+                        "prediction.classifier.cnn_fine_tune.data_augmentation": "gaussian_noise",
+                        "prediction.classifier.cnn_fine_tune.replace_classifier": True,
+                        "prediction.classifier.cnn_fine_tune.clipping_value": 1,
                     }
                 )
 
@@ -511,26 +516,7 @@ class MultimodalEnsembleSeeker:
                     "clipping_value": 1,
                     "replace_classifier": True,
                 }
-                # self.seeker.best_representation["cnn_fine_tune.100"] = {
-                #     "output_size": 100,
-                #     "conv_net": "alexnet",
-                #     "lr": 1,
-                #     "n_additional_layers": 1,
-                #     "n_unfrozen_layer": 6,
-                #     "data_augmentation": "gaussian_noise",
-                #     "clipping_value": 1,
-                #     "replace_classifier": False,
-                # }
-                # self.seeker.best_representation["cnn_fine_tune.300"] = {
-                #     "output_size": 300,
-                #     "conv_net": "alexnet",
-                #     "lr": 1,
-                #     "n_additional_layers": 1,
-                #     "n_unfrozen_layer": 8,
-                #     "data_augmentation": "autoaugment_imagenet",
-                #     "clipping_value": 1,
-                #     "replace_classifier": False,
-                # }
+
             # Pretrain and predict learned representation and use (LR key) if this works
             self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
             # Train the classifier - provide X
