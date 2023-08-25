@@ -177,7 +177,7 @@ class MetaBlockArchitecture(nn.Module):
             self.comb_feat_maps = 256
             self.feat_map_size = 36
         elif conv_name == "vgg13":
-            self.n_feat_conv = 512
+            self.feat_map_size = 512
             self.comb_feat_maps = 49
 
         self.combination = MetaBlock(self.comb_feat_maps, n_metadata)
@@ -450,7 +450,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         # Network Architecture
         n_reducer_layer: int = 1,
         n_reducer_neurons: int = 1024,
-        conv_name: str = "vgg13",
+        conv_name: str = "alexnet",
         dropout: float = 0.4,
         # Training
         data_augmentation: str = "simple_strategy",
@@ -520,7 +520,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         return [
             # Network for Tabular and Image network
             params.Integer("n_reducer_layer", 0, 3),
-            params.Integer("n_reducer_neurons", 50, 100),
+            params.Categorical("n_reducer_neurons", [256, 512, 1024, 2048]),
             params.Categorical("conv_name", CNN),
             # Training and global parameters
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
