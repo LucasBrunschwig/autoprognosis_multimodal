@@ -127,13 +127,13 @@ class MetaBlockArchitecture(nn.Module):
         base_model,
         num_class,
         n_metadata,
+        conv_name: str,
         transform: transforms.Compose,
         preprocess,
         n_reducer_neurons: int = 256,
         n_reducer_layer: int = 1,
         freeze_conv=False,
         dropout: float = 0.5,
-        comb_feature_maps=784,
         n_iter_print: int = 10,
         n_iter_min: int = 10,
         patience: int = 10,
@@ -149,8 +149,6 @@ class MetaBlockArchitecture(nn.Module):
         super(MetaBlockArchitecture, self).__init__()
 
         # Architecture
-        self.comb_feat_maps = comb_feature_maps
-        self.combination = MetaBlock(self.comb_feat_maps, n_metadata)
         self.features = nn.Sequential(*list(base_model.children())[:-1])
         self.n_reducer_layer = n_reducer_layer
         self.n_reducer_neurons = n_reducer_neurons
@@ -173,8 +171,16 @@ class MetaBlockArchitecture(nn.Module):
         self.early_stopping = early_stopping
 
         n_feat_conv = self.feature_maps_size()
+        self.n_feat_conv = n_feat_conv
 
-        self.comb = MetaBlock(n_feat_conv, n_metadata)
+        if conv_name == "alexnet":
+            self.comb_feat_maps = 256
+            self.feat_map_size = 36
+        elif conv_name == "vgg13":
+            self.n_feat_conv = 512
+            self.comb_feat_maps = 49
+
+        self.combination = MetaBlock(self.comb_feat_maps, n_metadata)
 
         self.features = nn.Sequential(*list(base_model.children())[:-1])
 
@@ -254,7 +260,7 @@ class MetaBlockArchitecture(nn.Module):
     def forward(self, meta_data, img):
 
         x = self.features(img)
-        x = x.view(x.size(0), self.comb_feat_maps, 32, -1).squeeze(
+        x = x.view(x.size(0), self.comb_feat_maps, self.feat_map_size, -1).squeeze(
             -1
         )  # getting the feature maps
         x = self.combination(x, meta_data.float())  # applying MetaBlock
@@ -459,7 +465,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         n_iter: int = 500,
         batch_norm: bool = True,
         early_stopping: bool = True,
-        batch_size: int = 100,
+        batch_size: int = 64,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -628,6 +634,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
             batch_norm=self.batch_norm,
             early_stopping=self.early_stopping,
             batch_size=self.batch_size,
+            conv_name=self.conv_name,
         )
 
         X_img = X[IMAGE_KEY]
