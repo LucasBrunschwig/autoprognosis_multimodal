@@ -5,6 +5,7 @@ from typing import Any, List
 # third party
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import StratifiedShuffleSplit
 import torchvision.transforms
 
 # autoprognosis absolute
@@ -22,7 +23,7 @@ for retry in range(2):
         # third party
         import torch
         from torch import nn
-        from torch.utils.data import DataLoader, Dataset
+        from torch.utils.data import DataLoader, Dataset, Subset
 
         break
     except ImportError:
@@ -70,6 +71,9 @@ class TrainingDataset(Dataset):
 
     def __getitem__(self, index):
         image, tab, label = self.image.iloc[index], self.tab[index], self.target[index]
+
+        if isinstance(image, pd.Series):
+            image = image.squeeze()
 
         if self.transform:
             image = self.transform(image)
@@ -281,21 +285,19 @@ class MetaBlockArchitecture(nn.Module):
             X_tab, X_img, y, weight_transform=self.preprocess, transform=self.transform
         )
 
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train_dataset, test_dataset = torch.utils.data.random_split(
-            dataset, [train_size, test_size]
-        )
+        # Using StratifiedShuffleSplit to get stratified indices
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_indices, test_indices = next(sss.split(X_tab, y))
+
+        # Using the indices to create stratified train and test datasets
+        train_dataset = Subset(dataset, train_indices)
+        test_dataset = Subset(dataset, test_indices)
 
         train_loader = DataLoader(
-            train_dataset,
-            batch_size=self.batch_size,
-            pin_memory=True,
+            train_dataset, batch_size=self.batch_size, pin_memory=True, drop_last=True
         )
         test_loader = DataLoader(
-            test_dataset,
-            batch_size=self.batch_size,
-            pin_memory=True,
+            test_dataset, batch_size=self.batch_size, pin_memory=True, drop_last=True
         )
 
         # do training
@@ -450,7 +452,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         # Network Architecture
         n_reducer_layer: int = 1,
         n_reducer_neurons: int = 1024,
-        conv_name: str = "alexnet",
+        conv_name: str = "vgg13",
         dropout: float = 0.4,
         # Training
         data_augmentation: str = "simple_strategy",
@@ -688,7 +690,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
                     (
                         results,
                         np.expand_dims(
-                            self.model(X_tab.to(DEVICE), X_img.to(DEVICE))
+                            self.model.forward(X_tab.to(DEVICE), X_img.to(DEVICE))
                             .argmax(dim=-1)
                             .detach()
                             .cpu()
