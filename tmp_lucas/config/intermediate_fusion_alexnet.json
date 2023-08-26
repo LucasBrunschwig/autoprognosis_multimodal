@@ -1,0 +1,15 @@
+{
+  "prediction.classifier.intermediate_conv_net.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "minmax_scaler",
+  "prediction.classifier.intermediate_conv_net.tab_reduction_ratio": 1.0,
+  "prediction.classifier.intermediate_conv_net.latent_representation": 109,
+  "prediction.classifier.intermediate_conv_net.n_tab_layer": 2,
+  "prediction.classifier.intermediate_conv_net.n_img_layer": 2,
+  "prediction.classifier.intermediate_conv_net.conv_name": "alexnet",
+  "prediction.classifier.intermediate_conv_net.n_layers_hidden": 2,
+  "prediction.classifier.intermediate_conv_net.n_units_hidden": 94,
+  "prediction.classifier.intermediate_conv_net.lr": 0.0001,
+  "prediction.classifier.intermediate_conv_net.dropout": 0.0,
+  "prediction.classifier.intermediate_conv_net.n_unfrozen_layers": 2,
+  "prediction.classifier.intermediate_conv_net.replace_classifier": "True",
+  "prediction.classifier.intermediate_conv_net.data_augmentation": "gaussian_noise"
+}
