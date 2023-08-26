@@ -529,16 +529,14 @@ class MultimodalEnsembleSeeker:
 
                 metablock = pipeline.get_multimodal_pipeline_from_named_args(
                     **{
-                        {
-                            "prediction.classifier.metablock.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
-                            "prediction.classifier.metablock.n_reducer_layer": 0,
-                            "prediction.classifier.metablock.n_reducer_neurons": 256,
-                            "prediction.classifier.metablock.conv_name": "alexnet",
-                            "prediction.classifier.metablock.lr": 1e-05,
-                            "prediction.classifier.metablock.weight_decay": 0.0001,
-                            "prediction.classifier.metablock.dropout": 0.0,
-                            "prediction.classifier.metablock.data_augmentation": "simple_strategy",
-                        }
+                        "prediction.classifier.metablock.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+                        "prediction.classifier.metablock.n_reducer_layer": 0,
+                        "prediction.classifier.metablock.n_reducer_neurons": 256,
+                        "prediction.classifier.metablock.conv_name": "alexnet",
+                        "prediction.classifier.metablock.lr": 1e-05,
+                        "prediction.classifier.metablock.weight_decay": 0.0001,
+                        "prediction.classifier.metablock.dropout": 0.0,
+                        "prediction.classifier.metablock.data_augmentation": "simple_strategy",
                     }
                 )
                 print(metablock)
