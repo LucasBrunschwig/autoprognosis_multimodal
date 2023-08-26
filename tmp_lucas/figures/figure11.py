@@ -66,23 +66,6 @@ if __name__ == "__main__":
         format_="PIL",
     )
 
-    # Load the image model
-    with open("../config/new_alexnet_fine_tune.json", "r") as f:
-        param = json.load(f)
-        pipeline = build_pipeline("cnn_fine_tune", "late_fusion")
-        model_cnn = pipeline.get_image_pipeline_from_named_args(**param)
-
-    # Load the intermediate model
-    with open("../config/intermediate_fusion_alexnet.json", "r") as f:
-        param = json.load(f)
-        pipeline = build_pipeline("intermediate_conv_net", "intermediate_fusion")
-        model_intermediate = pipeline.get_multimodal_pipeline_from_named_args(**param)
-
-    with open("../config/metablock_alexnet.json", "r") as f:
-        params = json.load(f)
-        pipeline = build_pipeline("metablock", "intermediate_fusion")
-        model_metablock = pipeline.get_multimodal_pipeline_from_named_args(**params)
-
     resizing = [100, 200, 300, 400, 500, 600, "original"]
 
     for size in resizing:
@@ -90,6 +73,26 @@ if __name__ == "__main__":
         print("# ------------- #### ------------- #")
         print(f"  Resizing: {size}")
         print("  ------")
+
+        # Load the image model
+        with open("../config/new_alexnet_fine_tune.json", "r") as f:
+            param = json.load(f)
+            pipeline = build_pipeline("cnn_fine_tune", "late_fusion")
+            model_cnn = pipeline.get_image_pipeline_from_named_args(**param)
+
+        # Load the intermediate model
+        with open("../config/intermediate_fusion_alexnet.json", "r") as f:
+            param = json.load(f)
+            pipeline = build_pipeline("intermediate_conv_net", "intermediate_fusion")
+            model_intermediate = pipeline.get_multimodal_pipeline_from_named_args(
+                **param
+            )
+
+        with open("../config/metablock_alexnet.json", "r") as f:
+            params = json.load(f)
+            pipeline = build_pipeline("metablock", "intermediate_fusion")
+            model_metablock = pipeline.get_multimodal_pipeline_from_named_args(**params)
+
         # Reload the images with the given size
         df_train, df_test = DL.load_dataset(
             raw=False, sample=False, pacheco=False, full_size=False, size=size
