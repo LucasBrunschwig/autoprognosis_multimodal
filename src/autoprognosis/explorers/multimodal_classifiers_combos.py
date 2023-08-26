@@ -21,6 +21,7 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
+from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.plugins.ensemble.classifiers import (
@@ -513,12 +514,102 @@ class MultimodalEnsembleSeeker:
 
         # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
-            best_models = self.seeker.search(X, Y, group_ids=group_ids)
+
+            predefined = True
+            if predefined:
+                pipeline = PipelineSelector(
+                    classifier="metablock",
+                    feature_selection=default_feature_selection_names,
+                    feature_scaling=default_feature_scaling_names,
+                    imputers=["ice"],
+                    fusion=[],
+                    image_dimensionality_reduction=[],
+                    multimodal_type="intermediate_fusion",
+                )
+
+                metablock = pipeline.get_multimodal_pipeline_from_named_args(
+                    **{
+                        {
+                            "prediction.classifier.metablock.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+                            "prediction.classifier.metablock.n_reducer_layer": 0,
+                            "prediction.classifier.metablock.n_reducer_neurons": 256,
+                            "prediction.classifier.metablock.conv_name": "alexnet",
+                            "prediction.classifier.metablock.lr": 1e-05,
+                            "prediction.classifier.metablock.weight_decay": 0.0001,
+                            "prediction.classifier.metablock.dropout": 0.0,
+                            "prediction.classifier.metablock.data_augmentation": "simple_strategy",
+                        }
+                    }
+                )
+                intermediate = pipeline.get_multimodal_pipeline_from_named_args(
+                    **{
+                        "prediction.classifier.intermediate_conv_net.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
+                        "prediction.classifier.intermediate_conv_net.tab_reduction_ratio": 1.0,
+                        "prediction.classifier.intermediate_conv_net.latent_representation": 150,
+                        "prediction.classifier.intermediate_conv_net.n_tab_layer": 2,
+                        "prediction.classifier.intermediate_conv_net.n_img_layer": 2,
+                        "prediction.classifier.intermediate_conv_net.conv_name": "alexnet",
+                        "prediction.classifier.intermediate_conv_net.n_layers_hidden": 4,
+                        "prediction.classifier.intermediate_conv_net.n_units_hidden": 94,
+                        "prediction.classifier.intermediate_conv_net.lr": 0.0001,
+                        "prediction.classifier.intermediate_conv_net.dropout": 0.2,
+                        "prediction.classifier.intermediate_conv_net.n_unfrozen_layers": 5,
+                        "prediction.classifier.intermediate_conv_net.replace_classifier": "True",
+                        "prediction.classifier.intermediate_conv_net.data_augmentation": "simple_strategy",
+                    }
+                )
+                best_models = [metablock, intermediate]
+            else:
+                best_models = self.seeker.search(X, Y, group_ids=group_ids)
+
+            if not isinstance(best_models, list):
+                best_models = [best_models]
 
             if self.hooks.cancel():
                 raise StudyCancelled("Classifier search cancelled")
 
-            return best_models[0]
+            ensembles = []
+            scores = []
+
+            if len(best_models) > 1:
+                for model in best_models:
+                    try:
+                        results = evaluate_multimodal_estimator(
+                            model,
+                            X,
+                            Y,
+                            n_folds=self.n_folds_cv,
+                            group_ids=group_ids,
+                        )
+                        model_score = results["raw"][self.metric][0]
+
+                        log.info(f"Model: {model.name()} --> {model_score}")
+
+                        for name, metric in results["str"].items():
+                            log.info(f"{name} {metric}")
+
+                        ensembles.append(model)
+                        scores.append(model_score)
+                    except Exception as e:
+                        log.error(f"Could not be fitted: {model.name()} - {e}")
+
+                if self.hooks.cancel():
+                    raise StudyCancelled("Classifier search cancelled")
+
+                weighted_ensemble, weighted_ens_score = self.search_weights(
+                    best_models, X, Y, group_ids=group_ids
+                )
+
+                log.info(
+                    f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
+                )
+
+                scores.append(weighted_ens_score)
+                ensembles.append(weighted_ensemble)
+
+                return ensembles[np.argmax(scores)]
+            else:
+                return best_models[0]
 
         else:
             raise ValueError(
