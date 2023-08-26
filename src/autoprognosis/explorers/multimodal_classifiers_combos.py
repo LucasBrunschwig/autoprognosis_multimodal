@@ -540,6 +540,15 @@ class MultimodalEnsembleSeeker:
                     }
                 )
                 print(metablock)
+                pipeline = PipelineSelector(
+                    classifier="intermediate_conv_net",
+                    feature_selection=default_feature_selection_names,
+                    feature_scaling=default_feature_scaling_names,
+                    imputers=["ice"],
+                    fusion=[],
+                    image_dimensionality_reduction=[],
+                    multimodal_type="intermediate_fusion",
+                )
                 intermediate = pipeline.get_multimodal_pipeline_from_named_args(
                     **{
                         "prediction.classifier.intermediate_conv_net.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
