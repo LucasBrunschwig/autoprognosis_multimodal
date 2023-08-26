@@ -60,7 +60,10 @@ def crop_center(image, size):
 
 
 def read_folder(
-    dirpath: Union[Path, str], img_format: str = "PIL", full_size: bool = False
+    dirpath: Union[Path, str],
+    img_format: str = "PIL",
+    full_size: bool = False,
+    size: int = 400,
 ) -> dict:
     """Read zipped images where the filename corresponds to the id.
 
@@ -84,7 +87,10 @@ def read_folder(
                 img_ = img_.convert("RGB")
                 img_ = shade_of_gray_cc(img_)
                 if not full_size:
-                    img_ = img_.resize((300, 300))
+                    if size == "original":
+                        pass
+                    else:
+                        img_ = img_.resize((size, size))
                 if img_format.upper() == "NUMPY":
                     img_ = np.asarray(img_)
                 elif img_format.upper() == "TENSOR":
@@ -121,6 +127,7 @@ class DataLoader:
         raw: bool = False,
         pacheco: bool = False,
         full_size: bool = False,
+        size=400,
     ):
         """Returns the loaded dataset based on the source input
 
@@ -142,6 +149,7 @@ class DataLoader:
                 raw=raw,
                 pacheco=pacheco,
                 full_size=full_size,
+                size=size,
             )
 
         # As stated in Pacheco
@@ -168,6 +176,7 @@ class DataLoader:
         raw: bool,
         pacheco: bool,
         full_size: bool,
+        size: int,
     ):
         """This loader will load the zipped images and metadata and returns 3 lists
 
@@ -191,9 +200,11 @@ class DataLoader:
 
         # Load Images as dictionary
         if sample:
-            images_dict = read_folder(self.PATH / "imgs_part_1", self.format, full_size)
+            images_dict = read_folder(
+                self.PATH / "imgs_part_1", self.format, full_size, size
+            )
         else:
-            images_dict = read_folder(self.PATH / "imgs", self.format, full_size)
+            images_dict = read_folder(self.PATH / "imgs", self.format, full_size, size)
 
         images_df = pd.DataFrame.from_dict(
             images_dict, orient="index", columns=["image"], dtype=object
