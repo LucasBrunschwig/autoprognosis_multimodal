@@ -541,6 +541,7 @@ class MultimodalEnsembleSeeker:
                         }
                     }
                 )
+                print(metablock)
                 intermediate = pipeline.get_multimodal_pipeline_from_named_args(
                     **{
                         "prediction.classifier.intermediate_conv_net.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
