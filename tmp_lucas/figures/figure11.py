@@ -92,7 +92,7 @@ if __name__ == "__main__":
         print("  ------")
         # Reload the images with the given size
         df_train, df_test = DL.load_dataset(
-            raw=False, sample=True, pacheco=True, full_size=False, size=size
+            raw=False, sample=False, pacheco=False, full_size=False, size=size
         )
         df_train_features, df_train_label = build_multimodal_dataset(df_train)
         df_test_features, df_test_label = build_multimodal_dataset(df_test)
