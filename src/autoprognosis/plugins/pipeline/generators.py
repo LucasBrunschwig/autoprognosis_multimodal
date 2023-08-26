@@ -290,7 +290,7 @@ def _generate_predict(multimodal_type) -> Callable:
             # Fit the model
             results = self.stages[-1].predict(local_X, *args, **kwargs)
 
-            return results
+            return self.output(results)
 
     elif multimodal_type == "intermediate_fusion":
 
@@ -312,9 +312,9 @@ def _generate_predict(multimodal_type) -> Callable:
             local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
 
             # Fit the model
-            self.stages[-1].predict(local_X, *args, **kwargs)
+            results = self.stages[-1].predict(local_X, *args, **kwargs)
 
-            return self
+            return self.output(results)
 
     else:
         raise ValueError(f"Multimodal Type Unknown {multimodal_type}")
