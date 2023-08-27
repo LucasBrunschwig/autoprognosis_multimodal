@@ -450,25 +450,91 @@ class MultimodalEnsembleSeeker:
         elif self.multimodal_type == "early_fusion":
 
             # Optimize the learned representation
-            predefined = False
+            predefined = True
             if not predefined:
-                self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
-            else:
-                self.seeker.best_representation["cnn_fine_tune.50"] = {
-                    "output_size": 50,
-                    "conv_net": "alexnet",
-                    "lr": 3,
-                    "n_additional_layers": 1,
-                    "n_unfrozen_layer": 7,
-                    "data_augmentation": "gaussian_noise",
-                    "clipping_value": 1,
-                    "replace_classifier": True,
-                }
 
-            # Pretrain and predict learned representation and use (LR key) if this works
-            self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
-            # Train the classifier - provide X
-            best_models = self.seeker.search(X, Y, group_ids=group_ids)
+                if not predefined:
+                    self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+                else:
+                    self.seeker.best_representation["cnn_fine_tune.50"] = {
+                        "output_size": 50,
+                        "conv_net": "alexnet",
+                        "lr": 3,
+                        "n_additional_layers": 1,
+                        "n_unfrozen_layer": 7,
+                        "data_augmentation": "gaussian_noise",
+                        "clipping_value": 1,
+                        "replace_classifier": True,
+                    }
+
+                # Pretrain and predict learned representation and use (LR key) if this works
+                self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
+                # Train the classifier - provide X
+                best_models = self.seeker.search(X, Y, group_ids=group_ids)
+            else:
+                pipeline = PipelineSelector(
+                    classifier="neural_nets",
+                    feature_selection=default_feature_selection_names,
+                    feature_scaling=default_feature_scaling_names,
+                    fusion=default_fusion,
+                    imputers=["ice"],
+                    image_dimensionality_reduction=["cnn_fine_tune"],
+                    multimodal_type="early_fusion",
+                )
+
+                rf = pipeline.get_multimodal_pipeline_from_named_args(
+                    **{
+                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "feature_normalizer",
+                        "prediction.classifier.random_forest.image_reduction_candidate.cnn_fine_tune": "cnn_fine_tune",
+                        "preprocessor.image_reduction.cnn_fine_tune.output_size": 50,
+                        "prediction.classifier.random_forest.fusion_candidate.concatenate": "concatenate",
+                        "prediction.classifier.random_forest.criterion": 1,
+                        "prediction.classifier.random_forest.n_estimators": 5253,
+                        "prediction.classifier.random_forest.max_depth": 7,
+                        "prediction.classifier.random_forest.min_samples_split": 5,
+                        "prediction.classifier.random_forest.bootstrap": "True",
+                        "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
+                        "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
+                        "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
+                        "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
+                        "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
+                        "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
+                        "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False",
+                    }
+                )
+                pipeline = PipelineSelector(
+                    classifier="neural_nets",
+                    feature_selection=default_feature_selection_names,
+                    feature_scaling=default_feature_scaling_names,
+                    fusion=default_fusion,
+                    imputers=["ice"],
+                    image_dimensionality_reduction=["cnn_fine_tune"],
+                    multimodal_type="intermediate_fusion",
+                )
+                nn = pipeline.get_multimodal_pipeline_from_named_args(
+                    **{
+                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+                        "prediction.classifier.neural_nets.image_reduction_candidate.cnn_fine_tune": "cnn_fine_tune",
+                        "preprocessor.image_reduction.cnn_fine_tune.output_size": 50,
+                        "prediction.classifier.neural_nets.fusion_candidate.concatenate": "concatenate",
+                        "prediction.classifier.neural_nets.n_layers_hidden": 1,
+                        "prediction.classifier.neural_nets.n_units_hidden": 90,
+                        "prediction.classifier.neural_nets.lr": 0.0001,
+                        "prediction.classifier.neural_nets.weight_decay": 0.001,
+                        "prediction.classifier.neural_nets.dropout": 0,
+                        "prediction.classifier.neural_nets.clipping_value": 1,
+                        "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
+                        "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
+                        "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
+                        "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
+                        "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
+                        "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
+                        "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False",
+                    }
+                )
+
+                best_models = [rf, nn]
+
             scores = []
             ensembles = []
             if len(best_models) > 1:
