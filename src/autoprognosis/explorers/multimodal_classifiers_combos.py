@@ -509,7 +509,7 @@ class MultimodalEnsembleSeeker:
                     fusion=default_fusion,
                     imputers=["ice"],
                     image_dimensionality_reduction=["cnn_fine_tune"],
-                    multimodal_type="intermediate_fusion",
+                    multimodal_type="early_fusion",
                 )
                 nn = pipeline.get_multimodal_pipeline_from_named_args(
                     **{
@@ -533,7 +533,7 @@ class MultimodalEnsembleSeeker:
                     }
                 )
 
-                best_models = [rf, nn]
+                best_models = [nn, rf]
 
             scores = []
             ensembles = []
