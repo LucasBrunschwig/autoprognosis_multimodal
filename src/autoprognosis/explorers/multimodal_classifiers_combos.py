@@ -473,7 +473,7 @@ class MultimodalEnsembleSeeker:
                 best_models = self.seeker.search(X, Y, group_ids=group_ids)
             else:
                 pipeline = PipelineSelector(
-                    classifier="neural_nets",
+                    classifier="random_forest",
                     feature_selection=default_feature_selection_names,
                     feature_scaling=default_feature_scaling_names,
                     fusion=default_fusion,
