@@ -1,0 +1,19 @@
+{
+  "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
+  "prediction.classifier.neural_nets.image_reduction_candidate.cnn_fine_tune": "cnn_fine_tune",
+  "preprocessor.image_reduction.cnn_fine_tune.output_size": 50,
+  "prediction.classifier.neural_nets.fusion_candidate.concatenate": "concatenate",
+  "prediction.classifier.neural_nets.n_layers_hidden": 1,
+  "prediction.classifier.neural_nets.n_units_hidden": 90,
+  "prediction.classifier.neural_nets.lr": 0.0001,
+  "prediction.classifier.neural_nets.weight_decay": 0.001,
+  "prediction.classifier.neural_nets.dropout": 0,
+  "prediction.classifier.neural_nets.clipping_value": 1,
+  "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
+  "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
+  "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
+  "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
+  "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
+  "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
+  "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False"
+}
