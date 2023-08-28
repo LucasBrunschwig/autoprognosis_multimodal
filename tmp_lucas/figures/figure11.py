@@ -66,62 +66,90 @@ if __name__ == "__main__":
         format_="PIL",
     )
 
-    resizing = [100, 200, 300, 400, 500, 600, "original"]
+    for i in range(5):
+        resizing = [100, 200, 300, 400, 500, 600, "original"]
+        for size in resizing:
 
-    for size in resizing:
+            print("# ------------- #### ------------- #")
+            print(f"  Resizing: {size}")
+            print("  ------")
 
-        print("# ------------- #### ------------- #")
-        print(f"  Resizing: {size}")
-        print("  ------")
+            # Load the image model
+            with open("../config/new_alexnet_fine_tune.json", "r") as f:
+                param = json.load(f)
+                pipeline = build_pipeline("cnn_fine_tune", "late_fusion")
+                model_cnn = pipeline.get_image_pipeline_from_named_args(**param)
 
-        # Load the image model
-        with open("../config/new_alexnet_fine_tune.json", "r") as f:
-            param = json.load(f)
-            pipeline = build_pipeline("cnn_fine_tune", "late_fusion")
-            model_cnn = pipeline.get_image_pipeline_from_named_args(**param)
+            # Load the intermediate model
+            with open("../config/early_fusion_nn.json", "r") as f:
+                param = json.load(f)
+                pipeline = build_pipeline("neural_nets", "early_fusion")
+                model_early_fusion_nn = (
+                    pipeline.get_multimodal_pipeline_from_named_args(**param)
+                )
 
-        # Load the intermediate model
-        with open("../config/intermediate_fusion_alexnet.json", "r") as f:
-            param = json.load(f)
-            pipeline = build_pipeline("intermediate_conv_net", "intermediate_fusion")
-            model_intermediate = pipeline.get_multimodal_pipeline_from_named_args(
-                **param
+            # Load the intermediate model
+            with open("../config/intermediate_fusion_alexnet.json", "r") as f:
+                param = json.load(f)
+                pipeline = build_pipeline(
+                    "intermediate_conv_net", "intermediate_fusion"
+                )
+                model_intermediate = pipeline.get_multimodal_pipeline_from_named_args(
+                    **param
+                )
+
+            with open("../config/metablock_alexnet.json", "r") as f:
+                params = json.load(f)
+                pipeline = build_pipeline("metablock", "intermediate_fusion")
+                model_metablock = pipeline.get_multimodal_pipeline_from_named_args(
+                    **params
+                )
+
+            # Reload the images with the given size
+            df_train, df_test = DL.load_dataset(
+                raw=False, sample=False, pacheco=False, full_size=False, size=size
             )
+            df_train_features, df_train_label = build_multimodal_dataset(df_train)
+            df_test_features, df_test_label = build_multimodal_dataset(df_test)
 
-        with open("../config/metablock_alexnet.json", "r") as f:
-            params = json.load(f)
-            pipeline = build_pipeline("metablock", "intermediate_fusion")
-            model_metablock = pipeline.get_multimodal_pipeline_from_named_args(**params)
+            # Encode the labels
+            encoder = LabelEncoder().fit(df_train_label)
+            df_train_label_encoded = pd.Series(encoder.transform(df_train_label))
+            df_test_label_encoded = pd.DataFrame(encoder.transform(df_test_label))
 
-        # Reload the images with the given size
-        df_train, df_test = DL.load_dataset(
-            raw=False, sample=False, pacheco=False, full_size=False, size=size
-        )
-        df_train_features, df_train_label = build_multimodal_dataset(df_train)
-        df_test_features, df_test_label = build_multimodal_dataset(df_test)
-
-        # Encode the labels
-        encoder = LabelEncoder().fit(df_train_label)
-        df_train_label_encoded = pd.Series(encoder.transform(df_train_label))
-        df_test_label_encoded = pd.DataFrame(encoder.transform(df_test_label))
-
-        # Fit the model on the training dataset
-        model_cnn = model_cnn.fit(df_train_features, df_train_label_encoded)
-        model_metablock = model_metablock.fit(df_train_features, df_train_label_encoded)
-        model_intermediate = model_intermediate.fit(
-            df_train_features, df_train_label_encoded
-        )
-
-        models = [model_cnn, model_intermediate, model_metablock]
-        classifiers = ["cnn_fine_tuned", "intermediate_conv_net", "metablock"]
-        for model, classifier in zip(models, classifiers):
-            preds = model.predict(df_test_features)
-            preds_probs = model.predict_proba(df_test_features)
-            accuracy = accuracy_score(preds, df_test_label_encoded)
-            print(f"  {classifier} - accuracy: {accuracy}")
-            balanced = balanced_accuracy_score(preds, df_test_label_encoded)
-            print(f"  {classifier} - balanced: {balanced}")
-            auc_ = roc_auc_score(
-                df_test_label_encoded, preds_probs, multi_class="ovr", average="micro"
+            # Fit the model on the training dataset
+            model_cnn = model_cnn.fit(df_train_features, df_train_label_encoded)
+            model_metablock = model_metablock.fit(
+                df_train_features, df_train_label_encoded
             )
-            print(f"  {classifier} - auc: {auc_}")
+            model_intermediate = model_intermediate.fit(
+                df_train_features, df_train_label_encoded
+            )
+            model_early_fusion_nn.fit(df_train_features, df_train_label_encoded)
+
+            models = [
+                model_cnn,
+                model_early_fusion_nn,
+                model_intermediate,
+                model_metablock,
+            ]
+            classifiers = [
+                "cnn_fine_tuned",
+                "early_fusion_nn",
+                "intermediate_conv_net",
+                "metablock",
+            ]
+            for model, classifier in zip(models, classifiers):
+                preds = model.predict(df_test_features)
+                preds_probs = model.predict_proba(df_test_features)
+                accuracy = accuracy_score(preds, df_test_label_encoded)
+                print(f"  {classifier} - accuracy: {accuracy}")
+                balanced = balanced_accuracy_score(preds, df_test_label_encoded)
+                print(f"  {classifier} - balanced: {balanced}")
+                auc_ = roc_auc_score(
+                    df_test_label_encoded,
+                    preds_probs,
+                    multi_class="ovr",
+                    average="micro",
+                )
+                print(f"  {classifier} - auc: {auc_}")
