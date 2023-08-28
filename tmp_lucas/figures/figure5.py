@@ -40,7 +40,7 @@ def build_pipeline(classifier, multimodal_type):
 
 if __name__ == "__main__":
 
-    train_model = False
+    train_model = True
     predefined_model = "../config/alexnet_early_fusion_nn_high.json"
 
     results_dir = "figure_output/"
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     )
 
     df_train, df_test = DL.load_dataset(
-        raw=False, sample=False, pacheco=False, full_size=True
+        raw=False, sample=False, pacheco=False, full_size=False, size=200
     )
     group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
     df_train["patient"] = group
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     elif multimodal_type == "early_fusion":
         dim_red = ["cnn_fine_tune"]
-        classifier = "neural_nets"
+        classifier = ["neural_nets", "random_forest"]
         study_name = f"early_fusion_{dim_red[0]}_{predefined_cnn[0]}_{classifier[0]}_{classifier[1]}"
 
     if train_model:
