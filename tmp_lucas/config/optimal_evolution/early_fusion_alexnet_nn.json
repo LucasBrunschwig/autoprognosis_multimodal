@@ -1,0 +1,12 @@
+{
+
+  "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
+  "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
+  "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
+  "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
+  "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
+  "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
+  "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False",
+  "preprocessor.image_reduction.cnn_fine_tune.output_size": 50
+
+}
