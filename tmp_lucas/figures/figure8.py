@@ -92,7 +92,7 @@ if __name__ == "__main__":
     df_test_label_encoded = pd.DataFrame(encoder.transform(df_test_label))
 
     # Load best tabular model
-    with open("../config/optimal_full/early_fusion_alexnet_nn.json", "r") as f:
+    with open("../config/optimal_full/early_fusion_nn.json", "r") as f:
         param = json.load(f)
         pipeline = build_pipeline("neural_nets", "early_fusion")
         model_logistic = pipeline.get_multimodal_pipeline_from_named_args(**param)
