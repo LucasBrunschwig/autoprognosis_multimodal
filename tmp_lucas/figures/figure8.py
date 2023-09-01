@@ -15,6 +15,7 @@ from autoprognosis.explorers.core.defaults import (
     default_fusion,
 )
 from autoprognosis.explorers.core.selector import PipelineSelector
+from autoprognosis.plugins.ensemble.classifiers import WeightedEnsemble
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 from tmp_lucas import DataLoader
@@ -74,7 +75,7 @@ if __name__ == "__main__":
     )
 
     df_train, df_test = DL.load_dataset(
-        raw=False, sample=False, pacheco=False, full_size=False, size=400
+        raw=False, sample=False, pacheco=True, full_size=False, size=400
     )
     group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
 
@@ -91,15 +92,17 @@ if __name__ == "__main__":
     df_test_label_encoded = pd.DataFrame(encoder.transform(df_test_label))
 
     # Load best tabular model
-    with open("../config/optimal_evolution/early_fusion_alexnet_nn.json", "r") as f:
+    with open("../config/optimal_full/early_fusion_alexnet_nn.json", "r") as f:
         param = json.load(f)
         pipeline = build_pipeline("neural_nets", "early_fusion")
         model_logistic = pipeline.get_multimodal_pipeline_from_named_args(**param)
 
-    with open("../config/optimal_evolution/early_fusion_rf.json", "r") as f:
+    with open("../config/optimal_full/early_fusion_rf.json", "r") as f:
         param = json.load(f)
         pipeline = build_pipeline("random_forest", "early_fusion")
         model_random_forest = pipeline.get_multimodal_pipeline_from_named_args(**param)
+
+    model_early_w = WeightedEnsemble([model_logistic, model_random_forest], [0.8, 0.2])
 
     models = [model_logistic, model_random_forest]
     classifiers = ["early fusion neural_nets", "early fusion random_forest"]
