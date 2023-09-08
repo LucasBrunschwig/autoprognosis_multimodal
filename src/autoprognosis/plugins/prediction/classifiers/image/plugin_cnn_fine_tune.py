@@ -857,6 +857,9 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             "crop_size"
         ]
 
+    def get_conv_name(self):
+        return self.conv_net
+
     def save(self) -> bytes:
         return save_model(self)
 
