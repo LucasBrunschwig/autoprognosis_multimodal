@@ -10,7 +10,7 @@ from sklearn.preprocessing import LabelEncoder
 
 # autoprognosis absolute
 from autoprognosis.plugins.explainers.base import ExplainerPlugin
-from autoprognosis.utils.default_modalities import IMAGE_KEY
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 from autoprognosis.utils.pip import install
 
 for retry in range(2):
@@ -25,7 +25,12 @@ for retry in range(2):
         install(depends)
 
 
-def get_last_conv_layer_before_classifier(model, input_size, model_name):
+def get_last_conv_layer_before_classifier(
+    model, input_size, model_name, architecture_name
+):
+
+    if architecture_name.split(">")[-1] == "metablock":
+        return "combination"
 
     model.eval()  # Set the model to evaluation mode
     model.cpu()  # Set the model to cpu if it was trained on cuda
@@ -58,8 +63,8 @@ def get_last_conv_layer_before_classifier(model, input_size, model_name):
     for hook in hooks:
         hook.remove()
 
+    # TODO: select the correct layer for other architecture
     if model_name in ["alexnet"]:
-        # Find the last convolutional layer before the classifier
         last_conv_layer = list(activations.keys())[-1]
     elif model_name in ["resnet50"]:
         last_conv_layer = list(activations.keys())[-2]
@@ -100,6 +105,11 @@ class GradCAM:
 
         self.handles = [backward_handle, forward_handle]
 
+    def remove_hooks(self):
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+
     def generate_cam_plusplus(self, input_image, target_class, target_layer):
         self.target_layer = target_layer
         self.register_hooks()
@@ -113,6 +123,12 @@ class GradCAM:
         gradients = gradients.detach().cpu().numpy()
         activations = self.activations  # Get activations
         activations = activations.detach().cpu().numpy()
+
+        # Metablock returns flattened feature maps
+        # TODO: adapt for each architecture (dict = {"alexnet": (1, 256, 6, 6)}
+        if len(activations.shape) != 4:
+            activations = activations.reshape(1, 256, 6, 6)
+            gradients = gradients.reshape(256, 6, 6)
 
         grads_power_2 = gradients**2
         grads_power_3 = grads_power_2 * gradients
@@ -132,11 +148,17 @@ class GradCAM:
         cam = np.sum(weights[0][:, np.newaxis, np.newaxis] * activations[0], axis=0)
 
         cam = np.maximum(cam, 0)
-        w = input_image.values[0, 0].size[0]
-        h = input_image.values[0, 0].size[1]
+        if isinstance(input_image, dict):
+            w = input_image[IMAGE_KEY].values[0, 0].size[0]
+            h = input_image[IMAGE_KEY].values[0, 0].size[1]
+        else:
+            w = input_image.values[0].size[0]
+            h = input_image.values[0].size[1]
         cam = cv2.resize(cam, (w, h))
         cam = cam - np.min(cam)
         cam = cam / np.max(cam)
+
+        self.remove_hooks()
 
         return cam
 
@@ -249,10 +271,11 @@ class GradCAMPlugin(ExplainerPlugin):
         self,
         X: pd.DataFrame,
         label: pd.DataFrame,
-        n_top=1,
-        target_layer: str = None,
+        n_top: int = 1,
+        target_layer: Optional[str] = None,
         best: bool = True,
-    ) -> dict:
+        indices: Optional[list] = None,
+    ) -> (dict, Any):
 
         if target_layer is None:
             # by default grad-cam will extract the last convolutional layer
@@ -260,48 +283,80 @@ class GradCAMPlugin(ExplainerPlugin):
             n_channel = 3
             input_size = (n_channel, input_size, input_size)
             target_layer = get_last_conv_layer_before_classifier(
-                self.classifier.get_image_model(), input_size, self.classifier.conv_net
+                self.classifier.get_image_model(),
+                input_size,
+                self.classifier.get_conv_name(),
+                self.estimator.name(),
             )
 
         label = pd.DataFrame(LabelEncoder().fit_transform(label))
 
         results = {label_: [] for label_ in label.squeeze().unique()}
 
-        # Get the top 2 highest score for each class
+        # Get the top n-highest score for each class
         predictions = pd.DataFrame(self.estimator.predict_proba(X))
         predictions["label"] = label.squeeze()
         predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
         predictions = predictions[["proba", "label"]]
-        if best:
-            indices = predictions.groupby("label")["proba"].nlargest(n_top)
-        else:
-            indices = predictions.groupby("label")["proba"].nsmallest(n_top)
 
-        print(indices)
-        for label_, ix in indices.index:
-            local_X = X.iloc[ix]
+        if indices is None:
+            if best:
+                indices = predictions.groupby("label")["proba"].nlargest(n_top)
+            else:
+                indices = predictions.groupby("label")["proba"].nsmallest(n_top)
+        else:
+            for ix in indices.index:
+                indices.loc[ix] = predictions.loc[ix[1], "proba"]
+
+        if isinstance(X, dict):
+            local_X = {
+                IMAGE_KEY: X[IMAGE_KEY].copy(),
+                TABULAR_KEY: X[TABULAR_KEY].copy(),
+            }
+            for stage in self.estimator.stages[:-1]:
+                if stage.modality_type() == TABULAR_KEY:
+                    local_X[TABULAR_KEY] = stage.transform(local_X[TABULAR_KEY])
+                elif stage.modality_type() == IMAGE_KEY:
+                    local_X[IMAGE_KEY] = stage.transform(local_X[IMAGE_KEY])
+
+        else:
+            local_X = X.copy()
+            local_X = pd.DataFrame(local_X)
 
             # Preprocess Data
-            local_X = pd.DataFrame(local_X)
             for stage in self.estimator.stages[:-1]:
                 local_X = stage.transform(local_X)
 
+        print(indices)
+        for label_, ix in indices.index:
+
+            if isinstance(local_X, dict):
+                local_X_single = {
+                    IMAGE_KEY: pd.DataFrame(local_X[IMAGE_KEY].iloc[ix]),
+                    TABULAR_KEY: pd.DataFrame(local_X[TABULAR_KEY].iloc[ix]),
+                }
+            else:
+                local_X_single = local_X.iloc[ix]
+
             # Generate CAM
             cam_normalized = self.explainer.generate_cam_plusplus(
-                local_X, label_, target_layer
+                local_X_single, label_, target_layer
             )
             cam_normalized = cv2.cvtColor(
                 np.uint8(255 * cam_normalized), cv2.COLOR_RGB2BGR
             )
             cam_normalized = cv2.applyColorMap(cam_normalized, cv2.COLORMAP_JET)
             cam_normalized = cv2.cvtColor(cam_normalized, cv2.COLOR_BGR2RGB)
+            if isinstance(local_X, dict):
+                img_array = np.array(local_X_single[IMAGE_KEY].squeeze())
+            else:
+                img_array = np.array(local_X_single.squeeze())
 
-            img_array = np.array(local_X.squeeze())
             alpha = 0.4
             superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
             results[label_].append([img_array / 255.0, superposed_image / 255.0])
 
-        return results
+        return results, indices
 
     def plot(
         self,
