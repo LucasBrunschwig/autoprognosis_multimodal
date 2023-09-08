@@ -8,7 +8,9 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN
 import autoprognosis.plugins.core.params as params
-from autoprognosis.plugins.prediction.classifiers.plugin_cnn import ConvNetPredefined
+from autoprognosis.plugins.prediction.classifiers.image.plugin_cnn import (
+    ConvNetPredefined,
+)
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.pip import install

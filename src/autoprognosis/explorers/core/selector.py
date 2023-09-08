@@ -59,6 +59,7 @@ class PipelineSelector:
         multimodal_type: str = None,
         fusion: List[str] = [],
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
+        data_type: str = "tabular",
     ) -> None:
         self.calibration = calibration
         self.preprocess_image = preprocess_images
@@ -102,7 +103,16 @@ class PipelineSelector:
             self.preprocess_image = False
             self.image_processing = []
 
-        self.classifier = Predictions(category=classifier_category).get_type(classifier)
+        if multimodal_type == "early_fusion":
+            data_type = "tabular"
+        elif multimodal_type == "intermediate_fusion":
+            data_type = "multimodal"
+
+        self.data_type = data_type
+
+        self.classifier = Predictions(
+            category=classifier_category, data_type=data_type
+        ).get_type(classifier)
 
     def _generate_dist_name(self, key: str, step: str = None) -> str:
         if key == "imputation_candidate":
@@ -358,7 +368,9 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
+            pipeline_args
+        )
 
     def get_image_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -401,7 +413,9 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
+            pipeline_args
+        )
 
     def get_multimodal_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -500,7 +514,9 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
+        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
+            pipeline_args
+        )
 
     def remove_tabular_processing(self):
         """This function removes the tabular processing steps if there are no tabular data"""

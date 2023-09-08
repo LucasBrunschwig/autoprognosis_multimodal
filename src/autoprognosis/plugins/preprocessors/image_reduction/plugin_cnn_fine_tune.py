@@ -9,7 +9,7 @@ import pandas as pd
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
 from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.plugins.core.params as params
-from autoprognosis.plugins.prediction.classifiers.plugin_cnn_fine_tune import (
+from autoprognosis.plugins.prediction.classifiers.image.plugin_cnn_fine_tune import (
     LR,
     ConvNetPredefinedFineTune,
     TestTensorDataset,

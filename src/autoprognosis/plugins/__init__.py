@@ -13,7 +13,7 @@ from .core import base_plugin  # noqa: F401,E402
 
 
 class Plugins:
-    def __init__(self) -> None:
+    def __init__(self, data_type="all") -> None:
         self._plugins: Dict[
             str, Dict[str, Union[Imputers, Predictions, Preprocessors, Explainers]]
         ] = {
@@ -21,7 +21,7 @@ class Plugins:
                 "default": Imputers(),
             },
             "prediction": {
-                "classifier": Predictions(category="classifier"),
+                "classifier": Predictions(category="classifier", data_type=data_type),
                 "regression": Predictions(category="regression"),
                 "risk_estimation": Predictions(category="risk_estimation"),
             },
@@ -77,10 +77,10 @@ class Plugins:
         return None
 
 
-def group(names: List[str]) -> Tuple[Type, ...]:
+def group(names: List[str], data_type="all") -> Tuple[Type, ...]:
     res = []
 
-    plugins = Plugins()
+    plugins = Plugins(data_type=data_type)
     for fqdn in names:
         if "." not in fqdn:
             raise RuntimeError("invalid fqdn")

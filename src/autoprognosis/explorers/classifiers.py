@@ -158,6 +158,8 @@ class ClassifierSeeker:
         self.study_name = study_name
         self.hooks = hooks
 
+        data_type = "tabular"
+
         self.estimators = [
             PipelineSelector(
                 plugin,
@@ -166,6 +168,7 @@ class ClassifierSeeker:
                 feature_selection=feature_selection,
                 imputers=imputers,
                 multimodal_type=multimodal_type,
+                data_type=data_type,
             )
             for plugin in classifiers
         ]

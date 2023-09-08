@@ -21,7 +21,6 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
-from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.plugins.ensemble.classifiers import (
@@ -64,7 +63,7 @@ class MultimodalEnsembleSeeker:
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
-                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
+                - "balanced_accuracy" : Accuracy classification score taking into account class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -93,8 +92,8 @@ class MultimodalEnsembleSeeker:
             Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
             assumes that you preprocessed the images yourself.
             Available retrieved using `Preprocessors(category="image_processing").list_available()`
-                - 'normalizer'
-                - 'resizer'
+                1. 'normalizer'
+                2. 'resizer'
         image_dimensionality_reduction: list.
             Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
@@ -107,7 +106,8 @@ class MultimodalEnsembleSeeker:
                 - 'concatenate'
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
-            Available plugins, retrieved using `Classifiers().list_available()`:
+            Available plugins, retrieved using `Classifiers(category="tabular").list_available()`:
+
                 - 'adaboost'
                 - 'bernoulli_naive_bayes'
                 - 'neural_nets'
@@ -133,7 +133,9 @@ class MultimodalEnsembleSeeker:
                 - 'xgboost'
         image_classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+             Available plugins, retrieved using `Classifiers(category="image").list_available()`:
                 - 'cnn'
+                - 'cnn_fine_tune'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -449,91 +451,12 @@ class MultimodalEnsembleSeeker:
         # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
 
-            # Optimize the learned representation
-            predefined = False
-            if not predefined:
-                predefined_cnn = True
-                if not predefined_cnn:
-                    self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
-                else:
-                    self.seeker.best_representation["cnn_fine_tune.50"] = {
-                        "output_size": 50,
-                        "conv_net": "alexnet",
-                        "lr": 1,
-                        "n_additional_layers": 0,
-                        "n_unfrozen_layer": 10,
-                        "data_augmentation": "simple_strategy",
-                        "clipping_value": 0,
-                        "replace_classifier": False,
-                    }
+            # Find the optimal configuration for different latent representation sizes
+            self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+            # Pretrain optimal latent representation
+            self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
 
-                # Pretrain and predict learned representation and use (LR key) if this works
-                self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
-                # Train the classifier - provide X
-                best_models = self.seeker.search(X, Y, group_ids=group_ids)
-            else:
-                pipeline = PipelineSelector(
-                    classifier="random_forest",
-                    feature_selection=default_feature_selection_names,
-                    feature_scaling=default_feature_scaling_names,
-                    fusion=default_fusion,
-                    imputers=["ice"],
-                    image_dimensionality_reduction=["cnn_fine_tune"],
-                    multimodal_type="early_fusion",
-                )
-
-                rf = pipeline.get_multimodal_pipeline_from_named_args(
-                    **{
-                        "prediction.classifier.random_forest.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "feature_normalizer",
-                        "prediction.classifier.random_forest.image_reduction_candidate.cnn_fine_tune": "cnn_fine_tune",
-                        "preprocessor.image_reduction.cnn_fine_tune.output_size": 50,
-                        "prediction.classifier.random_forest.fusion_candidate.concatenate": "concatenate",
-                        "prediction.classifier.random_forest.criterion": 1,
-                        "prediction.classifier.random_forest.n_estimators": 5253,
-                        "prediction.classifier.random_forest.max_depth": 7,
-                        "prediction.classifier.random_forest.min_samples_split": 5,
-                        "prediction.classifier.random_forest.bootstrap": "True",
-                        "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
-                        "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
-                        "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
-                        "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
-                        "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
-                        "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
-                        "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False",
-                    }
-                )
-                pipeline = PipelineSelector(
-                    classifier="neural_nets",
-                    feature_selection=default_feature_selection_names,
-                    feature_scaling=default_feature_scaling_names,
-                    fusion=default_fusion,
-                    imputers=["ice"],
-                    image_dimensionality_reduction=["cnn_fine_tune"],
-                    multimodal_type="early_fusion",
-                )
-                nn = pipeline.get_multimodal_pipeline_from_named_args(
-                    **{
-                        "prediction.classifier.neural_nets.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
-                        "prediction.classifier.neural_nets.image_reduction_candidate.cnn_fine_tune": "cnn_fine_tune",
-                        "preprocessor.image_reduction.cnn_fine_tune.output_size": 50,
-                        "prediction.classifier.neural_nets.fusion_candidate.concatenate": "concatenate",
-                        "prediction.classifier.neural_nets.n_layers_hidden": 1,
-                        "prediction.classifier.neural_nets.n_units_hidden": 90,
-                        "prediction.classifier.neural_nets.lr": 0.0001,
-                        "prediction.classifier.neural_nets.weight_decay": 0.001,
-                        "prediction.classifier.neural_nets.dropout": 0,
-                        "prediction.classifier.neural_nets.clipping_value": 1,
-                        "preprocessor.image_reduction.cnn_fine_tune.conv_net": "alexnet",
-                        "preprocessor.image_reduction.cnn_fine_tune.lr": 1,
-                        "preprocessor.image_reduction.cnn_fine_tune.n_additional_layers": 0,
-                        "preprocessor.image_reduction.cnn_fine_tune.n_unfrozen_layer": 10,
-                        "preprocessor.image_reduction.cnn_fine_tune.data_augmentation": "simple_strategy",
-                        "preprocessor.image_reduction.cnn_fine_tune.clipping_value": 0,
-                        "preprocessor.image_reduction.cnn_fine_tune.replace_classifier": "False",
-                    }
-                )
-
-                best_models = [nn, rf]
+            best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
             scores = []
             ensembles = []
@@ -581,60 +504,7 @@ class MultimodalEnsembleSeeker:
         # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
 
-            predefined = True
-            if predefined:
-                pipeline = PipelineSelector(
-                    classifier="metablock",
-                    feature_selection=default_feature_selection_names,
-                    feature_scaling=default_feature_scaling_names,
-                    imputers=["ice"],
-                    fusion=[],
-                    image_dimensionality_reduction=[],
-                    multimodal_type="intermediate_fusion",
-                )
-
-                metablock = pipeline.get_multimodal_pipeline_from_named_args(
-                    **{
-                        "prediction.classifier.metablock.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "uniform_transform",
-                        "prediction.classifier.metablock.n_reducer_layer": 0,
-                        "prediction.classifier.metablock.n_reducer_neurons": 256,
-                        "prediction.classifier.metablock.conv_name": "alexnet",
-                        "prediction.classifier.metablock.lr": 1e-05,
-                        "prediction.classifier.metablock.weight_decay": 0.0001,
-                        "prediction.classifier.metablock.dropout": 0.0,
-                        "prediction.classifier.metablock.data_augmentation": "simple_strategy",
-                    }
-                )
-                print(metablock)
-                pipeline = PipelineSelector(
-                    classifier="intermediate_conv_net",
-                    feature_selection=default_feature_selection_names,
-                    feature_scaling=default_feature_scaling_names,
-                    imputers=["ice"],
-                    fusion=[],
-                    image_dimensionality_reduction=[],
-                    multimodal_type="intermediate_fusion",
-                )
-                intermediate = pipeline.get_multimodal_pipeline_from_named_args(
-                    **{
-                        "prediction.classifier.intermediate_conv_net.feature_scaling_candidate.feature_normalizer_maxabs_scaler_minmax_scaler_nop_normal_transform_scaler_uniform_transform": "maxabs_scaler",
-                        "prediction.classifier.intermediate_conv_net.tab_reduction_ratio": 1.0,
-                        "prediction.classifier.intermediate_conv_net.latent_representation": 150,
-                        "prediction.classifier.intermediate_conv_net.n_tab_layer": 2,
-                        "prediction.classifier.intermediate_conv_net.n_img_layer": 2,
-                        "prediction.classifier.intermediate_conv_net.conv_name": "alexnet",
-                        "prediction.classifier.intermediate_conv_net.n_layers_hidden": 4,
-                        "prediction.classifier.intermediate_conv_net.n_units_hidden": 94,
-                        "prediction.classifier.intermediate_conv_net.lr": 0.0001,
-                        "prediction.classifier.intermediate_conv_net.dropout": 0.2,
-                        "prediction.classifier.intermediate_conv_net.n_unfrozen_layers": 5,
-                        "prediction.classifier.intermediate_conv_net.replace_classifier": "True",
-                        "prediction.classifier.intermediate_conv_net.data_augmentation": "simple_strategy",
-                    }
-                )
-                best_models = [metablock, intermediate]
-            else:
-                best_models = self.seeker.search(X, Y, group_ids=group_ids)
+            best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
             if not isinstance(best_models, list):
                 best_models = [best_models]

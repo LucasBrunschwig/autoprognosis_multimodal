@@ -17,7 +17,7 @@ import psutil
 import autoprognosis.logger as logger
 from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 
-os.environ["N_LEARNER_JOBS"] = "3"
+os.environ["N_LEARNER_JOBS"] = "1"
 os.environ["N_OPT_JOBS"] = "1"
 
 logger.debug("Loading Images")
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         data_src_="PAD-UFES",
         format_="PIL",
     )
-    df = DL.load_dataset(sample=False)
+    df_train, df_test = DL.load_dataset(sample=True)
 
     logger.info("Image Loaded")
     logger.info(
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     study_name = multimodal_type + f"_{datetime.now().strftime('%Y-%m-%H')}"
     study = MultimodalStudy(
         study_name=study_name,
-        dataset=df,  # pandas DataFrame
+        dataset=df_train,  # pandas DataFrame
         target="label",  # the label column in the dataset
         image="image",  # the image column in the dataset
         multimodal_type=multimodal_type,

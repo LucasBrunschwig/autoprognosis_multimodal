@@ -11,12 +11,14 @@ from .base import PredictionPlugin  # noqa: F401,E402
 
 
 class Predictions:
-    def __init__(self, category: str = "classifier") -> None:
+    def __init__(
+        self, category: str = "classifier", data_type: str = "tabular"
+    ) -> None:
         self._category = category
 
         self._plugins: Union[Classifiers, RiskEstimation, Regression]
 
-        self.reload()
+        self.reload(data_type)
 
     def list(self) -> List[str]:
         return self._plugins.list()
@@ -45,9 +47,9 @@ class Predictions:
     def __getitem__(self, key: str) -> PredictionPlugin:
         return self.get(key)
 
-    def reload(self) -> "Predictions":
+    def reload(self, data_type="tabular") -> "Predictions":
         if self._category == "classifier":
-            self._plugins = Classifiers()
+            self._plugins = Classifiers(data_type)
         elif self._category == "risk_estimation":
             self._plugins = RiskEstimation()
         elif self._category == "regression":

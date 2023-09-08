@@ -37,7 +37,7 @@ from autoprognosis.utils.serialization import (
 from autoprognosis.utils.tester import evaluate_multimodal_estimator
 
 PATIENCE = 10
-SCORE_THRESHOLD = 0.65
+SCORE_THRESHOLD = 0.85
 
 
 class MultimodalStudy(Study):
@@ -70,7 +70,7 @@ class MultimodalStudy(Study):
                 - "aucroc" : the Area Under the Receiver Operating Characteristic Curve (ROC AUC) from prediction scores.
                 - "aucprc" : The average precision summarizes a precision-recall curve as the weighted mean of precisions achieved at each threshold, with the increase in recall from the previous threshold used as the weight.
                 - "accuracy" : Accuracy classification score.
-                - "balanced_accuracy" : Accuracy classification balancing with class imbalance
+                - "balanced_accuracy" : Accuracy classification score taking into account class imbalance
                 - "f1_score_micro": F1 score is a harmonic mean of the precision and recall. This version uses the "micro" average: calculate metrics globally by counting the total true positives, false negatives and false positives.
                 - "f1_score_macro": F1 score is a harmonic mean of the precision and recall. This version uses the "macro" average: calculate metrics for each label, and find their unweighted mean. This does not take label imbalance into account.
                 - "f1_score_weighted": F1 score is a harmonic mean of the precision and recall. This version uses the "weighted" average: Calculate metrics for each label, and find their average weighted by support (the number of true instances for each label).
@@ -107,7 +107,7 @@ class MultimodalStudy(Study):
             Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
                 - 'cnn'
-                - 'cnn_fine_tune' # predefined architecture with fine tuning
+                - 'cnn_fine_tune' # predefined architecture with fine-tuning
                 - 'cnn_imagenet' # use the weight of imagenet
                 - 'simsiam' # simple siamese networks
         fusion: list.
@@ -144,6 +144,7 @@ class MultimodalStudy(Study):
             Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
                 - 'cnn'
                 - 'cnn_fine_tune'
+                - 'vision_transformer'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -211,6 +212,7 @@ class MultimodalStudy(Study):
         multimodal_type: str,
         preprocess_images: bool = True,
         predefined_cnn: list = [],
+        data_augmentation_strategy: list = [],
         num_iter: int = 20,
         num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
@@ -259,31 +261,28 @@ class MultimodalStudy(Study):
         if not preprocess_images:
             image_processing = []
 
-        # Early Fusion requires image dimensionality reduction and fusion plugins
+        # Define plugins search pools according to type of fusion
         if multimodal_type == "early_fusion":
             if not image_dimensionality_reduction:
                 image_dimensionality_reduction = default_image_dimensionality_reduction
+                log.warning(
+                    "Image dimensionality plugins seach pool set to default. (early fusion)"
+                )
             if not fusion:
                 fusion = default_fusion
+                log.warning("Fusion plugins search pool set to default. (early fusion)")
 
         if multimodal_type != "early_fusion":
             if fusion:
                 fusion = []
                 log.warning(
-                    "Fusion plugin search pool are only included with early fusion"
+                    "Fusion plugins search pool ignored. (only required for early fusion)"
                 )
             if image_dimensionality_reduction:
                 image_dimensionality_reduction = []
                 log.warning(
-                    "Image dimensionality reduction plugins are only included with early fusion pipeline"
+                    "Image dimensionality reduction plugins search pool ignored. (only required for early fusion)"
                 )
-
-        # Specify a subset of architecture
-        if predefined_cnn:
-            if not isinstance(predefined_cnn, list):
-                predefined_cnn = [predefined_cnn]
-            predefined_args["predefined_cnn"] = predefined_cnn
-
         if not classifiers:
             if multimodal_type in ["early_fusion", "late_fusion"]:
                 classifiers = default_classifiers_names
@@ -291,6 +290,18 @@ class MultimodalStudy(Study):
                 classifiers = default_multimodal_names
         if multimodal_type == "late_fusion" and not image_classifiers:
             image_classifiers = default_image_classsifiers_names
+
+        # Specify a subset of architecture
+        if predefined_cnn:
+            if not isinstance(predefined_cnn, list):
+                predefined_cnn = [predefined_cnn]
+            predefined_args["predefined_cnn"] = predefined_cnn
+
+        # Specify custom data augmentation strategy
+        if data_augmentation_strategy:
+            if not isinstance(data_augmentation_strategy, list):
+                data_augmentation_strategy = [data_augmentation_strategy]
+            predefined_args["data_augmentation"] = data_augmentation_strategy
 
         if nan_placeholder is not None:
             dataset = dataset.replace(nan_placeholder, np.nan)
@@ -301,7 +312,7 @@ class MultimodalStudy(Study):
         else:
             imputers = []
 
-        # Build modalities dictionary
+        # Build multimodal dictionary
         self.multimodal_key = {}
         non_tabular_column = []
         if image is not None:

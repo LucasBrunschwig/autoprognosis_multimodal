@@ -30,16 +30,14 @@ if __name__ == "__main__":
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
 
-    # Use a subprocess to free memory
-
     DL = DataLoader(
         path_="../data",
         data_src_="PAD-UFES",
         format_="PIL",
     )
 
-    df = DL.load_dataset()
-    df = df[["image", "label"]]
+    df_train, df_test = DL.load_dataset(sample=True)
+    df_train = df_train[["image", "label"]]
 
     logger.info("Image Loaded")
     logger.info(
@@ -50,9 +48,10 @@ if __name__ == "__main__":
     study_name = f"image_classifier_{datetime.now().strftime('%Y-%m-%H')}"
     study = ImageClassifierStudy(
         study_name=study_name,
-        dataset=df,  # pandas DataFrame
+        dataset=df_train,  # pandas DataFrame
         target="label",  # the label column in the dataset
         sample_for_search=False,  # no Sampling
+        classifiers=["vision_transformer"],
         n_folds_cv=5,
         num_iter=10,
         timeout=36000,
