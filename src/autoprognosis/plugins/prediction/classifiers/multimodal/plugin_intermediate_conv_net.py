@@ -821,7 +821,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
-        n_iter: int = 500,
+        n_iter: int = 1000,
         batch_norm: bool = True,
         early_stopping: bool = True,
         pretrain_image_model: bool = False,
@@ -1032,6 +1032,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
     def _predict_proba(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
 
         self.model.eval_()
+        self.model.to(DEVICE)
         with torch.no_grad():
             X_img = X[IMAGE_KEY]
             X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY])).float()
@@ -1055,6 +1056,37 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
                 )
             self.model.train_()
             return pd.DataFrame(results)
+
+    def predict_proba_tensor(self, X: dict):
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+
+        # CPU and Eval mode to get access to grad
+        self.model.cpu()
+        self.model.eval_()
+
+        # Store Results
+        results = torch.empty((0, self.n_classes))
+
+        # Pass the data point to the model
+        X_img = X[IMAGE_KEY]
+        X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY].T)).float()
+        test_dataset = TestTensorDataset(X_tab, X_img, weight_transform=self.preprocess)
+        test_loader = DataLoader(test_dataset, batch_size=100)
+        for batch_test_ndx, X_test in enumerate(test_loader):
+            X_tab, X_img = X_test
+            X_img = X_img.cpu()
+            X_tab = X_tab.cpu()
+            X_img.requires_grad = True
+            results = torch.cat(
+                (
+                    results,
+                    self.model(X_tab, X_img),
+                ),
+                dim=0,
+            )
+        self.model.train_()
+        return results
 
     def _predict(self, X: dict, *args: Any, **kwargs: Any) -> pd.DataFrame:
 
@@ -1090,6 +1122,9 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def zero_grad(self):
         self.model.zero_grad()
+
+    def get_conv_name(self):
+        return self.conv_name
 
     def get_size(self):
         return models.get_weight(WEIGHTS[self.conv_name]).transforms.keywords[
