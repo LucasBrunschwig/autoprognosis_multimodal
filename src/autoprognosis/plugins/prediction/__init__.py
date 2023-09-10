@@ -11,9 +11,7 @@ from .base import PredictionPlugin  # noqa: F401,E402
 
 
 class Predictions:
-    def __init__(
-        self, category: str = "classifier", data_type: str = "tabular"
-    ) -> None:
+    def __init__(self, category: str = "classifier", data_type: str = "all") -> None:
         self._category = category
 
         self._plugins: Union[Classifiers, RiskEstimation, Regression]

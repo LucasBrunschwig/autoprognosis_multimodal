@@ -16,6 +16,10 @@ from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
+from autoprognosis.plugins.utils.custom_dataset import (
+    TestImageDataset,
+    TrainingImageDataset,
+)
 from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
@@ -26,7 +30,7 @@ for retry in range(2):
         # third party
         import torch
         from torch import nn
-        from torch.utils.data import DataLoader, Dataset
+        from torch.utils.data import DataLoader
 
         break
     except ImportError:
@@ -63,58 +67,6 @@ LR = {
 }
 
 
-class TrainingTensorDataset(Dataset):
-    def __init__(self, data, target, preprocess, transform=None):
-        """
-        CustomDataset constructor.
-
-        Args:
-        images (torch.Tensor): List of image tensors, where each tensor rows represent an image.
-        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
-        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
-        """
-        self.image = data.squeeze()
-        self.target = target
-        self.transform = transform
-        self.preprocess = preprocess
-
-    def __len__(self):
-        return len(self.image)
-
-    def __getitem__(self, index):
-        image, label = self.image.iloc[index], self.target[index]
-
-        if self.transform:
-            image = self.transform(image)
-
-        image = self.preprocess(image)
-
-        return image, label
-
-
-class TestTensorDataset(Dataset):
-    def __init__(self, data, preprocess):
-        """
-        CustomDataset constructor.
-
-        Args:
-        images (PIL, Images): List of image tensors, where each tensor rows represent an image.
-        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
-        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
-        """
-        self.image = pd.DataFrame(data).squeeze(axis=1)
-        self.preprocess = preprocess
-
-    def __len__(self):
-        return len(self.image)
-
-    def __getitem__(self, index):
-        image = self.image.iloc[index]
-        image = self.preprocess(image)
-
-        return image
-
-
 class ConvNetPredefinedFineTune(nn.Module):
     """Convolutional Neural Network model for early fusion models.
 
@@ -122,25 +74,44 @@ class ConvNetPredefinedFineTune(nn.Module):
     ----------
     model_name (str):
         model name of one of the default Deep CNN architectures.
-    use_pretrained (bool):
-        instantiate the model with the latest PyTorch weights of the model.
     n_classes (int):
         the number of predicted classes
+    non_linear (str):
+        the non-linearity in the additional layers
+    transformation (callable):
+        data augmentation strategy applied on-the-fly to images during training
     n_additional_layer (int):
         the added layer to the predefined CNN for transfer learning
     non_linear (str):
-        the non linearity of the added layers
+        the non-linearity of the added layers
     batch_size (int):
         batch size for each step during training
     lr (float):
         learning rate for training, usually lower than the initial training
     n_iter (int):
         the number of iteration
-    fine_tune (bool):
-        define if the weights optimization operates only on the new layer or the whole models
-
-    TODO:
-    - allow user to use their own weight for a given model.
+    weight_decay (float):
+        .
+    early_stopping (bool):
+        .
+    n_iter_print (int):
+        .
+    n_iter_min (int):
+        .
+    patience (int):
+        .
+    n_unfrozen_layers (int):
+        .
+    n_additional_layers (int):
+        .
+    clipping_value (int):
+        .
+    latent_representation (int):
+        .
+    weighted_cross_entropy (bool):
+        .
+    replace_classifier (bool):
+        .
 
     """
 
@@ -162,7 +133,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         n_unfrozen_layer: int = 0,
         n_additional_layers: int = 2,
         clipping_value: int = 1,
-        output_size: int = None,
+        latent_representation: int = None,
         weighted_cross_entropy: bool = False,
         replace_classifier: bool = False,
     ):
@@ -170,7 +141,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         super(ConvNetPredefinedFineTune, self).__init__()
 
         # Training Parameters
-        self.transforms = transformation
         self.batch_size = batch_size
         self.lr = lr
         self.n_iter = n_iter
@@ -179,61 +149,45 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.n_iter_print = n_iter_print
         self.patience = patience
         self.preprocess = preprocess
+        self.transforms = transformation
         self.clipping_value = clipping_value
-        self.output_size = output_size
         self.weighted_cross_entropy = weighted_cross_entropy
 
         # Model Architectures
         self.model_name = model_name.lower()
-        self.n_additional_layers = n_additional_layers
-        self.model = CNN_MODEL[self.model_name](weights=WEIGHTS[self.model_name]).to(
-            DEVICE
+        self.latent_representation = (
+            latent_representation  # latent representation in early fusion
         )
+        self.n_additional_layers = n_additional_layers
+        self.model = CNN_MODEL[self.model_name](weights=WEIGHTS[self.model_name])
 
-        # First, freeze all parameters
+        # Freeze all parameters
         for param in self.model.parameters():
             param.requires_grad = False
 
-        # Unfroze specified layer
-        n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(n_unfrozen_layer)
+        # Unfreeze layers in the classifier
+        if n_unfrozen_layer > 0 and not replace_classifier:
+            n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(n_unfrozen_layer)
 
-        self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
+        # Unfreeze remaining layers in the convolutional layers
+        if n_unfrozen_layer > 0:
+            self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
 
         if n_classes is None:
             raise RuntimeError(
-                "To build the architecture, the CNN requires to know the number of classes"
+                "To build the model, the CNN requires to know the number of classes"
             )
 
-        # Replace the output layer by the given number of classes
-        if hasattr(self.model, "fc"):
-            if isinstance(self.model.fc, torch.nn.Sequential):
-                if replace_classifier:
-                    for layer in self.model.fc:
-                        if isinstance(layer, torch.nn.modules.linear.Linear):
-                            n_features_in = layer.in_features
-                else:
-                    n_features_in = self.model.fc[-1].in_features
-            else:
-                n_features_in = self.model.fc.in_features
-        elif hasattr(self.model, "classifier"):
-            if isinstance(self.model.classifier, torch.nn.Sequential):
-                if replace_classifier:
-                    for layer in self.model.classifier:
-                        if isinstance(layer, torch.nn.modules.linear.Linear):
-                            n_features_in = layer.in_features
-                            break
-                else:
-                    n_features_in = self.model.classifier[-1].in_features
-            else:
-                n_features_in = self.model.classifier.in_features
-        else:
-            raise ValueError(f"Model not implemented: {self.model_name}")
+        # Number of features inputs in additional layers
+        n_features_in = self.extract_n_features_in(replace_classifier)
 
+        # Define the set of additional layers
         additional_layers = []
+        NL = NONLIN[non_linear]
+
         if n_additional_layers > 0:
-            # The first intermediate layer depends on the last output
-            n_intermediate = int((n_features_in // 2))
-            NL = NONLIN[non_linear]
+
+            n_intermediate = n_features_in // 2
 
             additional_layers = [
                 nn.Linear(n_features_in, n_intermediate),
@@ -249,51 +203,94 @@ class ConvNetPredefinedFineTune(nn.Module):
                         nn.Dropout(p=0.5, inplace=False),
                     ]
                 )
-                n_intermediate = int(n_intermediate / 2)
+                n_intermediate = n_intermediate // 2
 
-            if self.output_size:
-                additional_layers.append(nn.Linear(n_intermediate, output_size))
-                additional_layers.append(nn.BatchNorm1d(output_size))
-                additional_layers.append(nn.Linear(output_size, n_classes))
-                additional_layers[
-                    -3
-                ].bias.requires_grad = False  # hack do not use bias as it is followed
+            # In early fusion, the output size is specified
+            if self.latent_representation:
+                additional_layers.extend(
+                    [
+                        nn.Linear(n_intermediate, latent_representation),
+                        nn.BatchNorm1d(latent_representation),
+                    ]
+                )
+                additional_layers.append(nn.Linear(latent_representation, n_classes))
+                additional_layers[-5].bias.requires_grad = False
             else:
                 additional_layers.append(nn.Linear(n_intermediate, n_classes))
         else:
-            if self.output_size:
-                additional_layers.append(nn.Linear(n_features_in, output_size))
-                additional_layers.append(nn.Linear(output_size, n_classes))
+            if self.latent_representation:
+                additional_layers.extend(
+                    [
+                        nn.Linear(n_features_in, latent_representation),
+                        nn.BatchNorm1d(latent_representation),
+                    ]
+                )
+                additional_layers.append(nn.Linear(latent_representation, n_classes))
             else:
                 additional_layers.append(nn.Linear(n_features_in, n_classes))
 
-        params_ = []
-        if hasattr(self.model, "fc"):
-            self.model.fc = nn.Sequential(*additional_layers)
-            self.model.to(DEVICE)
-            for name, param in self.model.named_parameters():
-                if "fc" in name:
-                    param.requires_grad = True
-                    params_.append(
-                        {"params": param, "lr": lr[0], "weight_decay": weight_decay}
-                    )
-                elif param.requires_grad:
-                    params_.append(
-                        {"params": param, "lr": lr[1], "weight_decay": weight_decay}
-                    )
+        # Define the parameters to optimize
+        params_ = self.define_parameters_optimization(
+            additional_layers, lr, weight_decay, replace_classifier
+        )
 
-        elif hasattr(self.model, "classifier"):
-            if isinstance(self.model.classifier, torch.nn.modules.Sequential):
-                if replace_classifier:
-                    self.model.classifier = nn.Sequential(*additional_layers)
-                    name_match = "classifier"
-                else:
-                    self.model.classifier[-1] = nn.Sequential(*additional_layers)
-                    name_match = "classifier." + str(len(self.model.classifier) - 1)
+        self.model.to(DEVICE)
+        self.optimizer = torch.optim.Adam(params_)
+
+    def extract_n_features_in(self, replace_classifier: bool = False):
+        """Extract the size of the input features to define the additional layers.
+
+        Parameters
+        ----------
+        replace_classifier (bool): specify if the additional layers replace the classifier.
+        """
+
+        def get_in_features_from_classifier(module, replace_classifier_=False):
+            """Helper function to find the first or last linear input size of the classifier"""
+            n_features_in = None
+            if isinstance(module, torch.nn.Sequential):
+                for layer in module:
+                    if isinstance(layer, torch.nn.modules.linear.Linear):
+                        n_features_in = layer.in_features
+                        if replace_classifier_:
+                            break
+            elif isinstance(module, torch.nn.modules.linear.Linear):
+                n_features_in = module.in_features
             else:
-                self.model.classifier = nn.Sequential(*additional_layers)
-                name_match = "classifier"
-            self.model.to(DEVICE)
+                raise ValueError(f"Unknown Classifier Architecture {self.model_name}")
+
+            return n_features_in
+
+        if hasattr(self.model, "fc"):
+            classifier = self.model.fc
+        elif hasattr(self.model, "classifier"):
+            classifier = self.model.classifier
+        else:
+            raise ValueError(f"Unknown Classifier Module Name: {self.model_name}")
+
+        return get_in_features_from_classifier(classifier, replace_classifier)
+
+    def define_parameters_optimization(
+        self, additional_layers, lr, weight_decay, replace_classifier
+    ):
+        params_ = []
+
+        def setup_params(classifier_attr_name):
+            """Set up the parameters for optimization"""
+            classifier = getattr(self.model, classifier_attr_name)
+
+            if (
+                isinstance(classifier, torch.nn.modules.Sequential)
+                and not replace_classifier
+            ):
+                classifier[-1] = nn.Sequential(*additional_layers)
+                name_match = f"{classifier_attr_name}.{len(classifier) - 1}"
+            else:
+                setattr(
+                    self.model, classifier_attr_name, nn.Sequential(*additional_layers)
+                )
+                name_match = classifier_attr_name
+
             for name, param in self.model.named_parameters():
                 if name_match in name:
                     param.requires_grad = True
@@ -305,7 +302,12 @@ class ConvNetPredefinedFineTune(nn.Module):
                         {"params": param, "lr": lr[1], "weight_decay": weight_decay}
                     )
 
-        self.optimizer = torch.optim.Adam(params_)
+        if hasattr(self.model, "fc"):
+            setup_params("fc")
+        elif hasattr(self.model, "classifier"):
+            setup_params("classifier")
+
+        return params_
 
     def unfreeze_last_n_layers_convolutional(self, n):
 
@@ -329,7 +331,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         # Select the feature extraction part of the model
         if isinstance(self.model, torch.nn.Sequential):
             feature_extractor = self.model
-        elif hasattr(self.model, "features"):
+        elif hasattr(self.model, "features"):  # For most architectures
             feature_extractor = self.model.features
         elif hasattr(self.model, "layer4"):  # For ResNet
             feature_extractor = self.model.layer4
@@ -374,7 +376,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         elif hasattr(self.model, "fc"):  # For ResNet
             feature_extractor = self.model.fc
         else:
-            raise ValueError("Unsupported architecture")
+            raise ValueError("Unsupported Architecture")
 
         # Perform depth-first search on the feature extractor
         dfs(feature_extractor)
@@ -385,16 +387,23 @@ class ConvNetPredefinedFineTune(nn.Module):
         return self.model(x)
 
     def get_model(self):
+        """Returns the model necessary for grad-cam++ computation"""
         return self.model
 
     def set_zero_grad(self):
         self.model.zero_grad()
 
+    def set_train_mode(self):
+        self.model.train()
+
+    def set_eval_mode(self):
+        self.model.eval()
+
     def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
-        # X = self._check_tensor(X).float()
+
         y = self._check_tensor(y).squeeze().long()
 
-        dataset = TrainingTensorDataset(
+        dataset = TrainingImageDataset(
             X, y, preprocess=self.preprocess, transform=self.transforms
         )
 
@@ -421,6 +430,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         # do training
         val_loss_best = 999999
         patience = 0
+        self.model.train()
 
         if self.weighted_cross_entropy:
             # TMP LUCAS
@@ -483,14 +493,14 @@ class ConvNetPredefinedFineTune(nn.Module):
                             patience += 1
 
                         if patience > self.patience and i > self.n_iter_min:
-                            print(
-                                f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
+                            log.info(
+                                f"Final Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}"
                             )
                             break
 
                     if i % self.n_iter_print == 0:
                         log.trace(
-                            f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, elapsed time: {(end_ - start_):.2f}"
+                            f"Epoch: {i}, loss: {val_loss:.4f}, train_loss: {torch.mean(train_loss):.4f}, epoch elapsed time: {(end_ - start_):.2f}"
                         )
 
         return self
@@ -550,20 +560,23 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
     random_state: int, default 0
         Random seed
 
-
-    Example:
-        >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="classifiers").get("cnn", conv_net='ResNet50')
-        >>> from sklearn.datasets import load_iris
-        >>> # Load data
-        >>> plugin.fit_predict(X, y) # returns the probabilities for each class
+    # Example:
+         >>> from autoprognosis.plugins.prediction import Predictions
+         >>> plugin = Predictions(category="classifier").get("cnn_fine_tune")
+         >>> from sklearn.datasets import load_digits
+         >>> from PIL import Image
+         >>> import numpy as np
+         >>> # load data
+         >>> X, y = load_digits(return_X_y=True, as_frame=True)
+         >>> # Transform X into PIL Images
+         >>> X["image"] = X.apply(lambda row: Image.fromarray(np.stack([(row.to_numpy().reshape((8, 8))).astype(np.uint8)]*3, axis=-1)), axis=1)
+         >>> plugin.fit_predict(X[["image"]], y)
     """
 
     def __init__(
         self,
         # Architecture
         conv_net: str = "alexnet",
-        n_unfrozen_layer: int = 2,
         n_additional_layers: int = 2,
         non_linear: str = "relu",
         replace_classifier: bool = False,
@@ -572,6 +585,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         transformation: transforms.Compose = None,
         # Training
         lr: int = 3,
+        n_unfrozen_layers: int = 2,
         weighted_cross_entropy: bool = True,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
@@ -592,9 +606,17 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if hyperparam_search_iterations:
             n_iter = 5 * int(hyperparam_search_iterations)
 
+        # CNN Architecture
+        self.conv_net = conv_net
+        self.replace_classifier = replace_classifier
+        self.non_linear = non_linear
+        self.n_classes = None  # Defined during training
+        self.n_additional_layers = n_additional_layers
+
         # Training Parameters
         self.lr = LR[lr]
-        self.non_linear = non_linear
+        self.n_unfrozen_layer = n_unfrozen_layers
+        self.weighted_cross_entropy = weighted_cross_entropy
         self.weight_decay = weight_decay
         self.n_iter = n_iter
         self.batch_size = batch_size
@@ -603,22 +625,15 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.n_iter_min = n_iter_min
         self.early_stopping = early_stopping
         self.clipping_value = clipping_value
-        self.weighted_cross_entropy = weighted_cross_entropy
-
-        # CNN Architecture
-        self.conv_net = conv_net
-        self.n_unfrozen_layer = n_unfrozen_layer
-        self.replace_classifier = replace_classifier
-        self.n_classes = None
-        self.n_additional_layers = n_additional_layers
 
         # Data Augmentation
         self.transformation = transformation
         self.preprocess = None
         self.data_augmentation = data_augmentation
-        # Create the Data Transformation
+        # Create the DA strategy
         self.image_transform()
 
+        # Ensure baseline is consistent with selected architecture
         if (
             predefined_args.get("predefined_cnn", None)
             and len(predefined_args["predefined_cnn"]) > 0
@@ -644,16 +659,18 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             # CNN Architecture
             params.Categorical("conv_net", CNN),
             params.Integer("n_additional_layers", 0, 3),
+            params.Categorical("replace_classifier", [True, False]),
             # Training
             params.Integer("lr", 0, 5),
-            params.Integer("n_unfrozen_layer", 1, 8),
+            params.Integer("n_unfrozen_layer", 0, 5),
             params.Categorical("weighted_cross_entropy", [True, False]),
+            params.Categorical("clipping_value", [0, 1]),
             # Data Augmentation
             params.Categorical(
                 "data_augmentation",
                 [
                     "",
-                    # "autoaugment_cifar10",
+                    "autoaugment_cifar10",
                     "autoaugment_imagenet",
                     "rand_augment",
                     "trivial_augment",
@@ -662,8 +679,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     "gaussian_noise",
                 ],
             ),
-            params.Categorical("replace_classifier", [True, False]),
-            params.Categorical("clipping_value", [0, 1]),
         ]
 
     def image_transform(self):
@@ -679,45 +694,32 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                     transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
                 ]
             elif self.data_augmentation == "rand_augment":
-                self.transforms = [
-                    transforms.RandAugment(),
-                ]
+                self.transforms = [transforms.RandAugment()]
             elif self.data_augmentation == "trivial_augment":
                 self.transforms = [transforms.TrivialAugmentWide()]
-            elif self.data_augmentation == "gaussian_noise":
+            elif self.data_augmentation in [
+                "simple_strategy",
+                "color_jittering",
+                "gaussian_noise",
+            ]:
                 self.transforms = [
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
-                    transforms.RandomRotation(10),
-                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
-                ]
-            elif self.data_augmentation == "simple_strategy":
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
+                    transforms.RandomResizedCrop(224),
                     transforms.RandomRotation(10),
                 ]
-            elif self.data_augmentation == "color_jittering":
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
-                    transforms.RandomRotation(
-                        10
-                    ),  # Random rotation between -10 and 10 degrees
-                    transforms.ColorJitter(
-                        brightness=0.05, contrast=0.05, saturation=0.05
-                    ),
-                    transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
-                ]
+                if self.data_augmentation == "color_jittering":
+                    self.transforms.append(
+                        transforms.ColorJitter(
+                            brightness=0.05, contrast=0.05, saturation=0.05
+                        )
+                    )
+                elif self.data_augmentation == "gaussian_noise":
+                    self.transforms.append(transforms.GaussianBlur(3, sigma=(0.1, 0.5)))
+            else:
+                raise ValueError(
+                    f"Unknown Data Augmentation Strategy: {self.data_augmentation}"
+                )
 
             self.transforms_compose = transforms.Compose(self.transforms)
 
@@ -726,11 +728,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
         weights = models.get_weight(WEIGHTS[self.conv_net.lower()])
         self.preprocess = weights.transforms(antialias=True)
-
-    @staticmethod
-    def to_tensor(img_: pd.DataFrame) -> torch.Tensor:
-        img_ = img_.squeeze(axis=1).apply(lambda d: transforms.ToTensor()(d))
-        return torch.stack(img_.tolist())
 
     def _fit(self, X: pd.DataFrame, *args: Any, **kwargs: Any) -> "CNNFineTunePlugin":
         if len(*args) == 0:
@@ -764,6 +761,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             preprocess=self.preprocess,
             clipping_value=self.clipping_value,
             replace_classifier=self.replace_classifier,
+            weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
         self.model.train(X, y)
@@ -774,10 +772,11 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
+        self.model.set_eval_mode()
         with torch.no_grad():
             results = np.empty((0, 1))
             test_loader = DataLoader(
-                TestTensorDataset(X, preprocess=self.preprocess),
+                TestImageDataset(X, preprocess=self.preprocess),
                 batch_size=self.batch_size,
                 pin_memory=False,
             )
@@ -795,16 +794,17 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                         ).astype(int),
                     )
                 )
-
             return pd.DataFrame(results)
 
     def predict_proba_tensor(self, X: pd.DataFrame):
+        """This method forces model to CPU with gradients for grad-CAM++"""
+        # TMP LUCAS: check if necessary
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.cpu()
-        self.model.model.eval()
+        self.model.set_eval_mode()
         results = torch.empty((0, self.n_classes))
-        test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+        test_dataset = TestImageDataset(X, preprocess=self.preprocess)
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
         for batch_test_ndx, X_test in enumerate(test_loader):
             X_test = X_test.cpu()
@@ -816,7 +816,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                 ),
                 dim=0,
             )
-        self.model.model.train()
         return results
 
     def _predict_proba(
@@ -825,10 +824,10 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.model.eval()
+        self.model.set_eval_mode()
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
-            test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+            test_dataset = TestImageDataset(X, preprocess=self.preprocess)
             test_loader = DataLoader(
                 test_dataset,
                 batch_size=self.batch_size,
@@ -843,7 +842,6 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
                         .numpy(),
                     )
                 )
-            self.model.model.train()
             return pd.DataFrame(results)
 
     def set_zero_grad(self):

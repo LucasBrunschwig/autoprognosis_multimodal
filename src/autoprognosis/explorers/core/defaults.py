@@ -1,4 +1,3 @@
-# third party - pytorch predefined architecture
 # third party
 from torchvision.models import (
     alexnet,
