@@ -12,7 +12,7 @@ import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.image.plugin_cnn_fine_tune import (
     LR,
     ConvNetPredefinedFineTune,
-    TestTensorDataset,
+    TestImageDataset,
 )
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.utils.default_modalities import IMAGE_KEY
@@ -318,7 +318,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         with torch.no_grad():
             self.model.model.eval()
             results = np.empty((0, self.n_classes))
-            test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+            test_dataset = TestImageDataset(X, preprocess=self.preprocess)
             test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
             for batch_test_ndx, X_test in enumerate(test_loader):
                 results = np.vstack(
@@ -356,7 +356,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
                     ).shape[1],
                 )
             )
-            test_dataset = TestTensorDataset(X, preprocess=self.preprocess)
+            test_dataset = TestImageDataset(X, preprocess=self.preprocess)
             test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
             for batch_test_ndx, X_test in enumerate(test_loader):
                 results = np.vstack(
