@@ -3,7 +3,7 @@ import time
 from typing import Any, List, Optional, Tuple
 
 # third party
-from joblib import Parallel
+from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
 from pydantic import validate_arguments
@@ -19,10 +19,10 @@ from autoprognosis.explorers.core.optimizer import Optimizer
 from autoprognosis.explorers.core.selector import PipelineSelector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
-from autoprognosis.utils.parallel import n_opt_jobs
+from autoprognosis.utils.parallel import n_opt_image_jobs
 from autoprognosis.utils.tester import evaluate_estimator
 
-dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
+dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_image_jobs())
 
 
 class ImageClassifierSeeker:
@@ -58,16 +58,13 @@ class ImageClassifierSeeker:
             Available retrieved using `Preprocessors(category="image_processing").list_available()`
                 - 'normalizer'
                 - 'resizer'
-                - 'data_augmentation'
-        image_dimensionality_reduction: list.
-            Plugin search pool to use in the pipeline for optimal dimensionality reduction.
-            Available retrieved using `Preprocessors(category="image_reduction").list_available()`
-                - 'fast_ica_image'
-                - 'pca_image'
-                - 'predefined_cnn'
+                - 'data_augmentation
         classifiers: list.
-            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"]
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn_fine_tune"]
+            Available retrieved using 'Classifiers(category="image").list_available()'
                 - 'cnn'
+                - 'cnn_fine_tune'
+                - 'vision_transformers'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
         random_state: int:
@@ -219,16 +216,10 @@ class ImageClassifierSeeker:
         """
         self._should_continue()
 
-        # TMP LUCAS
-        # search_results = dispatcher(
-        #    delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
-        #    for estimator in self.estimators
-        # )
-
-        search_results = [
-            self.search_best_args_for_estimator(estimator, X, Y, group_ids)
+        search_results = dispatcher(
+            delayed(self.search_best_args_for_estimator)(estimator, X, Y, group_ids)
             for estimator in self.estimators
-        ]
+        )
 
         all_scores = []
         all_args = []
@@ -244,13 +235,19 @@ class ImageClassifierSeeker:
             )
 
         all_scores_np = np.array(all_scores)
-        best_score = np.sort(np.unique(all_scores_np.ravel()))[-1]
-        pos = np.argwhere(all_scores_np == best_score)[0]
-        pos_est = pos[0]
-        log.info(
-            f"Selected score {best_score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
-        )
-        model = all_estimators[pos_est].get_image_pipeline_from_named_args(
-            **all_args[pos_est]
-        )
-        return model
+        selected_points = min(self.top_k, len(all_scores))
+        best_scores = np.sort(np.unique(all_scores_np.ravel()))[-selected_points:]
+
+        result = []
+        for score in reversed(best_scores):
+            pos = np.argwhere(all_scores_np == score)[0]
+            pos_est = pos[0]
+            log.info(
+                f"Selected score {score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
+            )
+            model = all_estimators[pos_est].get_pipeline_from_named_args(
+                **all_args[pos_est]
+            )
+            result.append(model)
+
+        return result
