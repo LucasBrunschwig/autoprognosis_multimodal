@@ -6,9 +6,15 @@ import numpy as np
 import pandas as pd
 
 # autoprognosis absolute
-from autoprognosis.explorers.core.defaults import CNN_MODEL, WEIGHTS
+from autoprognosis.explorers.core.defaults import (
+    CNN as PREDEFINED_CNN,
+    CNN_MODEL,
+    WEIGHTS,
+)
+from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.preprocessors.base as base
+from autoprognosis.plugins.utils.custom_dataset import TestImageDataset
 from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
@@ -18,7 +24,7 @@ for retry in range(2):
         # third party
         import torch
         import torch.nn as nn
-        from torch.utils.data import DataLoader, TensorDataset
+        from torch.utils.data import DataLoader
 
         break
     except ImportError:
@@ -44,7 +50,7 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
 
     Parameters
     ----------
-    conv_net: str,
+    conv_name: str,
         Name of the predefined convolutional neural networks
     random_state: int, default 0
         Random seed
@@ -52,7 +58,7 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
 
     Example:
         >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_net='AlexNet')
+        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_name='AlexNet')
         >>> from sklearn.datasets import load_iris
         >>> # Load data
         >>> plugin.fit_transform(X, y) # returns the probabilities for each class
@@ -60,32 +66,14 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
 
     def __init__(
         self,
-        conv_net: str = "AlexNet",
-        nonlin: str = "relu",
-        lr: float = 1e-5,
-        ratio_cnn: int = 1,
-        batch_size: int = 32,
-        n_iter: int = 200,
-        n_iter_min: int = 10,
-        n_iter_print: int = 10,
-        patience: int = 5,
-        early_stopping: bool = True,
-        weight_decay: float = 1e-3,
+        conv_name: str = "AlexNet",
+        batch_size: int = 128,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
 
-        self.conv_net = conv_net.lower()
-        self.non_lin = nonlin
-        self.ratio = ratio_cnn
-        self.lr = lr
+        self.conv_name = conv_name.lower()
         self.batch_size = batch_size
-        self.n_iter = n_iter
-        self.n_iter_min = n_iter_min
-        self.patience = patience
-        self.early_stopping = early_stopping
-        self.n_iter_print = n_iter_print
-        self.weight_decay = weight_decay
 
     @staticmethod
     def name() -> str:
@@ -101,14 +89,16 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        return []
+        if (
+            predefined_args.get("predefined_cnn", None)
+            and len(predefined_args["predefined_cnn"]) > 0
+        ):
+            CNN = predefined_args["predefined_cnn"]
+        else:
+            CNN = PREDEFINED_CNN
+        return [params.Categorical("conv_name", CNN)]
 
-    def _fit(
-        self, X: pd.DataFrame, *args: Any, **kwargs: Any
-    ) -> "CNNFeaturesImageNetPlugin":
-
-        self.model = CNN_MODEL[self.conv_net](weights=WEIGHTS[self.conv_net]).to(DEVICE)
-
+    def remove_classification_layer(self):
         if hasattr(self.model, "fc"):
             self.model.fc[-1] = nn.Identity()
         elif hasattr(self.model, "classifier"):
@@ -117,8 +107,20 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
             else:
                 self.model.classifier[-1] = nn.Identity()
 
-        weights = models.get_weight(WEIGHTS[self.conv_net])
-        self.preprocess = weights.transforms
+    def image_preprocess(self):
+        return models.get_weight(WEIGHTS[self.conv_name]).transforms(antialias=True)
+
+    def _fit(
+        self, X: pd.DataFrame, *args: Any, **kwargs: Any
+    ) -> "CNNFeaturesImageNetPlugin":
+
+        self.model = CNN_MODEL[self.conv_name](weights=WEIGHTS[self.conv_name]).to(
+            DEVICE
+        )
+
+        self.remove_classification_layer()
+
+        self.preprocess = self.image_preprocess()
 
         return self
 
@@ -128,23 +130,35 @@ class CNNFeaturesImageNetPlugin(base.PreprocessorPlugin):
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
-        X = self.preprocess_images(X.squeeze())
+        self.model.to(DEVICE)
+        self.model.eval()
         with torch.no_grad():
             results = np.empty(
-                (0, self.model(torch.unsqueeze(X[0], 0).to(DEVICE)).shape[1])
+                (
+                    0,
+                    self.model(
+                        torch.rand(
+                            (
+                                3,
+                                self.preprocess.resize_size[0],
+                                self.preprocess.resize_size[0],
+                            )
+                        )
+                        .unsqueeze(0)
+                        .to(DEVICE)
+                    ).shape[1],
+                )
             )
-            test_dataset = TensorDataset(X)
-            test_loader = DataLoader(
-                test_dataset, batch_size=self.batch_size, pin_memory=False
-            )
+            test_dataset = TestImageDataset(X, preprocess=self.preprocess)
+            test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
             for batch_test_ndx, X_test in enumerate(test_loader):
                 results = np.vstack(
                     (
                         results,
-                        self.model(X_test[0].to(DEVICE)).detach().cpu().numpy(),
+                        self.model(X_test.to(DEVICE)).detach().cpu().numpy(),
                     )
                 )
-
+            self.model.train()
             return pd.DataFrame(results)
 
     def save(self) -> bytes:

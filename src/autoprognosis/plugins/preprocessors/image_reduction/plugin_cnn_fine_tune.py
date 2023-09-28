@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, List
+from typing import Any, List, Union
 
 # third party
 import numpy as np
@@ -8,14 +8,20 @@ import pandas as pd
 # autoprognosis absolute
 from autoprognosis.explorers.core.defaults import CNN as PREDEFINED_CNN, WEIGHTS
 from autoprognosis.explorers.core.selector import predefined_args
+import autoprognosis.explorers.core.selector as selector
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.image.plugin_cnn_fine_tune import (
     LR,
     ConvNetPredefinedFineTune,
-    TestImageDataset,
 )
 import autoprognosis.plugins.preprocessors.base as base
+from autoprognosis.plugins.utils.custom_dataset import (
+    TestImageDataset,
+    build_data_augmentation_strategy,
+    data_augmentation_strategies,
+)
 from autoprognosis.utils.default_modalities import IMAGE_KEY
+from autoprognosis.utils.distributions import enable_reproducible_results
 from autoprognosis.utils.pip import install
 from autoprognosis.utils.serialization import load_model, save_model
 
@@ -51,7 +57,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     Parameters
     ----------
-    conv_net: str,
+    conv_name: str,
         Name of the predefined convolutional neural networks
     random_state: int, default 0
         Random seed
@@ -59,7 +65,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     Example:
         >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_net='AlexNet')
+        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_name='AlexNet')
         >>> from sklearn.datasets import load_iris
         >>> # Load data
         >>> plugin.fit_transform(X, y) # returns the probabilities for each class
@@ -67,15 +73,15 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     def __init__(
         self,
-        conv_net: str = "AlexNet",
+        conv_name: str = "AlexNet",
         nonlin: str = "relu",
         lr: int = 3,
         batch_size: int = 128,
-        data_augmentation: bool = "simple_strategy",
-        transformation: transforms.Compose = None,
+        data_augmentation: Union[str, transforms.Compose, None] = "",
         replace_classifier: bool = False,
+        weighted_cross_entropy: bool = False,
         n_unfrozen_layer: int = 2,
-        n_iter: int = 1000,
+        n_iter: int = 1,
         n_iter_min: int = 10,
         n_iter_print: int = 10,
         patience: int = 5,
@@ -83,16 +89,19 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         weight_decay: float = 1e-3,
         n_additional_layers: int = 3,
         clipping_value: int = 1,
-        output_size=100,
+        latent_representation=100,
+        random_state: int = 0,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
 
+        enable_reproducible_results(random_state)
+
         # Model Architecture
-        self.conv_net = conv_net.lower()
+        self.conv_name = conv_name.lower()
         self.non_lin = nonlin
         self.n_additional_layers = n_additional_layers
-        self.output_size = output_size
+        self.latent_representation = latent_representation
         self.classifier_removed = False
         self.replace_classifier = replace_classifier
         # Model Fitting
@@ -106,24 +115,21 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         self.weight_decay = weight_decay
         self.clipping_value = clipping_value
         self.n_unfrozen_layer = n_unfrozen_layer
+        self.weighted_cross_entropy = weighted_cross_entropy
         # Data Augmentation Policy
-        self.data_augmentation = data_augmentation
-        self.transformation = transformation  # policy to use your own transformation
-        self.preprocess = None
-        self.transforms_compose = None
+        self.preprocess = self.image_preprocess()
+        self.data_augmentation = build_data_augmentation_strategy(data_augmentation)
 
         # If there are a subgroup of predefined architecture select from it
         if (
             predefined_args.get("predefined_cnn", None)
             and len(predefined_args["predefined_cnn"]) > 0
         ):
-            self.conv_net = predefined_args["predefined_cnn"][0]
+            self.conv_name = predefined_args["predefined_cnn"][0]
 
             # If there are a subgroup of predefined architecture select from it
-            if predefined_args.get("output_size", None):
-                self.output_size = predefined_args["output_size"][0]
-
-        self.image_transform()
+            if predefined_args.get("latent_representation", None):
+                self.latent_representation = predefined_args["latent_representation"][0]
 
     @staticmethod
     def name() -> str:
@@ -139,37 +145,19 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        # Output size for early fusion optimization
-        params_output = [
-            params.Categorical(
-                "output_size",
-                [
-                    50,
-                ],
-            )
-        ]
-        # Other parameters for learning representation optimization
-        search_str = "cnn_fine_tune."
-        params_name = [
-            "conv_net",
-            "n_additional_layers",
-            "n_unfrozen_layer",
-            "lr",
-            "data_augmentation",
-            "replace_classifier",
-        ]
-        for name in params_name:
-            if kwargs.get(search_str + name, None):
-                value = kwargs.get(search_str + name)
-                if not isinstance(value, list):
-                    value = [value]
-                params_output.append(params.Categorical(name, value))
+        """Hyperparameter Optimization Space"""
+        hp_space = [params.Categorical("latent_representation", [100])]
 
-        return params_output
+        if not selector.LR_SEARCH:
+            hp_space.extend(CNNFeaturesFineTunePlugin.hyperparameter_lr_space())
 
+        return hp_space
+
+    @staticmethod
     def hyperparameter_lr_space(*args: Any, **kwargs: Any) -> List[params.Params]:
-        # Optimization of learning representation
+        """Hyperparameters to learn optimal latent representation of the images for early fusion"""
 
+        # Subset of predefined architecture
         if (
             predefined_args.get("predefined_cnn", None)
             and len(predefined_args["predefined_cnn"]) > 0
@@ -177,40 +165,19 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             CNN = predefined_args["predefined_cnn"]
         else:
             CNN = PREDEFINED_CNN
-        if not isinstance(CNN, list):
-            CNN = [CNN]
-
-        search_str = "cnn_fine_tune."
-        if predefined_args.get(search_str + "output_size", None):
-            output_size = predefined_args.get(search_str + "output_size")
-        else:
-            output_size = [50]
-        if not isinstance(output_size, list):
-            output_size = [output_size]
 
         return [
-            params.Categorical("output_size", output_size),
             # CNN Architecture
-            params.Categorical("conv_net", CNN),
-            params.Categorical("lr", [0, 1, 2, 3]),
+            params.Categorical("conv_name", CNN),
             params.Integer("n_additional_layers", 0, 3),
-            # fix the number of unfrozen layers
-            params.Integer("n_unfrozen_layer", 1, 10),
-            # Use the auto augment policy from pytorch
-            params.Categorical(
-                "data_augmentation",
-                [
-                    "",
-                    # "autoaugment_cifar10",
-                    "autoaugment_imagenet",
-                    "rand_augment",
-                    "trivial_augment",
-                    "simple_strategy",
-                    "gaussian_noise",
-                ],
-            ),
-            params.Categorical("clipping_value", [0, 1]),
             params.Categorical("replace_classifier", [True, False]),
+            # CNN Fine-Tuning
+            params.Integer("lr", 0, 5),
+            params.Integer("n_unfrozen_layer", 0, 5),
+            params.Categorical("weighted_cross_entropy", [True, False]),
+            params.Categorical("clipping_value", [0, 1]),
+            # Data Augmentation
+            params.Categorical("data_augmentation", data_augmentation_strategies),
         ]
 
     def sample_hyperparameters(cls, trial, *args: Any, **kwargs: Any):
@@ -223,88 +190,44 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
         return results
 
-    def image_transform(self):
-        if self.data_augmentation:
-            if self.data_augmentation == "autoaugment_imagenet":
-                self.transforms = [
-                    transforms.AutoAugment(
-                        policy=transforms.AutoAugmentPolicy.IMAGENET
-                    ),
-                ]
-            elif self.data_augmentation == "autoaugment_cifar10":
-                self.transforms = [
-                    transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
-                ]
-            elif self.data_augmentation == "rand_augment":
-                self.transforms = [
-                    transforms.RandAugment(),
-                ]
-            elif self.data_augmentation == "trivial_augment":
-                self.transforms = [transforms.TrivialAugmentWide()]
-            elif self.data_augmentation == "gaussian_noise":
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
-                    transforms.RandomRotation(
-                        10
-                    ),  # Random rotation between -10 and 10 degrees
-                    transforms.ColorJitter(
-                        brightness=0.2, contrast=0.2, saturation=0.2
-                    ),
-                    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-                ]
-            elif self.data_augmentation == "simple_strategy":
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(
-                        224
-                    ),  # Assuming input images are larger than 224x224
-                    transforms.RandomRotation(
-                        10
-                    ),  # Random rotation between -10 and 10 degrees
-                    transforms.ColorJitter(
-                        brightness=0.2, contrast=0.2, saturation=0.2
-                    ),
-                ]
-        else:
-            self.transforms_compose = None
-
-        if self.transformation:
-            self.transforms_compose = transforms.Compose(self.transforms)
-
-        weights = models.get_weight(WEIGHTS[self.conv_net.lower()])
-        self.preprocess = weights.transforms(antialias=True)
+    def image_preprocess(self):
+        weights = models.get_weight(WEIGHTS[self.conv_name.lower()])
+        return weights.transforms(antialias=True)
 
     def _fit(
         self, X: pd.DataFrame, *args: Any, **kwargs: Any
     ) -> "CNNFeaturesFineTunePlugin":
 
+        if len(*args) == 0:
+            raise RuntimeError("Please provide the labels for training")
+
         y = args[0]
 
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+
         self.n_classes = len(y.value_counts())
+        y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefinedFineTune(
-            model_name=self.conv_net,
+            model_name=self.conv_name,
             n_classes=self.n_classes,
             n_additional_layers=self.n_additional_layers,
             n_unfrozen_layer=self.n_unfrozen_layer,
-            non_linear=self.non_lin,
-            weight_decay=self.weight_decay,
-            batch_size=self.batch_size,
             lr=self.lr,
-            n_iter_min=self.n_iter_min,
+            non_linear=self.non_lin,
             n_iter=self.n_iter,
-            early_stopping=self.early_stopping,
+            n_iter_min=self.n_iter_min,
             n_iter_print=self.n_iter_print,
+            early_stopping=self.early_stopping,
             patience=self.patience,
+            batch_size=self.batch_size,
+            weight_decay=self.weight_decay,
+            transformation=self.data_augmentation,
             preprocess=self.preprocess,
-            transformation=self.transforms_compose,
-            output_size=self.output_size,
             replace_classifier=self.replace_classifier,
+            latent_representation=self.latent_representation,
+            weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
         self.model.train(X, y)
@@ -333,7 +256,6 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
     def _transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if not self.classifier_removed:
             self.model.remove_classification_layer()
-            self.classifier_removed = True
 
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)

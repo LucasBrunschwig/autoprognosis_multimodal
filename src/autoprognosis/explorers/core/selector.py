@@ -18,6 +18,8 @@ predefined_args = {
     "predefined_cnn": [],
 }
 
+LR_SEARCH = False
+
 
 class PipelineSelector:
     """AutoML wrapper for pipelines

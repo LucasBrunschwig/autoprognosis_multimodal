@@ -20,15 +20,16 @@ from autoprognosis.explorers.core.defaults import (
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import Optimizer
-from autoprognosis.explorers.core.selector import PipelineSelector, predefined_args
+from autoprognosis.explorers.core.selector import PipelineSelector
+import autoprognosis.explorers.core.selector as selector
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
 from autoprognosis.plugins.preprocessors import Preprocessors
 from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
-from autoprognosis.utils.parallel import n_opt_jobs
+from autoprognosis.utils.parallel import n_opt_image_jobs
 from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_estimator
 
-dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
+dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_image_jobs())
 
 
 class MultimodalClassifierSeeker:
@@ -248,9 +249,9 @@ class MultimodalClassifierSeeker:
             X_train = X_.loc[X_.index[train_index]]
             X_test = X_.loc[X_.index[test_index]]
 
-            for estimator in self.estimators_lr:
-                for result in self.best_representation.keys():
-                    if estimator.name() in result:
+            for result in self.best_representation.keys():
+                for estimator in self.estimators_lr:
+                    if estimator.name() == result.split(".")[0]:
                         model = Preprocessors(category="image_reduction").get(
                             estimator.name(), **self.best_representation[result]
                         )
@@ -294,22 +295,17 @@ class MultimodalClassifierSeeker:
             ):
                 raise RuntimeError("Multimodal Fusion but no image inputs")
 
-            image_reduction = ""
+            size = None
             for arg in kwargs.keys():
                 if "image_reduction." in arg:
                     image_reduction = ".".join(arg.split(".")[0:-1])
+                    image_reduction_name = image_reduction.split(".")[-1]
+                    if kwargs.get(image_reduction + ".latent_representation", None):
+                        size = str(kwargs[image_reduction + ".latent_representation"])
                     break
-
-            if image_reduction:
-                image_reduction_name = image_reduction.split(".")[-1]
-                size = str(kwargs.get(image_reduction + ".output_size", None))
-                if self.best_representation.get(
-                    image_reduction_name + "." + size, None
-                ):
-                    for arg, value in self.best_representation.get(
-                        image_reduction_name + "." + size
-                    ).items():
-                        kwargs.update({estimator.name() + "." + arg: value})
+            if size and self.pretrain_representation.get(
+                image_reduction_name + "." + size, None
+            ):
                 X["lr"] = self.pretrain_representation[
                     image_reduction_name + "." + size
                 ]
@@ -325,8 +321,6 @@ class MultimodalClassifierSeeker:
                     group_ids=group_ids,
                 )
             except BaseException as e:
-                # TMP LUCAS
-                print(f"evaluate_estimator failed: {e}")
                 log.error(f"evaluate_estimator failed: {e}")
 
                 if self.strict:
@@ -365,18 +359,18 @@ class MultimodalClassifierSeeker:
     def search_best_args_for_lr_estimator(
         self,
         estimator: Any,
-        X: pd.DataFrame,
+        X: dict,
         Y: pd.Series,
-        output_size: int,
+        latent_representation: int,
         group_ids: Optional[pd.Series] = None,
-    ) -> Tuple[List[float], List[float]]:
+    ):
         self._should_continue()
-
-        predefined_args.update({estimator.name() + ".output_size": [output_size]})
 
         def evaluate_learning_args(**kwargs):
 
             self._should_continue()
+
+            kwargs.update({"latent_representation": latent_representation})
 
             model = Preprocessors(category="image_reduction").get(
                 estimator.name(), **kwargs
@@ -412,28 +406,26 @@ class MultimodalClassifierSeeker:
         best_score, params = study_learning.evaluate()
 
         # Store the optimal solution if the learning representation size comes again
-        self.best_representation[estimator.name() + "." + str(output_size)] = params[
-            np.argmax(best_score)
-        ]
-
-        log.info(
-            f"Best LR parameters: {estimator.name() + '.' + str(output_size)}: "
-            f"{params[np.argmax(best_score)]}"
-        )
+        self.best_representation[
+            estimator.name() + "." + str(latent_representation)
+        ] = params[np.argmax(best_score)]
 
     def lr_search(self, X: dict, Y: pd.Series, group_ids: Optional[pd.Series]):
 
         self._should_continue()
 
+        selector.LR_SEARCH = True
+
         for estimator in self.estimators_lr:
             for param in estimator.hyperparameter_space():
-                if "output_size" in param.name:
+                if "latent_representation" in param.name:
                     choices = param.choices
-
-                    for output_size in choices:
+                    for latent_repr in choices:
                         self.search_best_args_for_lr_estimator(
-                            estimator, X, Y, output_size, group_ids
+                            estimator, X, Y, latent_repr, group_ids
                         )
+
+        selector.LR_SEARCH = False
 
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def search(
@@ -455,10 +447,14 @@ class MultimodalClassifierSeeker:
         """
         self._should_continue()
 
+        selector.LR_SEARCH = True
+
         search_results = [
             self.search_best_args_for_estimator(estimator, X, Y, group_ids)
             for estimator in self.estimators
         ]
+
+        selector.LR_SEARCH = False
 
         all_scores = []
         all_args = []
@@ -467,7 +463,25 @@ class MultimodalClassifierSeeker:
         for idx, (best_scores, best_args) in enumerate(search_results):
             best_idx = np.argmax(best_scores)
             all_scores.append(best_scores[best_idx])
-            all_args.append(best_args[best_idx])
+            best_args_ = best_args[best_idx]
+            size = None
+            for arg in best_args_.keys():
+                if "image_reduction." in arg:
+                    image_reduction = ".".join(arg.split(".")[0:-1])
+                    image_reduction_name = image_reduction.split(".")[-1]
+                    if best_args_.get(image_reduction + ".latent_representation", None):
+                        size = str(
+                            best_args_[image_reduction + ".latent_representation"]
+                        )
+                    break
+            if size and self.best_representation.get(
+                image_reduction_name + "." + size, None
+            ):
+                for arg, value in self.best_representation.get(
+                    image_reduction_name + "." + size
+                ).items():
+                    best_args_.update({image_reduction + "." + arg: value})
+            all_args.append(best_args_)
             all_estimators.append(self.estimators[idx])
             log.info(
                 f"Evaluation for {self.estimators[idx].name()} scores: {max(best_scores)}."
@@ -484,33 +498,9 @@ class MultimodalClassifierSeeker:
             log.info(
                 f"Selected score {score}: {all_estimators[pos_est].name()} : {all_args[pos_est]}"
             )
-
-            # TODO: issue when the no argument is the best
-            #       Because even though best default argument might be the best, the best learning representation
-            #       parameters might be different. The solution is to extract the default argument from the image
-            #       reduction
-            best_representation_params = {}
-            for key in all_args[pos_est].keys():
-                if "image_reduction" in key.split(".")[1]:
-                    image_reduction = key.split(".")[2]
-                    search_str = f"preprocessor.image_reduction.{image_reduction}."
-                    size_str = "output_size"
-                    size = all_args[pos_est].get(search_str + size_str)
-                    best_representation_params = self.best_representation.get(
-                        image_reduction + "." + str(size)
-                    )
-                    break
-
-            if best_representation_params:
-                for param, value in best_representation_params.items():
-                    all_args[pos_est].update({search_str + param: value})
-
             model = all_estimators[pos_est].get_multimodal_pipeline_from_named_args(
                 **all_args[pos_est]
             )
-
-            print("best combination", **all_args[pos_est])
-
             result.append(model)
 
         return result

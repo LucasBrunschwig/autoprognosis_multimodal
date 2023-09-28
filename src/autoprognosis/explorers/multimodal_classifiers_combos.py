@@ -388,6 +388,9 @@ class MultimodalEnsembleSeeker:
                 best_tabular_models = [best_tabular_models]
             best_models = best_tabular_models + best_image_models
 
+            if X.get("lr", None):
+                X.pop("lr")
+
             scores = []
             ensembles: list = []
 
@@ -451,7 +454,7 @@ class MultimodalEnsembleSeeker:
         # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
 
-            # Find the optimal configuration for different latent representation sizes
+            # Find the optimal configuration for different latent representations
             self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
             # Pretrain optimal latent representation
             self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
