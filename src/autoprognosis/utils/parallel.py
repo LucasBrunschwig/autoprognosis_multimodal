@@ -16,6 +16,16 @@ def n_opt_jobs() -> int:
     return n_jobs
 
 
+def n_opt_image_jobs() -> int:
+    try:
+        n_jobs = int(os.environ["N_OPT_IMG_JOBS"])
+    except BaseException as e:
+        log.debug(f"failed to get N_IMG_JOBS {e}")
+        n_jobs = 1
+    log.debug(f"Using {n_jobs} cores for image HP")
+    return n_jobs
+
+
 def n_learner_jobs() -> int:
     try:
         n_jobs = int(os.environ["N_LEARNER_JOBS"])
