@@ -1,6 +1,6 @@
 # stdlib
 import time
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 # third party
 import numpy as np
@@ -15,6 +15,8 @@ import autoprognosis.plugins.prediction.classifiers.base as base
 from autoprognosis.plugins.utils.custom_dataset import (
     TestImageDataset,
     TrainingImageDataset,
+    build_data_augmentation_strategy,
+    data_augmentation_strategies,
 )
 from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.distributions import enable_reproducible_results
@@ -56,11 +58,13 @@ NONLIN = {
 }
 
 initialization_methods = {
+    "": None,
     "kaiming_normal": torch.nn.init.kaiming_normal_,
     "xavier_uniform": torch.nn.init.xavier_uniform_,
     "xavier_normal": torch.nn.init.xavier_normal_,
     "orthogonal": torch.nn.init.orthogonal_,
 }
+initialization_methods_list = list(initialization_methods.keys())
 
 
 def initialize_weights(module, init_method_weight="kaiming_normal", model_name="relu"):
@@ -192,12 +196,10 @@ class ConvNetPredefined(nn.Module):
                     [
                         nn.Linear(n_intermediate, latent_representation),
                         nn.BatchNorm1d(latent_representation),
-                        NL(inplace=True),
-                        nn.Dropout(p=0.5, inplace=False),
                     ]
                 )
                 additional_layers.append(nn.Linear(latent_representation, n_classes))
-                additional_layers[-5].bias.requires_grad = False
+                additional_layers[-3].bias.requires_grad = False
             else:
                 additional_layers.append(nn.Linear(n_intermediate, n_classes))
         else:
@@ -297,7 +299,6 @@ class ConvNetPredefined(nn.Module):
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
-        test_size = min(test_size, 300)
         train_size = len(dataset) - test_size
 
         train_dataset, test_dataset = torch.utils.data.random_split(
@@ -461,8 +462,7 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
-        conv_net: str = "alexnet",
-        transformation: transforms.Compose = None,
+        conv_name: str = "alexnet",
         normalisation: bool = "channel-wise",
         non_linear: str = "relu",
         replace_classifier: bool = False,
@@ -472,7 +472,7 @@ class CNNPlugin(base.ClassifierPlugin):
         n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 10,
-        data_augmentation: bool = False,
+        data_augmentation: Union[str, transforms.Compose] = None,
         weighted_cross_entropy: bool = False,
         n_additional_layers: int = 2,
         patience: int = 10,
@@ -492,7 +492,7 @@ class CNNPlugin(base.ClassifierPlugin):
             n_iter = 5 * int(hyperparam_search_iterations)
 
         # CNN Architecture
-        self.conv_net = conv_net
+        self.conv_name = conv_name
         self.replace_classifier = replace_classifier
         self.non_linear = non_linear
         self.n_classes = None  # Defined during training
@@ -514,15 +514,15 @@ class CNNPlugin(base.ClassifierPlugin):
         self.clipping_value = clipping_value
 
         # Data Augmentation
-        self.transformation = transformation
-        self.preprocess = None
-        self.data_augmentation = data_augmentation
+        self.preprocess = None  # defined during training
+        self.data_augmentation = build_data_augmentation_strategy(data_augmentation)
 
+        # Ensure the baseline is consistent with selected architecture
         if (
             predefined_args.get("predefined_cnn", None)
             and len(predefined_args["predefined_cnn"]) > 0
         ):
-            self.conv_net = predefined_args["predefined_cnn"][0]
+            self.conv_name = predefined_args["predefined_cnn"][0]
 
     @staticmethod
     def name() -> str:
@@ -541,93 +541,33 @@ class CNNPlugin(base.ClassifierPlugin):
 
         return [
             # CNN Architecture
-            params.Categorical("conv_net", CNN),
+            params.Categorical("conv_name", CNN),
             params.Integer("n_additional_layers", 0, 3),
             params.Categorical("replace_classifier", [True, False]),
             # Training
             params.Integer("lr", 0, 5),
-            params.Categorical(
-                "initialization_method",
-                ["", "kaiming_normal", "xavier_uniform", "xavier_normal", "orthogonal"],
-            ),
+            params.Categorical("init_method", initialization_methods_list),
             params.Categorical("normalisation", ["channel-wise", "pixel-wise"]),
             params.Categorical("weighted_cross_entropy", [True, False]),
             params.Categorical("clipping_value", [0, 1]),
             # Data Augmentation
-            params.Categorical(
-                "data_augmentation",
-                [
-                    "",
-                    "autoaugment_cifar10",
-                    "autoaugment_imagenet",
-                    "rand_augment",
-                    "trivial_augment",
-                    "simple_strategy",
-                    "color_jittering",
-                    "gaussian_noise",
-                ],
-            ),
+            params.Categorical("data_augmentation", data_augmentation_strategies),
         ]
 
-    def normalisation_values(self, X: pd.DataFrame):
+    def compute_normalisation_values(self, X: pd.DataFrame):
         local_X = self.image_to_tensor(X.copy())
 
         if self.normalisation == "channel-wise":
             self.mean = torch.mean(local_X, dim=(0, 2, 3)).tolist()
             self.std = torch.std(local_X, dim=(0, 2, 3)).tolist()
-
         elif self.normalisation == "pixel-wise":
             self.mean = float(torch.mean(local_X))
             self.std = float(torch.std(local_X))
         else:
             raise ValueError("Unknown normalization type")
 
-    def image_transform(self):
-        if self.data_augmentation:
-            if self.data_augmentation == "autoaugment_imagenet":
-                self.transforms = [
-                    transforms.AutoAugment(
-                        policy=transforms.AutoAugmentPolicy.IMAGENET
-                    ),
-                ]
-            elif self.data_augmentation == "autoaugment_cifar10":
-                self.transforms = [
-                    transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
-                ]
-            elif self.data_augmentation == "rand_augment":
-                self.transforms = [transforms.RandAugment()]
-            elif self.data_augmentation == "trivial_augment":
-                self.transforms = [transforms.TrivialAugmentWide()]
-            elif self.data_augmentation in [
-                "simple_strategy",
-                "color_jittering",
-                "gaussian_noise",
-            ]:
-                self.transforms = [
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomVerticalFlip(),
-                    transforms.RandomResizedCrop(224),
-                    transforms.RandomRotation(10),
-                ]
-                if self.data_augmentation == "color_jittering":
-                    self.transforms.append(
-                        transforms.ColorJitter(
-                            brightness=0.05, contrast=0.05, saturation=0.05
-                        )
-                    )
-                elif self.data_augmentation == "gaussian_noise":
-                    self.transforms.append(transforms.GaussianBlur(3, sigma=(0.1, 0.5)))
-            else:
-                raise ValueError(
-                    f"Unknown Data Augmentation Strategy: {self.data_augmentation}"
-                )
-
-            self.transforms_compose = transforms.Compose(self.transforms)
-
-        else:
-            self.transforms_compose = None
-
-        self.preprocess = transforms.Compose(
+    def image_preprocess(self):
+        return transforms.Compose(
             [
                 transforms.Resize(self.size),
                 transforms.ToTensor(),
@@ -649,15 +589,15 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
 
-        self.normalisation_values(X)
-        self.image_transform()
+        self.compute_normalisation_values(X)
+        self.preprocess = self.image_preprocess()
 
         # Preprocess Data
         self.n_classes = np.unique(y).shape[0]
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefined(
-            model_name=self.conv_net,
+            model_name=self.conv_name,
             n_classes=self.n_classes,
             n_additional_layers=self.n_additional_layers,
             lr=self.lr,
@@ -669,7 +609,7 @@ class CNNPlugin(base.ClassifierPlugin):
             patience=self.patience,
             batch_size=self.batch_size,
             weight_decay=self.weight_decay,
-            transformation=self.transforms_compose,
+            transformation=self.data_augmentation,
             preprocess=self.preprocess,
             clipping_value=self.clipping_value,
             replace_classifier=self.replace_classifier,
@@ -770,7 +710,7 @@ class CNNPlugin(base.ClassifierPlugin):
         return save_model(self)
 
     def get_conv_name(self):
-        return self.conv_net
+        return self.conv_name
 
     @classmethod
     def load(cls, buff: bytes) -> "CNNPlugin":
