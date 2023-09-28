@@ -632,7 +632,10 @@ class Stacking(BaseAggregator):
         self._backup_encoders = {}
 
         for col in X.columns:
-            if X[col].dtype.name not in ["object", "category"]:
+            if (
+                X[col].dtype.name not in ["object", "category"]
+                or not X[col].apply(lambda x: isinstance(x, (str, int, float))).sum()
+            ):
                 continue
 
             values = list(X[col].unique())
@@ -646,8 +649,12 @@ class Stacking(BaseAggregator):
         y = self.target_encoder.transform(y)
 
         # Validate inputs X and y
-        X, y = check_X_y(X, y, force_all_finite=False)
-        X = check_array(X, force_all_finite=False)
+        if self.base_estimators[0].modality_type() == TABULAR_KEY:
+            X, y = check_X_y(X, y, force_all_finite=False)
+            X = check_array(X, force_all_finite=False)
+        else:
+            X = X.to_numpy()
+
         self._set_n_classes(y)
 
         n_samples = X.shape[0]
@@ -677,7 +684,10 @@ class Stacking(BaseAggregator):
 
                 # train the classifier
                 clf = copy.deepcopy(raw_clf)
-                clf.fit(X_train, y_train)
+                if clf.modality_type() == TABULAR_KEY:
+                    clf.fit(X_train, y_train)
+                else:
+                    clf.fit(pd.DataFrame(X_train), y_train)
 
                 # generate the new features on the pseudo test set
                 if self.use_proba:
@@ -768,7 +778,8 @@ class Stacking(BaseAggregator):
                 inf_values
             )
 
-        X = check_array(X, force_all_finite=False)
+        if self.base_estimators[0].modality_type() == TABULAR_KEY:
+            X = check_array(X, force_all_finite=False)
         n_samples = X.shape[0]
 
         # initialize matrix for storing newly generated features
@@ -921,7 +932,12 @@ class SimpleClassifierAggregator(BaseAggregator):
         self._backup_encoders = {}
 
         for col in X.columns:
-            if X[col].dtype.name not in ["object", "category"]:
+            if (
+                X[col].dtype.name not in ["object", "category"]
+                or not X[col]
+                .apply(lambda x: isinstance(x, (str, int, float, bool)))
+                .sum()
+            ):
                 continue
 
             values = list(X[col].unique())
@@ -935,8 +951,10 @@ class SimpleClassifierAggregator(BaseAggregator):
         y = self.target_encoder.transform(y)
 
         # Validate inputs X and y
-        X, y = check_X_y(X, y, force_all_finite=False)
-        X = check_array(X, force_all_finite=False)
+        if self.base_estimators[0].modality_type() == TABULAR_KEY:
+            X, y = check_X_y(X, y, force_all_finite=False)
+            X = check_array(X, force_all_finite=False)
+
         self._set_n_classes(y)
 
         if self.pre_fitted:
@@ -1060,8 +1078,8 @@ class SimpleClassifierAggregator(BaseAggregator):
             X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
                 inf_values
             )
-
-        X = check_array(X, force_all_finite=False)
+        if self.base_estimators[0].modality_type() == TABULAR_KEY:
+            X = check_array(X, force_all_finite=False)
 
         all_scores = np.zeros([X.shape[0], self.n_base_estimators_])
 
@@ -1177,7 +1195,9 @@ class SimpleClassifierAggregator(BaseAggregator):
                 inf_values
             )
 
-        X = check_array(X, force_all_finite=False)
+        if self.base_estimators[0].modality_type() == TABULAR_KEY:
+            X = check_array(X, force_all_finite=False)
+
         all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
 
         for i in range(self.n_base_estimators_):
