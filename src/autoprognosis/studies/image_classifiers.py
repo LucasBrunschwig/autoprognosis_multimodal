@@ -346,7 +346,7 @@ class ImageClassifierStudy(Study):
             best_score = metrics["raw"][self.metric][0]
             best_model = current_model
 
-            log.error(
+            log.info(
                 f"Best ensemble so far: {best_model.name()} with score {metrics['raw'][self.metric]}"
             )
 
@@ -370,8 +370,5 @@ class ImageClassifierStudy(Study):
         self.Y = pd.Series(self.Y).reset_index(drop=True)
 
         model.fit(self.X, self.Y)
-
-        # TMP LUCAS
-        save_model_to_file(self.output_train_file, model)
 
         return model

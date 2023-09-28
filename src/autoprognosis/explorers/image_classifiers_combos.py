@@ -18,7 +18,12 @@ from autoprognosis.explorers.core.defaults import (
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
 from autoprognosis.hooks import DefaultHooks, Hooks
 import autoprognosis.logger as log
-from autoprognosis.plugins.ensemble.classifiers import BaseEnsemble, WeightedEnsemble
+from autoprognosis.plugins.ensemble.classifiers import (
+    AggregatingEnsemble,
+    BaseEnsemble,
+    StackingEnsemble,
+    WeightedEnsemble,
+)
 from autoprognosis.utils.tester import evaluate_estimator
 
 # autoprognosis relative
@@ -60,6 +65,8 @@ class ImageEnsembleSeeker:
             Specify if you require image preprocessing optimization
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+            Available retrieved using `Classifiers(category="image").list_available()`
+                - 'vision_transformers'
                 - 'cnn'
                 - 'cnn_fine_tune
         image_processing: list.
@@ -222,9 +229,55 @@ class ImageEnsembleSeeker:
     ) -> BaseEnsemble:
         self._should_continue()
 
-        best_model = self.seeker.search(X, Y, group_ids=group_ids)
+        best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
         if self.hooks.cancel():
             raise StudyCancelled("Classifier search cancelled")
 
-        return best_model
+        scores = []
+        ensembles: list = []
+
+        try:
+            stacking_ensemble = StackingEnsemble(best_models, keep_original=False)
+            stacking_ens_score = evaluate_estimator(
+                stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+            )["raw"][self.metric][0]
+            log.info(
+                f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
+            )
+            scores.append(stacking_ens_score)
+            ensembles.append(stacking_ensemble)
+        except BaseException as e:
+            log.info(f"StackingEnsemble failed {e}")
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        try:
+            aggr_ensemble = AggregatingEnsemble(best_models)
+            aggr_ens_score = evaluate_estimator(
+                aggr_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
+            )["raw"][self.metric][0]
+            log.info(
+                f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
+            )
+
+            scores.append(aggr_ens_score)
+            ensembles.append(aggr_ensemble)
+        except BaseException as e:
+            log.info(f"AggregatingEnsemble failed {e}")
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        weighted_ensemble, weighted_ens_score = self.search_weights(
+            best_models, X, Y, group_ids=group_ids
+        )
+        log.info(
+            f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
+        )
+
+        scores.append(weighted_ens_score)
+        ensembles.append(weighted_ensemble)
+
+        return ensembles[np.argmax(scores)]
