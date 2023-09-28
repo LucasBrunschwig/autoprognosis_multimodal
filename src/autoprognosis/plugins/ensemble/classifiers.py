@@ -464,6 +464,7 @@ class StackingEnsemble(BaseEnsemble):
         explainer_plugins: list = [],
         explanations_nepoch: int = 10000,
         use_proba: bool = False,
+        keep_original: bool = True,
     ) -> None:
         super().__init__()
 
@@ -494,6 +495,7 @@ class StackingEnsemble(BaseEnsemble):
                 models,
                 meta_clf=meta_model,
                 use_proba=use_proba,
+                keep_original=keep_original,
             )
 
     def is_fitted(self) -> bool:
@@ -507,7 +509,6 @@ class StackingEnsemble(BaseEnsemble):
         self.clf.fit(X, Y)
 
         self.explainers = {}
-        # TODO: make explainers works with multimodal
         for exp in self.explainer_plugins:
             self.explainers[exp] = Explainers().get(
                 exp,
