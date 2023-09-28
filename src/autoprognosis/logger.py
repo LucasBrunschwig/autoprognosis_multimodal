@@ -8,6 +8,13 @@ from loguru import logger
 
 LOG_FORMAT = "[{time}][{process.id}][{level}] {message}"
 
+LOG_FORMAT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss}</green>|"
+    "<level>{level}</level>| "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+    "<level>{message}</level>"
+)
+
 logger.remove()
 DEFAULT_SINK = "autoprognosis_{time}.log"
 
@@ -26,7 +33,7 @@ def add(
             sink=sink,
             format=LOG_FORMAT,
             enqueue=True,
-            colorize=False,
+            colorize=True,
             diagnose=True,
             backtrace=True,
             rotation="10 MB",
@@ -63,8 +70,6 @@ def create_log_and_print_function(level: str) -> Callable:
             method = getattr(logger.opt(lazy=True), level, None)
             if method is not None:
                 method(*args, **kwargs)
-                if level in ["info", "error"]:
-                    print(*args)
             else:
                 logger.debug(*args, **kwargs)
         except BaseException as e:
