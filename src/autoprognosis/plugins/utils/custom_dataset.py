@@ -124,6 +124,68 @@ class TestImageDataset(Dataset):
         return image
 
 
+class TestMultimodalDataset(Dataset):
+    def __init__(self, data_tensor_tab, data_image, weight_transform):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (pd.DataFrame): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.weight_transform = weight_transform
+        self.image = data_image.squeeze(axis=1)
+        self.tab = data_tensor_tab
+
+    def __len__(self):
+        return len(self.image)
+
+    def __getitem__(self, index):
+        image, tab = self.image.iloc[index], self.tab[index]
+
+        image = self.weight_transform(image)
+
+        return tab, image
+
+
+class TrainingMultimodalDataset(Dataset):
+    def __init__(
+        self,
+        data_tensor_tab: torch.Tensor,
+        data_image: pd.DataFrame,
+        target_tensor: torch.Tensor,
+        weight_transform,
+        transform: torchvision.transforms.Compose = None,
+    ):
+        """
+        CustomDataset constructor.
+
+        Args:
+        images (pd.DataFrame): List of image tensors, where each tensor rows represent an image.
+        labels (torch.Tensor): Tensor containing the labels corresponding to the images.
+        transform (callable, optional): Optional transformations to be applied to the images. Default is None.
+        """
+        self.transform = transform
+        self.weight_transform = weight_transform
+        self.image = data_image.squeeze()
+        self.tab = data_tensor_tab
+        self.target = target_tensor
+
+    def __len__(self):
+        return len(self.image)
+
+    def __getitem__(self, index):
+        image, tab, label = self.image.iloc[index], self.tab[index], self.target[index]
+
+        if self.transform:
+            image = self.transform(image)
+
+        image = self.weight_transform(image)
+
+        return tab, image, label
+
+
 def build_data_augmentation_strategy(
     data_augmentation_: Union[str, transforms.Compose, None] = None
 ) -> Union[torchvision.transforms.Compose, None]:
