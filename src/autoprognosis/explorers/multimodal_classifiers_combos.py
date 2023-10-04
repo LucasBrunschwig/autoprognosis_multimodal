@@ -198,7 +198,7 @@ class MultimodalEnsembleSeeker:
         self.multimodal_type = multimodal_type
         self.multimodal_key = multimodal_key
 
-        # In case of early/intermediate fusion use both modality type
+        # In case of early/intermediate fusion one model for all modalities
         if self.multimodal_type in ["early_fusion", "intermediate_fusion"]:
             self.seeker = MultimodalClassifierSeeker(
                 study_name,
@@ -386,179 +386,96 @@ class MultimodalEnsembleSeeker:
                 best_image_models = [best_image_models]
             if not isinstance(best_tabular_models, list):
                 best_tabular_models = [best_tabular_models]
+
             best_models = best_tabular_models + best_image_models
-
-            if X.get("lr", None):
-                X.pop("lr")
-
-            scores = []
-            ensembles: list = []
-
-            try:
-                stacking_ensemble = StackingEnsemble(
-                    best_models, meta_model=best_models[0], use_proba=True
-                )
-                stacking_ens_score = evaluate_multimodal_estimator(
-                    stacking_ensemble,
-                    X,
-                    Y,
-                    self.n_folds_cv,
-                    group_ids=group_ids,
-                )["raw"][self.metric][0]
-                log.info(
-                    f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
-                )
-                scores.append(stacking_ens_score)
-                ensembles.append(stacking_ensemble)
-            except BaseException as e:
-                log.info(f"StackingEnsemble failed {e}")
-
-            if self.hooks.cancel():
-                raise StudyCancelled("Classifier search cancelled")
-
-            try:
-                aggr_ensemble = AggregatingEnsemble(best_models)
-                aggr_ens_score = evaluate_multimodal_estimator(
-                    aggr_ensemble,
-                    X,
-                    Y,
-                    n_folds=self.n_folds_cv,
-                    group_ids=group_ids,
-                )["raw"][self.metric][0]
-                log.info(
-                    f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
-                )
-                scores.append(aggr_ens_score)
-                ensembles.append(aggr_ensemble)
-            except BaseException as e:
-                log.info(f"AggregatingEnsemble failed {e}")
-
-            if self.hooks.cancel():
-                raise StudyCancelled("Classifier search cancelled")
-
-            weighted_ensemble, weighted_ens_score = self.search_weights(
-                best_models, X, Y, group_ids=group_ids
-            )
-            log.info(
-                f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
-            )
-
-            scores.append(weighted_ens_score)
-            ensembles.append(weighted_ensemble)
-
-            if self.hooks.cancel():
-                raise StudyCancelled("Classifier search cancelled")
-
-            return ensembles[np.argmax(scores)]
 
         # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
 
             # Find the optimal configuration for different latent representations
             self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
+
             # Pretrain optimal latent representation
             self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
 
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
-            scores = []
-            ensembles = []
-            if len(best_models) > 1:
-                for model in best_models:
-                    try:
-                        results = evaluate_multimodal_estimator(
-                            model,
-                            X,
-                            Y,
-                            n_folds=self.n_folds_cv,
-                            group_ids=group_ids,
-                        )
-                        model_score = results["raw"][self.metric][0]
-
-                        log.info(f"Model: {model.name()} --> {model_score}")
-
-                        for name, metric in results["str"].items():
-                            log.info(f"{name} {metric}")
-
-                        ensembles.append(model)
-                        scores.append(model_score)
-                    except Exception as e:
-                        log.error(f"Could not be fitted: {model.name()} - {e}")
-
-                if self.hooks.cancel():
-                    raise StudyCancelled("Classifier search cancelled")
-
-                weighted_ensemble, weighted_ens_score = self.search_weights(
-                    best_models, X, Y, group_ids=group_ids
-                )
-
-                log.info(
-                    f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
-                )
-
-                scores.append(weighted_ens_score)
-                ensembles.append(weighted_ensemble)
-
-                return ensembles[np.argmax(scores)]
-
-            else:
-                return best_models[0]
+            # Remove pre-computed LR
+            if X.get("lr", None):
+                X.pop("lr")
 
         # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
 
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
-            if not isinstance(best_models, list):
-                best_models = [best_models]
-
-            if self.hooks.cancel():
-                raise StudyCancelled("Classifier search cancelled")
-
-            ensembles = []
-            scores = []
-
-            if len(best_models) > 1:
-                for model in best_models:
-                    try:
-                        results = evaluate_multimodal_estimator(
-                            model,
-                            X,
-                            Y,
-                            n_folds=self.n_folds_cv,
-                            group_ids=group_ids,
-                        )
-                        model_score = results["raw"][self.metric][0]
-
-                        log.info(f"Model: {model.name()} --> {model_score}")
-
-                        for name, metric in results["str"].items():
-                            log.info(f"{name} {metric}")
-
-                        ensembles.append(model)
-                        scores.append(model_score)
-                    except Exception as e:
-                        log.error(f"Could not be fitted: {model.name()} - {e}")
-
-                if self.hooks.cancel():
-                    raise StudyCancelled("Classifier search cancelled")
-
-                weighted_ensemble, weighted_ens_score = self.search_weights(
-                    best_models, X, Y, group_ids=group_ids
-                )
-
-                log.info(
-                    f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
-                )
-
-                scores.append(weighted_ens_score)
-                ensembles.append(weighted_ensemble)
-
-                return ensembles[np.argmax(scores)]
-            else:
-                return best_models[0]
-
         else:
             raise ValueError(
                 f"This type of multimodal study does not exist: {self.multimodal_type}"
             )
+
+        if not isinstance(best_models, list):
+            best_models = [best_models]
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        scores = []
+        ensembles: list = []
+
+        try:
+            stacking_ensemble = StackingEnsemble(
+                best_models, meta_model=best_models[0], use_proba=True
+            )
+            stacking_ens_score = evaluate_multimodal_estimator(
+                stacking_ensemble,
+                X,
+                Y,
+                self.n_folds_cv,
+                group_ids=group_ids,
+            )["raw"][self.metric][0]
+            log.info(
+                f"Stacking ensemble: {stacking_ensemble.name()} --> {stacking_ens_score}"
+            )
+            scores.append(stacking_ens_score)
+            ensembles.append(stacking_ensemble)
+        except BaseException as e:
+            log.info(f"StackingEnsemble failed {e}")
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        try:
+            aggr_ensemble = AggregatingEnsemble(best_models)
+            aggr_ens_score = evaluate_multimodal_estimator(
+                aggr_ensemble,
+                X,
+                Y,
+                n_folds=self.n_folds_cv,
+                group_ids=group_ids,
+            )["raw"][self.metric][0]
+            log.info(
+                f"Aggregating ensemble: {aggr_ensemble.name()} --> {aggr_ens_score}"
+            )
+            scores.append(aggr_ens_score)
+            ensembles.append(aggr_ensemble)
+        except BaseException as e:
+            log.info(f"AggregatingEnsemble failed {e}")
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        weighted_ensemble, weighted_ens_score = self.search_weights(
+            best_models, X, Y, group_ids=group_ids
+        )
+        log.info(
+            f"Weighted ensemble: {weighted_ensemble.name()} -> {weighted_ens_score}"
+        )
+
+        scores.append(weighted_ens_score)
+        ensembles.append(weighted_ensemble)
+
+        if self.hooks.cancel():
+            raise StudyCancelled("Classifier search cancelled")
+
+        return ensembles[np.argmax(scores)]
