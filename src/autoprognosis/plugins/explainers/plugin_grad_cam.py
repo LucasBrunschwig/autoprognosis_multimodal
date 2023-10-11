@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 # third party
 import cv2
@@ -25,15 +25,14 @@ for retry in range(2):
         install(depends)
 
 
-def get_last_conv_layer_before_classifier(
-    model, input_size, model_name, architecture_name
-):
+def get_last_conv_layer_before_classifier(model, input_size):
+    input_size = (3, input_size, input_size)
 
-    if architecture_name.split(">")[-1] == "metablock":
-        return "combination"
+    features = nn.Sequential(*list(model.children())[:-1]).cpu()
+    features.eval()
 
-    model.eval()  # Set the model to evaluation mode
-    model.cpu()  # Set the model to cpu if it was trained on cuda
+    for name, layer in reversed(list(features.named_children())):
+        print(name, layer)
 
     # Register hooks to store activations in each layer
     activations = {}
@@ -56,23 +55,23 @@ def get_last_conv_layer_before_classifier(
     # Forward pass to collect activations
     input_tensor = torch.rand(*input_size).unsqueeze(0)
     with torch.no_grad():
-
         model(input_tensor)
 
     # Remove hooks
     for hook in hooks:
         hook.remove()
 
-    # TODO: select the correct layer for other architecture
-    if model_name in ["alexnet"]:
-        last_conv_layer = list(activations.keys())[-1]
-    elif model_name in ["resnet50"]:
-        last_conv_layer = list(activations.keys())[-2]
-
-    return last_conv_layer
+    for layer_name, activation in reversed(list(activations.items())):
+        if activation.shape[-1] < 2:
+            continue
+        return layer_name
 
 
 class GradCAM:
+    """
+    Grad-CAM++ class, computes the explainable maps given an image model
+    """
+
     def __init__(
         self,
         classifier: Any,
@@ -85,22 +84,22 @@ class GradCAM:
         self.handles = None
         self.target_layer = None
 
-    def register_hooks(
-        self,
-    ):
+    def register_hooks(self, target_layer):
         def backward_hook(module, grad_input, grad_output):
             self.gradient = grad_output[0]
 
         def forward_hook(module, input, output_):
             self.activations = output_
 
-        target_layer = self.target_layer
-        target_module = self.model._modules.get(target_layer)
+        def get_layer(model, layer_str):
+            layers = layer_str.split(".")
+            for layer in layers:
+                model = getattr(model, layer)
+            return model
 
-        # Retain the backpropagation gradients of the selected layer
+        target_module = get_layer(self.model, target_layer)
+
         backward_handle = target_module.register_backward_hook(backward_hook)
-
-        # Retain the activation maps of the selected layers
         forward_handle = target_module.register_forward_hook(forward_hook)
 
         self.handles = [backward_handle, forward_handle]
@@ -111,24 +110,15 @@ class GradCAM:
         self.handles = []
 
     def generate_cam_plusplus(self, input_image, target_class, target_layer):
-        self.target_layer = target_layer
-        self.register_hooks()
+        self.register_hooks(target_layer)
         self.model.zero_grad()
 
         output = self.classifier.predict_proba_tensor(input_image)
         target = output[:, target_class]
         target.backward()
 
-        gradients = self.gradient[0]  # Get gradients
-        gradients = gradients.detach().cpu().numpy()
-        activations = self.activations  # Get activations
-        activations = activations.detach().cpu().numpy()
-
-        # Metablock returns flattened feature maps
-        # TODO: adapt for each architecture (dict = {"alexnet": (1, 256, 6, 6)}
-        if len(activations.shape) != 4:
-            activations = activations.reshape(1, 256, 6, 6)
-            gradients = gradients.reshape(256, 6, 6)
+        gradients = self.gradient[0].detach().cpu().numpy()
+        activations = self.activations.detach().cpu().numpy()
 
         grads_power_2 = gradients**2
         grads_power_3 = grads_power_2 * gradients
@@ -162,40 +152,20 @@ class GradCAM:
 
         return cam
 
-    def generate_cam(self, input_image, target_class, target_layer):
 
-        self.target_layer = target_layer
-        self.register_hooks()
-        self.model.zero_grad()
-
-        output = self.classifier.predict_proba_tensor(input_image)
-        target = output[:, target_class]
-        target.backward()
-
-        # Compute the gradient for each activation maps k and target class c d(y^c)/dA^k
-        gradients = self.gradient[0]
-        activations = self.activations[0]
-
-        weights = torch.mean(gradients, dim=(1, 2), keepdim=True)
-        cam = torch.sum(weights * activations, dim=0)
-        cam = nn.functional.relu(cam)
-
-        cam = cam.detach().cpu().numpy()
-        cam = cv2.resize(
-            cam, (input_image.squeeze()._size[0], input_image.squeeze()._size[1])
-        )
-        cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))
-
-        return cam
+TARGET_LAYER = {
+    "alexnet": "",
+    "resnet": "",
+}
 
 
 class GradCAMPlugin(ExplainerPlugin):
     """
-    Interpretability plugin based on grad-CAM
+    Interpretability plugin based on Grad-CAM++ maps
 
     Args:
         estimator: model. The model to explain.
-        X: dataframe. Training set
+        X: dataframe or dict. Training set
         y: dataframe. Training labels
         task_type: str. classification of risk_estimation
         prefit: bool. If true, the estimator won't be trained.
@@ -267,47 +237,7 @@ class GradCAMPlugin(ExplainerPlugin):
         else:
             raise ValueError("Not Implemented")
 
-    def explain(
-        self,
-        X: pd.DataFrame,
-        label: pd.DataFrame,
-        n_top: int = 1,
-        target_layer: Optional[str] = None,
-        best: bool = True,
-        indices: Optional[list] = None,
-    ) -> (dict, Any):
-
-        if target_layer is None:
-            # by default grad-cam will extract the last convolutional layer
-            input_size = self.classifier.get_size()
-            n_channel = 3
-            input_size = (n_channel, input_size, input_size)
-            target_layer = get_last_conv_layer_before_classifier(
-                self.classifier.get_image_model(),
-                input_size,
-                self.classifier.get_conv_name(),
-                self.estimator.name(),
-            )
-
-        label = pd.DataFrame(LabelEncoder().fit_transform(label))
-
-        results = {label_: [] for label_ in label.squeeze().unique()}
-
-        # Get the top n-highest score for each class
-        predictions = pd.DataFrame(self.estimator.predict_proba(X))
-        predictions["label"] = label.squeeze()
-        predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
-        predictions = predictions[["proba", "label"]]
-
-        if indices is None:
-            if best:
-                indices = predictions.groupby("label")["proba"].nlargest(n_top)
-            else:
-                indices = predictions.groupby("label")["proba"].nsmallest(n_top)
-        else:
-            for ix in indices.index:
-                indices.loc[ix] = predictions.loc[ix[1], "proba"]
-
+    def preprocess_data(self, X: Union[pd.DataFrame, dict]):
         if isinstance(X, dict):
             local_X = {
                 IMAGE_KEY: X[IMAGE_KEY].copy(),
@@ -318,7 +248,6 @@ class GradCAMPlugin(ExplainerPlugin):
                     local_X[TABULAR_KEY] = stage.transform(local_X[TABULAR_KEY])
                 elif stage.modality_type() == IMAGE_KEY:
                     local_X[IMAGE_KEY] = stage.transform(local_X[IMAGE_KEY])
-
         else:
             local_X = X.copy()
             local_X = pd.DataFrame(local_X)
@@ -327,7 +256,58 @@ class GradCAMPlugin(ExplainerPlugin):
             for stage in self.estimator.stages[:-1]:
                 local_X = stage.transform(local_X)
 
-        print(indices)
+        return local_X
+
+    @staticmethod
+    def superimpose_images(cam, orig):
+        # Superimpose Grad-CAM++ Maps and original image
+        cam = cv2.cvtColor(np.uint8(255 * cam), cv2.COLOR_RGB2BGR)
+        cam = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        cam = cv2.cvtColor(cam, cv2.COLOR_BGR2RGB)
+        if isinstance(orig, dict):
+            img_array = np.array(orig[IMAGE_KEY].squeeze())
+        else:
+            img_array = np.array(orig.squeeze())
+
+        alpha = 0.4
+        return alpha * cam + (1 - alpha) * img_array, img_array
+
+    def explain(
+        self,
+        X: Union[pd.DataFrame, dict],
+        label: pd.Series,
+        target_layer: Optional[str] = None,
+        n_top: Optional[int] = 3,
+    ) -> (dict, Any):
+        """Explain selected feature maps
+
+        X: pd.DataFrame, dict
+            Dataset used for explainable interpretation
+        label: pd.Series
+            labels
+        n_top (optional): int,
+            explain the n-top predictions for each class
+        target_layer (optional): str,
+            layer of the convolutional neural network to explain
+        """
+
+        target_layer = get_last_conv_layer_before_classifier(
+            self.classifier.get_image_model(), input_size=self.classifier.get_size()
+        )
+
+        label = pd.DataFrame(LabelEncoder().fit_transform(label))
+
+        results = {label_: [] for label_ in label.squeeze().unique()}
+
+        # Extract the n-top predictions for each class
+        predictions = pd.DataFrame(self.estimator.predict_proba(X))
+        predictions["label"] = label.squeeze()
+        predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
+        predictions = predictions[["proba", "label"]]
+        indices = predictions.groupby("label")["proba"].nlargest(n_top)
+
+        local_X = self.preprocess_data(X)
+
         for label_, ix in indices.index:
 
             if isinstance(local_X, dict):
@@ -338,22 +318,10 @@ class GradCAMPlugin(ExplainerPlugin):
             else:
                 local_X_single = local_X.iloc[ix]
 
-            # Generate CAM
-            cam_normalized = self.explainer.generate_cam_plusplus(
+            cam = self.explainer.generate_cam_plusplus(
                 local_X_single, label_, target_layer
             )
-            cam_normalized = cv2.cvtColor(
-                np.uint8(255 * cam_normalized), cv2.COLOR_RGB2BGR
-            )
-            cam_normalized = cv2.applyColorMap(cam_normalized, cv2.COLORMAP_JET)
-            cam_normalized = cv2.cvtColor(cam_normalized, cv2.COLOR_BGR2RGB)
-            if isinstance(local_X, dict):
-                img_array = np.array(local_X_single[IMAGE_KEY].squeeze())
-            else:
-                img_array = np.array(local_X_single.squeeze())
-
-            alpha = 0.4
-            superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
+            superposed_image, img_array = self.superimpose_images(cam, local_X_single)
             results[label_].append([img_array / 255.0, superposed_image / 255.0])
 
         return results, indices
@@ -361,55 +329,12 @@ class GradCAMPlugin(ExplainerPlugin):
     def plot(
         self,
         X: pd.DataFrame,
-        label: pd.DataFrame,
-        target_layer: str = None,
-        class_names: list = None,
-        best: bool = True,
+        label: pd.Series,
+        target_layer: Optional[str] = None,
+        class_names: Optional[list] = None,
     ) -> dict:
 
-        if target_layer is None:
-            # by default grad-cam will extract the last convolutional layer
-            input_size = self.estimator.stages[-1].get_size()
-            n_channels = 3
-            input_size = (n_channels, input_size, input_size)
-            target_layer = get_last_conv_layer_before_classifier(
-                self.estimator.stages[-1].get_model(),
-                input_size,
-                self.classifier.conv_net,
-            )
-
-        label = pd.DataFrame(LabelEncoder().fit_transform(label))
-
-        results = {label_: [] for label_ in label.squeeze().unique()}
-
-        # Get the top 2 highest score for each class
-        predictions = pd.DataFrame(self.estimator.predict_proba(X))
-        predictions["label"] = label.squeeze()
-        predictions["proba"] = predictions.apply(lambda d: d[d["label"]], axis=1)
-        predictions = predictions[["proba", "label"]]
-
-        if best:
-            indices = predictions.groupby("label")["proba"].nlargest(1)
-        else:
-            indices = predictions.groupby("label")["proba"].nsmallest(1)
-
-        for label_, ix in indices.index:
-            local_X = X.iloc[ix]
-
-            # Preprocess Data
-            local_X = pd.DataFrame(local_X)
-            for stage in self.estimator.stages[:-1]:
-                local_X = stage.transform(local_X)
-
-            # Generate CAM
-            cam_normalized = self.explainer.generate_cam(local_X, label_, target_layer)
-            cam_normalized = cv2.applyColorMap(
-                np.uint8(255 * cam_normalized), cv2.COLORMAP_JET
-            )
-            img_array = np.array(local_X.squeeze())
-            alpha = 0.4
-            superposed_image = alpha * cam_normalized + (1 - alpha) * img_array
-            results[label_].append([img_array / 255.0, superposed_image / 255.0])
+        results = self.explain(X, label, target_layer, n_top=1)
 
         fig, axes = plt.subplots(2, len(results), figsize=(6 * len(results), 12))
         for label, images in results.items():
@@ -431,8 +356,6 @@ class GradCAMPlugin(ExplainerPlugin):
         fig.text(0.06, 0.27, "Grad-CAM", ha="center", va="center", fontsize=17)
 
         plt.subplots_adjust(wspace=0.3, hspace=0.3)
-
-        return results
 
     def modality_type(self):
         return IMAGE_KEY
