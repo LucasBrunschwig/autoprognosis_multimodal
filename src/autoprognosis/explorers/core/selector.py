@@ -45,6 +45,9 @@ class PipelineSelector:
             list of fusion to sample from
         classifier_category: str
             task type: "classifier" or "risk_estimation"
+        multimodal_type: str,
+            type of multimodal fusion, None if unimodal
+        data_type: str,
 
     """
 
@@ -55,13 +58,12 @@ class PipelineSelector:
         imputers: List[str] = [],
         feature_scaling: List[str] = [],
         feature_selection: List[str] = [],
-        preprocess_images: bool = True,
+        preprocess_images: bool = False,
         image_processing: List[str] = [],
         image_dimensionality_reduction: List[str] = [],
-        multimodal_type: str = None,
         fusion: List[str] = [],
         classifier_category: str = "classifier",  # "classifier", "risk_estimation", "regression"
-        data_type: str = "tabular",
+        multimodal_type: str = None,
     ) -> None:
         self.calibration = calibration
         self.preprocess_image = preprocess_images
@@ -75,7 +77,6 @@ class PipelineSelector:
             Preprocessors(category="dimensionality_reduction").get_type(plugin)
             for plugin in feature_selection
         ]
-        self.image_processing = []
 
         self.image_dimensionality_reduction = [
             Preprocessors(category="image_reduction").get_type(plugin)
@@ -91,29 +92,25 @@ class PipelineSelector:
             ]
             self.feature_selection = []
 
-        if "intermediate" in classifier:
+        # To Discuss
+        # if self.preprocess_image:
+        #     self.image_processing = [
+        #         Preprocessors(category="image_processing").get_type(plugin)
+        #         for plugin in image_processing
+        #     ]
+        self.image_processing = image_processing
+        self.image_processing = []
+        self.preprocess_image = False
+
+        classifier_type = Predictions(category=classifier_category).model_type(
+            classifier
+        )
+        if classifier_type in ["multimodal", "image"]:  # can not be early fusion
+            self.image_dimensionality_reduction = []
             self.fusion = []
 
-        if self.preprocess_image:
-            self.image_processing = [
-                Preprocessors(category="image_processing").get_type(plugin)
-                for plugin in image_processing
-            ]
-
-        if classifier in ["intermediate_conv_net", "cnn_fine_tune", "cnn"]:
-            self.image_dimensionality_reduction = []
-            self.preprocess_image = False
-            self.image_processing = []
-
-        if multimodal_type == "early_fusion":
-            data_type = "tabular"
-        elif multimodal_type == "intermediate_fusion":
-            data_type = "multimodal"
-
-        self.data_type = data_type
-
         self.classifier = Predictions(
-            category=classifier_category, data_type=data_type
+            category=classifier_category,
         ).get_type(classifier)
 
     def _generate_dist_name(self, key: str, step: str = None) -> str:
@@ -370,9 +367,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
-            pipeline_args
-        )
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def get_image_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -415,9 +410,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
-            pipeline_args
-        )
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def get_multimodal_pipeline_from_named_args(self, **kwargs: Any) -> PipelineMeta:
         model_list = list()
@@ -516,9 +509,7 @@ class PipelineSelector:
         model_list.append(self.classifier.fqdn())
         add_stage_hp(self.classifier)
 
-        return Pipeline(model_list, self.multimodal_type, data_type=self.data_type)(
-            pipeline_args
-        )
+        return Pipeline(model_list, self.multimodal_type)(pipeline_args)
 
     def remove_tabular_processing(self):
         """This function removes the tabular processing steps if there are no tabular data"""
