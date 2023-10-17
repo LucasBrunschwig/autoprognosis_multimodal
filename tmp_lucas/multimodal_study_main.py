@@ -8,6 +8,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 # stdlib
 from datetime import datetime
 import os
+import sys
 
 # third party
 from loader import DataLoader
@@ -20,7 +21,10 @@ from autoprognosis.studies.multimodal_classifier import MultimodalStudy
 os.environ["N_LEARNER_JOBS"] = "1"
 os.environ["N_OPT_JOBS"] = "1"
 
+logger.add(sink=sys.stdout, level="INFO")
+
 logger.debug("Loading Images")
+
 
 if __name__ == "__main__":
 
@@ -41,7 +45,7 @@ if __name__ == "__main__":
     )
 
     # Study Name
-    multimodal_type = "late_fusion"
+    multimodal_type = "intermediate_fusion"
     study_name = multimodal_type + f"_{datetime.now().strftime('%Y-%m-%H')}"
     study = MultimodalStudy(
         study_name=study_name,
@@ -50,13 +54,12 @@ if __name__ == "__main__":
         image="image",  # the image column in the dataset
         multimodal_type=multimodal_type,
         sample_for_search=False,  # no Sampling
-        classifiers=["neural_nets"],
-        image_classifiers=["cnn_fine_tune"],
+        classifiers=["metablock", "intermediate_conv_net"],
         predefined_cnn=["alexnet"],
         n_folds_cv=5,
         num_iter=1,
         timeout=3600,
-        num_study_iter=10,
+        num_study_iter=1,
     )
 
     model = study.fit()
