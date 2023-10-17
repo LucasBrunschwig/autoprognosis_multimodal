@@ -11,7 +11,7 @@ from .base import PredictionPlugin  # noqa: F401,E402
 
 
 class Predictions:
-    def __init__(self, category: str = "classifier", data_type: str = "all") -> None:
+    def __init__(self, category: str = "classifier", data_type: str = "") -> None:
         self._category = category
 
         self._plugins: Union[Classifiers, RiskEstimation, Regression]
@@ -23,6 +23,10 @@ class Predictions:
 
     def list_available(self) -> List[str]:
         return self._plugins.list_available()
+
+    def model_type(self, name: str) -> str:
+        root = self._plugins.list_available_path()[name]
+        return root.split("/")[-2]
 
     def add(self, name: str, cls: Type) -> "Predictions":
         self._plugins.add(name, cls)

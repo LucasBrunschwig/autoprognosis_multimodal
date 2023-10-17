@@ -327,6 +327,9 @@ class PluginLoader:
     def list_available(self) -> List[str]:
         return list(self._available_plugins.keys())
 
+    def list_available_path(self) -> dict:
+        return self._available_plugins
+
     def types(self) -> List[Type]:
         return list(self._plugins.values())
 

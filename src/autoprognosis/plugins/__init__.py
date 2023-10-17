@@ -77,10 +77,10 @@ class Plugins:
         return None
 
 
-def group(names: List[str], data_type="all") -> Tuple[Type, ...]:
+def group(names: List[str]) -> Tuple[Type, ...]:
     res = []
 
-    plugins = Plugins(data_type=data_type)
+    plugins = Plugins()
     for fqdn in names:
         if "." not in fqdn:
             raise RuntimeError("invalid fqdn")
