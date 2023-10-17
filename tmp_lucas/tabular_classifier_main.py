@@ -8,6 +8,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 # stdlib
 from datetime import datetime
 import os
+import sys
 
 # third party
 from loader import DataLoader
@@ -19,6 +20,8 @@ from autoprognosis.studies.classifiers import ClassifierStudy
 
 os.environ["N_LEARNER_JOBS"] = "1"
 os.environ["N_OPT_JOBS"] = "1"
+
+logger.add(sink=sys.stdout, level="INFO")
 
 if __name__ == "__main__":
 
