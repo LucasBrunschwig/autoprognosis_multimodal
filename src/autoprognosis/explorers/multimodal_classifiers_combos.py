@@ -388,7 +388,6 @@ class MultimodalEnsembleSeeker:
 
             best_models = best_tabular_models + best_image_models
 
-        # Early fusion optimization
         elif self.multimodal_type == "early_fusion":
 
             # Find the optimal configuration for different latent representations
@@ -423,8 +422,13 @@ class MultimodalEnsembleSeeker:
         ensembles: list = []
 
         try:
+            if best_models[0].modality_type() == TABULAR_KEY:
+                meta_clf = best_models[0]
+            else:
+                meta_clf = None
+
             stacking_ensemble = StackingEnsemble(
-                best_models, meta_model=best_models[0], use_proba=True
+                best_models, meta_model=meta_clf, use_proba=True
             )
             stacking_ens_score = evaluate_multimodal_estimator(
                 stacking_ensemble,
