@@ -233,12 +233,12 @@ class MultimodalArchitecture(nn.Module):
         val_loss_best = 999999
         patience = 0
 
-        # # TMP LUCAS
-        # label_counts = torch.bincount(y)
-        # class_weights = 1. / label_counts.float()
-        # class_weights = class_weights / class_weights.sum()
-        # class_weights = class_weights.to(DEVICE)
-        # loss = nn.CrossEntropyLoss(weight=class_weights)
+        if self.weighted_cross_entropy:
+            label_counts = torch.bincount(y)
+            class_weights = 1.0 / label_counts.float()
+            class_weights = class_weights / class_weights.sum()
+            class_weights = class_weights.to(DEVICE)
+            loss = nn.CrossEntropyLoss(weight=class_weights)
         loss = nn.CrossEntropyLoss()
 
         for i in range(self.n_iter):

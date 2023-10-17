@@ -116,8 +116,6 @@ class ImageClassifierSeeker:
         self.study_name = study_name
         self.hooks = hooks
 
-        data_type = "image"
-
         self.estimators = [
             PipelineSelector(
                 plugin,
@@ -126,7 +124,6 @@ class ImageClassifierSeeker:
                 image_dimensionality_reduction=[],
                 image_processing=image_processing,
                 multimodal_type=multimodal_type,
-                data_type=data_type,
             )
             for plugin in classifiers
         ]

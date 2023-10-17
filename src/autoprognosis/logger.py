@@ -8,13 +8,6 @@ from loguru import logger
 
 LOG_FORMAT = "[{time}][{process.id}][{level}] {message}"
 
-LOG_FORMAT = (
-    "<green>{time:YYYY-MM-DD HH:mm:ss}</green>|"
-    "<level>{level}</level>| "
-    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-    "<level>{message}</level>"
-)
-
 logger.remove()
 DEFAULT_SINK = "autoprognosis_{time}.log"
 

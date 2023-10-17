@@ -339,10 +339,6 @@ class ClassifierStudy(Study):
                 eval_metrics[metric] = metrics["raw"][metric][0]
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
 
-            # TMP LUCAS
-            for metric, score_ in metrics["str"].items():
-                log.info(f"{metric} {score_}")
-
             self.hooks.heartbeat(
                 topic="classification_study",
                 subtopic="candidate",
@@ -395,6 +391,9 @@ class ClassifierStudy(Study):
     def fit(self) -> Any:
         """Run the study and train the model. The call returns the fitted model."""
         model = self.run()
+
+        if model is None:
+            return None
 
         self.Y = LabelEncoder().fit_transform(self.Y)
         self.Y = pd.Series(self.Y).reset_index(drop=True)

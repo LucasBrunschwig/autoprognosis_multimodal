@@ -4,7 +4,7 @@ import copy
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # third party
-from joblib import Parallel
+from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -170,8 +170,9 @@ class WeightedEnsemble(BaseEnsemble):
             return self.models[k].fit(X, Y)
 
         log.debug("Fitting the WeightedEnsemble")
-        # TMP LUCAS
-        # self.models = dispatcher(delayed(copy.deepcopy(fit_model))(k) for k in range(len(self.models)))
+        self.models = dispatcher(
+            delayed(copy.deepcopy(fit_model))(k) for k in range(len(self.models))
+        )
         for k, model in enumerate(self.models):
             self.models[k] = fit_model(k)
 

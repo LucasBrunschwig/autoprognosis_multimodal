@@ -206,9 +206,6 @@ class ImageClassifierStudy(Study):
 
         self.output_file = self.output_folder / "model.p"
 
-        # TMP: LUCAS
-        self.output_train_file = self.output_folder / "model_trained.p"
-
         self.num_study_iter = num_study_iter
 
         self.metric = metric
@@ -258,10 +255,6 @@ class ImageClassifierStudy(Study):
             for metric in metrics["raw"]:
                 eval_metrics[metric] = metrics["raw"][metric][0]
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
-
-            # TMP LUCAS
-            for metric, score_ in metrics["str"].items():
-                log.info(f"{metric} {score_}")
 
             self.hooks.heartbeat(
                 topic="classification_study",

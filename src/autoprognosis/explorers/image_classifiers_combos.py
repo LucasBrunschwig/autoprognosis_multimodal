@@ -121,7 +121,6 @@ class ImageEnsembleSeeker:
             timeout=timeout,
             image_processing=image_processing,
             preprocess_images=preprocess_images,
-            image_dimensionality_reduction=[],
             classifiers=classifiers,
             hooks=hooks,
             optimizer_type=optimizer_type,
