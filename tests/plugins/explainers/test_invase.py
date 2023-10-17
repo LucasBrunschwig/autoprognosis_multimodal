@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 
 # autoprognosis absolute
 from autoprognosis.plugins.explainers import Explainers
-from autoprognosis.plugins.explainers.plugin_invase import plugin
+from autoprognosis.plugins.explainers.tabular.plugin_invase import plugin
 from autoprognosis.plugins.pipeline import Pipeline
 from autoprognosis.plugins.prediction.classifiers import Classifiers
 from autoprognosis.plugins.prediction.risk_estimation.plugin_cox_ph import (

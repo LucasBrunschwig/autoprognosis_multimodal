@@ -9,7 +9,7 @@ from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
 
 # autoprognosis absolute
-from autoprognosis.plugins.explainers.plugin_kernel_shap import plugin
+from autoprognosis.plugins.explainers.tabular.plugin_kernel_shap import plugin
 from autoprognosis.plugins.pipeline import Pipeline
 from autoprognosis.plugins.prediction.classifiers import Classifiers
 from autoprognosis.plugins.prediction.risk_estimation.plugin_cox_ph import (

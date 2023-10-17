@@ -54,10 +54,10 @@ class IntegratedGradientPlugin(ExplainerPlugin):
         >>> y = pd.Series(y)
         >>>
         >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-        >>> model = Classifiers(category="multimodal").get("intermediate_conv_net")
+        >>> model = Classifiers(category="multimodal").get("metablock")
         >>>
         >>> explainer = Explainers().get(
-        >>>     "grad_cam",
+        >>>     "integrated_gradients",
         >>>     model,
         >>>     X_train,
         >>>     y_train,
@@ -114,6 +114,11 @@ class IntegratedGradientPlugin(ExplainerPlugin):
         else:
             raise ValueError("Not Implemented")
 
+    def preprocess(
+        self,
+    ):
+        pass
+
     def explain(self, X: dict, y: pd.DataFrame) -> dict:
         results = [[], []]
 
@@ -126,7 +131,9 @@ class IntegratedGradientPlugin(ExplainerPlugin):
         for stage in self.estimator.stages[:-1]:
             tab_baselines = pd.DataFrame(tab_baselines)
             tab_baselines = stage.transform(tab_baselines)
+            X_tab = pd.DataFrame(X_tab)
             X_tab = stage.transform(X_tab)
+
         baseline_transformed = tuple(
             (torch.from_numpy(np.asarray(tab_baselines)), self.baselines[1])
         )
@@ -140,7 +147,7 @@ class IntegratedGradientPlugin(ExplainerPlugin):
                 (tab.unsqueeze(dim=0).cpu(), img.unsqueeze(dim=0).cpu()),
                 baselines=baseline_transformed,
                 target=y[i],
-                n_steps=1000,
+                n_steps=10000,
             )
 
             results[0].append(attr_tab)
