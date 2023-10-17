@@ -14,15 +14,14 @@ intermediate_plugins = glob.glob(join(dirname(__file__), "multimodal/plugin*.py"
 
 
 class Classifiers(PluginLoader):
-    def __init__(self, category="all") -> None:
-        # TMP Lucas:
+    def __init__(self, category="") -> None:
         if category == "tabular":
             plugins = tabular_plugins
         elif category == "image":
             plugins = image_plugins
         elif category == "multimodal":
             plugins = intermediate_plugins
-        elif category == "all":
+        else:
             plugins = tabular_plugins + image_plugins + intermediate_plugins
 
         super().__init__(plugins, ClassifierPlugin)
