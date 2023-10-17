@@ -541,6 +541,9 @@ class MultimodalStudy(Study):
         """Run the study and train the model. The call returns the fitted model."""
         model = self.run()
 
+        if model is None:
+            return None
+
         self.Y = LabelEncoder().fit_transform(self.Y)
         self.Y = pd.Series(self.Y).reset_index(drop=True)
 
