@@ -69,7 +69,7 @@ class RiskEstimationPlugin(prediction_base.PredictionPlugin):
                 raise RuntimeError("fit requires eval_times")
 
             # autoprognosis absolute
-            from autoprognosis.plugins.explainers.plugin_invase import (
+            from autoprognosis.plugins.explainers.tabular.plugin_invase import (
                 plugin as explainer,
             )
 
