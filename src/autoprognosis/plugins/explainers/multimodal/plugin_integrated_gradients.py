@@ -72,10 +72,10 @@ class IntegratedGradientPlugin(ExplainerPlugin):
         estimator: Any,
         X: pd.DataFrame,
         y: pd.DataFrame,
-        baselines: tuple,
-        images: Optional[List] = None,
         task_type: str = "classification",
         prefit: bool = False,
+        baselines: tuple = None,
+        images: Optional[List] = None,
         # Risk estimation
         time_to_event: Optional[pd.DataFrame] = None,  # for survival analysis
         eval_times: Optional[List] = None,  # for survival analysis
@@ -85,10 +85,19 @@ class IntegratedGradientPlugin(ExplainerPlugin):
             raise RuntimeError("invalid task type")
 
         self.task_type = task_type
-        self.feature_names = list(
-            images if images is not None else pd.DataFrame(X[IMAGE_KEY]).columns
-        )
+
+        if not X.get(IMAGE_KEY, None) or not X.get(TABULAR_KEY, None):
+            raise RuntimeError(
+                f"Multimodal X dictionary does not contain {IMAGE_KEY} or {TABULAR_KEY} key"
+            )
+
+        if images is not None:
+            self.feature_names = list(images)
+        else:
+            self.feature_names = list(pd.DataFrame(X[IMAGE_KEY]).columns)
+
         self.feature_names = self.feature_names + pd.DataFrame(X[TABULAR_KEY]).columns
+
         super().__init__(self.feature_names)
 
         self.estimator = estimator
@@ -109,7 +118,10 @@ class IntegratedGradientPlugin(ExplainerPlugin):
             self.explainer = IntegratedGradients(
                 self.estimator.get_classifier().model.cpu()
             )
-            self.baselines = tuple(baselines)
+            if baselines is not None:
+                self.baselines = tuple(baselines)
+            else:
+                self.baselines = None
 
         else:
             raise ValueError("Not Implemented")
@@ -120,12 +132,28 @@ class IntegratedGradientPlugin(ExplainerPlugin):
         pass
 
     def explain(self, X: dict, y: pd.DataFrame) -> dict:
+        """
+        Use the captum integrated gradients method
+
+        Args:
+        -------
+        X: dict,
+            the dictionary containing img and tab key with the corresponding dataframe you want to explain
+        y: pd.Series,
+            the labels
+        """
         results = [[], []]
 
         y = torch.from_numpy(np.asarray(y))
 
         X_img = X[IMAGE_KEY].copy()
-        X_tab = X[TABULAR_KEY].copy()
+        X_tab = pd.DataFrame(X[TABULAR_KEY].copy())
+
+        if self.baselines is None:
+            # Mean for each tabular featurefeatures
+            tab_ = np.zeros(X_tab.mean(axis=1))
+            img_ = torch.zeros((300, 300))
+            self.baselines = tuple((tab_, img_))
 
         tab_baselines = self.baselines[0]
         for stage in self.estimator.stages[:-1]:
