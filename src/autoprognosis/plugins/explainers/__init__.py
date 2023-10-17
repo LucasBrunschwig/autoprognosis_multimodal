@@ -10,7 +10,7 @@ from .base import ExplainerPlugin  # noqa: F401,E402
 
 plugins_tabular = glob.glob(join(dirname(__file__), "tabular/plugin*.py"))
 plugins_image = glob.glob(join(dirname(__file__), "image/plugin*.py"))
-plugins_multimodal = glob.glob(join(dirname(__file__), "image/plugin*.py"))
+plugins_multimodal = glob.glob(join(dirname(__file__), "multimodal/plugin*.py"))
 
 plugins_all = plugins_tabular + plugins_image + plugins_multimodal
 
@@ -28,6 +28,13 @@ class Explainers(PluginLoader):
             plugins = plugins_all
 
         super().__init__(plugins, ExplainerPlugin)
+
+    def explainer_type(self, name):
+        path_ = self.list_available_path()
+        if path_.get(name, None):
+            return path_[name].split("/")[-2]
+        else:
+            raise RuntimeError(f"Plugin {name} does not exist")
 
 
 __all__ = [basename(f)[:-3] for f in plugins_all if isfile(f)] + [
