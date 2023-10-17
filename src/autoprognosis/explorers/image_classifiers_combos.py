@@ -68,7 +68,7 @@ class ImageEnsembleSeeker:
             Available retrieved using `Classifiers(category="image").list_available()`
                 - 'vision_transformers'
                 - 'cnn'
-                - 'cnn_fine_tune
+                - 'cnn_fine_tune'
         image_processing: list.
             Plugin search pipeline to use in the pipeline for optimal image preprocessing. If you don't require image
             preprocessing you can specify preprocessing = False in the argument
@@ -77,6 +77,8 @@ class ImageEnsembleSeeker:
                 2. 'normalizer'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
+        optimizer_type: str,
+            choose the AutoML optimization algorithm between Bayesian or Hyper-Band
         random_state: int:
             Random seed
     """

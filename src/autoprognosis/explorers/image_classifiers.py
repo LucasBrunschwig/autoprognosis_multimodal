@@ -12,7 +12,6 @@ from pydantic import validate_arguments
 from autoprognosis.exceptions import StudyCancelled
 from autoprognosis.explorers.core.defaults import (
     default_image_classsifiers_names,
-    default_image_dimensionality_reduction,
     default_image_processing,
 )
 from autoprognosis.explorers.core.optimizer import Optimizer
@@ -59,6 +58,8 @@ class ImageClassifierSeeker:
                 - 'normalizer'
                 - 'resizer'
                 - 'data_augmentation
+        preprocess_images: bool,
+            indicate if image require resizing
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn_fine_tune"]
             Available retrieved using 'Classifiers(category="image").list_available()'
@@ -67,6 +68,10 @@ class ImageClassifierSeeker:
                 - 'vision_transformers'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
+        optimizer_type: str,
+            choose the AutoML optimization algorithm between Bayesian or Hyper-Band
+        strict: bool,
+            stop the optimization if one process fails
         random_state: int:
             Random seed
     """
@@ -75,21 +80,18 @@ class ImageClassifierSeeker:
     def __init__(
         self,
         study_name: str,
+        multimodal_type: str = None,
         num_iter: int = 100,
         metric: str = "aucroc",
         n_folds_cv: int = 5,
         top_k: int = 3,
         timeout: int = 360,
         image_processing: List[str] = default_image_processing,
-        image_dimensionality_reduction: List[
-            str
-        ] = default_image_dimensionality_reduction,
         preprocess_images: bool = True,
         classifiers: List[str] = default_image_classsifiers_names,
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         strict: bool = False,
-        multimodal_type: str = None,
         random_state: int = 0,
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
@@ -121,7 +123,7 @@ class ImageClassifierSeeker:
                 plugin,
                 calibration=[],
                 preprocess_images=preprocess_images,
-                image_dimensionality_reduction=image_dimensionality_reduction,
+                image_dimensionality_reduction=[],
                 image_processing=image_processing,
                 multimodal_type=multimodal_type,
                 data_type=data_type,
@@ -208,8 +210,8 @@ class ImageClassifierSeeker:
 
         Args:
             X: DataFrame
-                The covariates
-            y: DataFrame/Series
+                The images, collection of addresses
+            Y: DataFrame/Series
                 The labels
             group_ids: Optional str
                 Optional Group labels for the samples used while splitting the dataset into train/test set.
