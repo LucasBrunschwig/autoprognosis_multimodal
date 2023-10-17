@@ -99,6 +99,28 @@ class ConvNetPredefined(nn.Module):
         learning rate for training, usually lower than the initial training
     n_iter (int):
         the number of iteration
+    weight_decay (float):
+        l2 (ridge) penalty for the weights.
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    n_iter_print (int):
+        logging an update every n iteration
+    n_iter_min (int):
+        minimum number of iterations
+    patience (int):
+        the number of iterations before stopping the training with early stopping
+    n_additional_layers (int):
+        number of additional layers on top of the network
+    clipping_value (int):
+        clipping parameters value during training
+    latent_representation (int): Optional
+        size of the latent representation during early fusion
+    weighted_cross_entropy (bool):
+        use weighted cross entropy during training
+    replace_classifier (bool):
+        replace the classifier instead of adding layers on top of the classifiers
+    init_method (str):
+        the initialization method for the weights.
 
     """
 
@@ -284,13 +306,7 @@ class ConvNetPredefined(nn.Module):
     def set_zero_grad(self):
         self.model.zero_grad()
 
-    def set_train_mode(self):
-        self.model.train()
-
-    def set_eval_mode(self):
-        self.model.eval()
-
-    def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefined":
+    def train_(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefined":
         y = self._check_tensor(y).squeeze().long()
 
         dataset = TrainingImageDataset(
@@ -322,7 +338,6 @@ class ConvNetPredefined(nn.Module):
         self.model.train()
 
         if self.weighted_cross_entropy:
-            # TMP LUCAS
             label_counts = torch.bincount(y)
             class_weights = 1.0 / label_counts.float()
             class_weights = class_weights / class_weights.sum()
@@ -426,8 +441,26 @@ class CNNPlugin(base.ClassifierPlugin):
 
     Parameters
     ----------
+    conv_name (str):,
+        the predefined architecture
+    init_method (str):,
+        change the weights of the network with the selected initialization method
+    n_additional_layer (int):
+        the number of added layer to the predefined CNN for transfer learning
+    non_linear (str):
+        non-linearities in additional layers
+    replace_classifier (bool):
+        replace the classifier instead of adding layers on top of the classifiers
+    normalisation: str,
+        normalisation method name (channel-wise, pixel-wise)
+    size (int):,
+        size of the resized image during normalisation
+    data_augmentation (str):
+        data augmentation strategy applied on-the-fly to images during training
     lr: float
         learning rate for optimizer. step_size equivalent in the JAX version.
+    weightec_cross_entropy (bool):
+        use weighted cross entropy during training
     weight_decay: float
         l2 (ridge) penalty for the weights.
     n_iter: int
@@ -436,12 +469,14 @@ class CNNPlugin(base.ClassifierPlugin):
         Batch size
     n_iter_print: int
         Number of iterations after which to print updates and check the validation loss.
-    val_split_prop: float
-        Proportion of samples used for validation split (can be 0)
     patience: int
         Number of iterations to wait before early stopping after decrease in validation loss
     n_iter_min: int
         Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
     random_state: int, default 0
         Random seed
 
@@ -462,25 +497,28 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def __init__(
         self,
+        # Architecture
         conv_name: str = "alexnet",
-        normalisation: bool = "channel-wise",
+        init_method: str = "",
+        n_additional_layers: int = 2,
         non_linear: str = "relu",
         replace_classifier: bool = False,
+        # Preprocessing and Data Augmentation
+        normalisation: bool = "channel-wise",
         size: int = 256,
+        data_augmentation: Union[str, transforms.Compose] = None,
+        # Training
         lr: float = 1e-3,
+        weighted_cross_entropy: bool = False,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 10,
-        data_augmentation: Union[str, transforms.Compose] = None,
-        weighted_cross_entropy: bool = False,
-        n_additional_layers: int = 2,
         patience: int = 10,
         n_iter_min: int = 10,
         early_stopping: bool = True,
+        clipping_value: int = 1,
         hyperparam_search_iterations: Optional[int] = None,
-        clipping_value: int = 0,
-        init_method: str = "",
         random_state: int = 0,
         **kwargs: Any,
     ) -> None:
@@ -617,7 +655,7 @@ class CNNPlugin(base.ClassifierPlugin):
             init_method=self.init_method,
         )
 
-        self.model.train(X, y)
+        self.model.train_(X, y)
 
         return self
 
@@ -625,7 +663,7 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.set_eval_mode()
+        self.model.eval()
         with torch.no_grad():
             results = np.empty((0, 1))
             test_loader = DataLoader(
@@ -651,11 +689,11 @@ class CNNPlugin(base.ClassifierPlugin):
 
     def predict_proba_tensor(self, X: pd.DataFrame):
         """This method forces model to CPU with gradients for grad-CAM++"""
-        # TMP LUCAS: check if necessary
+
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.cpu()
-        self.model.set_eval_mode()
+        self.model.eval()
         results = torch.empty((0, self.n_classes))
         test_dataset = TestImageDataset(X, preprocess=self.preprocess)
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
@@ -677,7 +715,7 @@ class CNNPlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.set_eval_mode()
+        self.model.eval()
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestImageDataset(X, preprocess=self.preprocess)

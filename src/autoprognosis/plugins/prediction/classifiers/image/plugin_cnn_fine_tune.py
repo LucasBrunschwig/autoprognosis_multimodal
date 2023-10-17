@@ -83,7 +83,7 @@ class ConvNetPredefinedFineTune(nn.Module):
     transformation (callable):
         data augmentation strategy applied on-the-fly to images during training
     n_additional_layer (int):
-        the added layer to the predefined CNN for transfer learning
+        the number of added layer to the predefined CNN for transfer learning
     non_linear (str):
         the non-linearity of the added layers
     batch_size (int):
@@ -93,27 +93,25 @@ class ConvNetPredefinedFineTune(nn.Module):
     n_iter (int):
         the number of iteration
     weight_decay (float):
-        .
+        l2 (ridge) penalty for the weights.
     early_stopping (bool):
-        .
+        stopping when the metric did not improve for multiple iterations (max = patience)
     n_iter_print (int):
-        .
+        logging an update every n iteration
     n_iter_min (int):
-        .
+        minimum number of iterations
     patience (int):
-        .
-    n_unfrozen_layers (int):
-        .
+        the number of iterations before stopping the training with early stopping
     n_additional_layers (int):
-        .
+        number of additional layers on top of the network
     clipping_value (int):
-        .
-    latent_representation (int):
-        .
+        clipping parameters value during training
+    latent_representation (int): Optional
+        size of the latent representation during early fusion
     weighted_cross_entropy (bool):
-        .
+        use weighted cross entropy during training
     replace_classifier (bool):
-        .
+        replace the classifier instead of adding layers on top of the classifiers
 
     """
 
@@ -395,13 +393,7 @@ class ConvNetPredefinedFineTune(nn.Module):
     def set_zero_grad(self):
         self.model.zero_grad()
 
-    def set_train_mode(self):
-        self.model.train()
-
-    def set_eval_mode(self):
-        self.model.eval()
-
-    def train(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
+    def train_(self, X: pd.DataFrame, y: torch.Tensor) -> "ConvNetPredefinedFineTune":
 
         y = self._check_tensor(y).squeeze().long()
 
@@ -435,7 +427,6 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.model.train()
 
         if self.weighted_cross_entropy:
-            # TMP LUCAS
             label_counts = torch.bincount(y)
             class_weights = 1.0 / label_counts.float()
             class_weights = class_weights / class_weights.sum()
@@ -541,10 +532,20 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
     ----------
     conv_name: str,
         the predefined architecture
-    n_unfrozen_layers:
-        the number of layer to unfreeze
+    n_additional_layer (int):
+        the number of added layer to the predefined CNN for transfer learning
+    replace_classifier (bool):
+        replace the classifier instead of adding layers on top of the classifiers
+    non_linear (str):
+        the non-linearity in the additional layers
+    data_augmentation (str):
+        data augmentation strategy applied on-the-fly to images during training
     lr: float
         learning rate for optimizer. step_size equivalent in the JAX version.
+    n_unfrozen_layers:
+        the number of layer to unfreeze
+    weightec_cross_entropy (bool):
+        use weighted cross entropy during training
     weight_decay: float
         l2 (ridge) penalty for the weights.
     n_iter: int
@@ -553,12 +554,14 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         Batch size
     n_iter_print: int
         Number of iterations after which to print updates and check the validation loss.
-    val_split_prop: float
-        Proportion of samples used for validation split (can be 0)
     patience: int
         Number of iterations to wait before early stopping after decrease in validation loss
     n_iter_min: int
         Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
     random_state: int, default 0
         Random seed
 
@@ -706,7 +709,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
             weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
-        self.model.train(X, y)
+        self.model.train_(X, y)
 
         return self
 
@@ -714,7 +717,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.set_eval_mode()
+        self.model.eval()
         with torch.no_grad():
             results = np.empty((0, 1))
             test_loader = DataLoader(
@@ -744,7 +747,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.cpu()
-        self.model.set_eval_mode()
+        self.model.eval()
         results = torch.empty((0, self.n_classes))
         test_dataset = TestImageDataset(X, preprocess=self.preprocess)
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
@@ -766,7 +769,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
-        self.model.set_eval_mode()
+        self.model.eval()
         with torch.no_grad():
             results = np.empty((0, self.n_classes))
             test_dataset = TestImageDataset(X, preprocess=self.preprocess)
