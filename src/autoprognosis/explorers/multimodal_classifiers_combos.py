@@ -217,11 +217,10 @@ class MultimodalEnsembleSeeker:
                 imputers=imputers,
                 optimizer_type=optimizer_type,
                 random_state=self.random_state,
-                multimodal_key=self.multimodal_key,
                 multimodal_type=self.multimodal_type,
             )
 
-        # In case of late fusion one model per modality
+        # Late Fusion One model per Modality
         if self.multimodal_type == "late_fusion":
             self.image_seeker = ImageClassifierSeeker(
                 study_name,
@@ -395,9 +394,10 @@ class MultimodalEnsembleSeeker:
             # Find the optimal configuration for different latent representations
             self.seeker.lr_search(X[IMAGE_KEY], Y, group_ids=group_ids)
 
-            # Pretrain optimal latent representation
+            # Pretrain optimal latent representations
             self.seeker.pretrain_lr_for_early_fusion(X[IMAGE_KEY], Y, group_ids)
 
+            # Optimal early fusion model
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
             # Remove pre-computed LR
@@ -406,7 +406,6 @@ class MultimodalEnsembleSeeker:
 
         # Intermediate fusion optimization
         elif self.multimodal_type == "intermediate_fusion":
-
             best_models = self.seeker.search(X, Y, group_ids=group_ids)
 
         else:

@@ -31,6 +31,8 @@ from autoprognosis.utils.tester import evaluate_estimator, evaluate_multimodal_e
 
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_image_jobs())
 
+LR = "latent_representation"
+
 
 class MultimodalClassifierSeeker:
     """
@@ -58,6 +60,8 @@ class MultimodalClassifierSeeker:
             Number of candidates to return
         timeout: int.
             Maximum wait time(seconds) for each estimator hyperparameter search. This timeout will apply to each estimator in the "classifiers" list.
+        multimodal_type: str
+            Type of multimodal study in ["late_fusion", "early_fusion", "intermediate_fusion"] defaults = "early_fusion"
         feature_scaling: list.
             Plugin search pool to use in the pipeline for scaling. Defaults to : ['maxabs_scaler', 'scaler', 'feature_normalizer', 'normal_transform', 'uniform_transform', 'nop', 'minmax_scaler']
             Available plugins, retrieved using `Preprocessors(category="feature_scaling").list_available()`:
@@ -77,6 +81,21 @@ class MultimodalClassifierSeeker:
                 - 'gauss_projection'
                 - 'pca'
                 - 'nop' # no operation
+        imputers: list.
+            Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
+            Available plugins, retrieved using `Imputers().list_available()`:
+                - 'sinkhorn'
+                - 'EM'
+                - 'mice'
+                - 'ice'
+                - 'hyperimpute'
+                - 'most_frequent'
+                - 'median'
+                - 'missforest'
+                - 'softimpute'
+                - 'nop'
+                - 'mean'
+                - 'gain'
         image_processing: list.
             Plugin search pipeline to use in the pipeline for optimal preprocessing. If the list is empty, the program
             assumes that you preprocessed the images yourself.
@@ -86,9 +105,11 @@ class MultimodalClassifierSeeker:
         image_dimensionality_reduction: list.
             Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
-                - 'fast_ica_image'
+                - 'cnn'
+                - 'cnn_fine_tune'
+                - 'cnn_imagenet'
+                - 'simsiam'
                 - 'pca_image'
-                - 'predefined_cnn'
         fusion: list.
             Plugin search pool to use in the pipeline for optimal early modality fusion.
             Available retrieved using `Preprocessors(category="fusion").list_available()`
@@ -96,6 +117,7 @@ class MultimodalClassifierSeeker:
         classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
+                # Tabular
                 - 'adaboost'
                 - 'bernoulli_naive_bayes'
                 - 'neural_nets'
@@ -119,21 +141,13 @@ class MultimodalClassifierSeeker:
                 - 'gaussian_naive_bayes'
                 - 'knn'
                 - 'xgboost'
-        imputers: list.
-            Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
-            Available plugins, retrieved using `Imputers().list_available()`:
-                - 'sinkhorn'
-                - 'EM'
-                - 'mice'
-                - 'ice'
-                - 'hyperimpute'
-                - 'most_frequent'
-                - 'median'
-                - 'missforest'
-                - 'softimpute'
-                - 'nop'
-                - 'mean'
-                - 'gain'
+                # Image
+                - 'cnn'
+                - 'cnn_fine_tune'
+                - 'vision_transformer'
+                # Multimodal
+                - 'joint_intermediate_fusion'
+                - 'metablock'
         hooks: Hooks.
             Custom callbacks to be notified about the search progress.
         random_state: int:
@@ -149,6 +163,7 @@ class MultimodalClassifierSeeker:
         n_folds_cv: int = 5,
         top_k: int = 3,
         timeout: Optional[int] = 360,
+        multimodal_type: str = "early_fusion",
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         imputers: List[str] = [],
@@ -162,8 +177,6 @@ class MultimodalClassifierSeeker:
         optimizer_type: str = "bayesian",
         strict: bool = False,
         random_state: int = 0,
-        multimodal_key: dict = {},
-        multimodal_type: str = "early_fusion",
     ) -> None:
         for int_val in [num_iter, n_folds_cv, top_k, timeout]:
             if int_val <= 0 or type(int_val) != int:
@@ -215,7 +228,6 @@ class MultimodalClassifierSeeker:
         self.metric = metric
         self.optimizer_type = optimizer_type
         self.random_state = random_state
-        self.multimodal_key = multimodal_key
         self.best_representation = {}
         self.pretrain_representation = {}
 
@@ -229,8 +241,11 @@ class MultimodalClassifierSeeker:
         Y: pd.Series,
         group_ids: Optional[pd.Series] = None,
         seed: int = 0,
-    ) -> List:
+    ):
         self._should_continue()
+
+        if not self.best_representation:
+            return
 
         if group_ids is not None:
             skf = StratifiedGroupKFold(
@@ -252,6 +267,7 @@ class MultimodalClassifierSeeker:
             for result in self.best_representation.keys():
                 for estimator in self.estimators_lr:
                     if estimator.name() == result.split(".")[0]:
+
                         model = Preprocessors(category="image_reduction").get(
                             estimator.name(), **self.best_representation[result]
                         )
@@ -263,11 +279,10 @@ class MultimodalClassifierSeeker:
 
                         model.fit(X_train, Y_train)
                         proba_train = model.transform(X_train)
-                        proba_test = model.transform(X_test)
-
                         self.pretrain_representation[result]["train"].append(
                             proba_train
                         )
+                        proba_test = model.transform(X_test)
                         self.pretrain_representation[result]["test"].append(proba_test)
 
     def search_best_args_for_estimator(
@@ -288,27 +303,24 @@ class MultimodalClassifierSeeker:
                 not isinstance(X.get(TABULAR_KEY, None), pd.DataFrame)
                 or X[TABULAR_KEY].empty
             ):
-                raise RuntimeError("Multimodal Fusion but no tabular inputs")
+                raise RuntimeError("Multimodal Search but no tabular inputs")
             if (
                 not isinstance(X.get(IMAGE_KEY, None), pd.DataFrame)
                 or X[IMAGE_KEY].empty
             ):
-                raise RuntimeError("Multimodal Fusion but no image inputs")
+                raise RuntimeError("Multimodal Search but no image inputs")
 
-            size = None
+            # Look for pretrain latent representation
             for arg in kwargs.keys():
                 if "image_reduction." in arg:
                     image_reduction = ".".join(arg.split(".")[0:-1])
                     image_reduction_name = image_reduction.split(".")[-1]
-                    if kwargs.get(image_reduction + ".latent_representation", None):
-                        size = str(kwargs[image_reduction + ".latent_representation"])
+                    if kwargs.get(image_reduction + "." + LR, None):
+                        size = str(kwargs[image_reduction + "." + LR])
+                        image_reduction_size = image_reduction_name + "." + size
+                        if self.pretrain_representation.get(image_reduction_size):
+                            X["lr"] = self.pretrain_representation[image_reduction_size]
                     break
-            if size and self.pretrain_representation.get(
-                image_reduction_name + "." + size, None
-            ):
-                X["lr"] = self.pretrain_representation[
-                    image_reduction_name + "." + size
-                ]
 
             model = estimator.get_multimodal_pipeline_from_named_args(**kwargs)
 
@@ -370,7 +382,7 @@ class MultimodalClassifierSeeker:
 
             self._should_continue()
 
-            kwargs.update({"latent_representation": latent_representation})
+            kwargs.update({LR: latent_representation})
 
             model = Preprocessors(category="image_reduction").get(
                 estimator.name(), **kwargs
@@ -405,7 +417,7 @@ class MultimodalClassifierSeeker:
 
         best_score, params = study_learning.evaluate()
 
-        # Store the optimal solution if the learning representation size comes again
+        # Store the optimal solution
         self.best_representation[
             estimator.name() + "." + str(latent_representation)
         ] = params[np.argmax(best_score)]
@@ -414,11 +426,11 @@ class MultimodalClassifierSeeker:
 
         self._should_continue()
 
-        selector.LR_SEARCH = True
+        selector.LR_SEARCH = True  # required for lr hyperparameter selection
 
         for estimator in self.estimators_lr:
             for param in estimator.hyperparameter_space():
-                if "latent_representation" in param.name:
+                if LR in param.name:
                     choices = param.choices
                     for latent_repr in choices:
                         self.search_best_args_for_lr_estimator(
@@ -439,7 +451,7 @@ class MultimodalClassifierSeeker:
         Args:
             X: DataFrame
                 The covariates
-            y: DataFrame/Series
+            Y: DataFrame/Series
                 The labels
             group_ids: Optional str
                 Optional Group labels for the samples used while splitting the dataset into train/test set.
@@ -464,23 +476,20 @@ class MultimodalClassifierSeeker:
             best_idx = np.argmax(best_scores)
             all_scores.append(best_scores[best_idx])
             best_args_ = best_args[best_idx]
-            size = None
+            # add best parameters for latent representation
             for arg in best_args_.keys():
                 if "image_reduction." in arg:
                     image_reduction = ".".join(arg.split(".")[0:-1])
                     image_reduction_name = image_reduction.split(".")[-1]
-                    if best_args_.get(image_reduction + ".latent_representation", None):
-                        size = str(
-                            best_args_[image_reduction + ".latent_representation"]
-                        )
+                    if best_args_.get(image_reduction + "." + LR, None):
+                        size = str(best_args_[image_reduction + "." + LR])
+                        image_reduction_size = image_reduction_name + "." + size
+                        if self.best_representation.get(image_reduction_size, None):
+                            for arg, value in self.best_representation.get(
+                                image_reduction_name + "." + size
+                            ).items():
+                                best_args_.update({image_reduction + "." + arg: value})
                     break
-            if size and self.best_representation.get(
-                image_reduction_name + "." + size, None
-            ):
-                for arg, value in self.best_representation.get(
-                    image_reduction_name + "." + size
-                ).items():
-                    best_args_.update({image_reduction + "." + arg: value})
             all_args.append(best_args_)
             all_estimators.append(self.estimators[idx])
             log.info(
