@@ -161,16 +161,17 @@ def _generate_fit(multimodal_type: str) -> Callable:
             # Transform the image
             if X.get("lr", None) is None:
                 for stage in self.stages[:-2]:
+                    local_X_img = pd.DataFrame(local_X_img)
                     if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                        local_X_img = pd.DataFrame(local_X_img)
                         local_X_img = stage.fit_transform(local_X_img, *args)
             else:
                 local_X_img = X["lr"]
 
             # Process tabular
             for stage in self.stages[:-2]:
+                local_X_tab = pd.DataFrame(local_X_tab)
+
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.fit_transform(local_X_tab)
 
             local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
@@ -191,11 +192,11 @@ def _generate_fit(multimodal_type: str) -> Callable:
             local_X_img = X[IMAGE_KEY].copy()
 
             for stage in self.stages[:-1]:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_img = pd.DataFrame(local_X_img)
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.fit_transform(local_X_tab)
                 elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                    local_X_img = pd.DataFrame(local_X_img)
                     local_X_img = stage.fit_transform(
                         local_X_img, *args, **{"n_tab": local_X_tab.shape[1]}
                     )
@@ -270,16 +271,16 @@ def _generate_predict(multimodal_type) -> Callable:
             if X.get("lr", None) is None:
                 # Process images
                 for stage in self.stages[:-2]:
+                    local_X_img = pd.DataFrame(local_X_img)
                     if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                        local_X_img = pd.DataFrame(local_X_img)
                         local_X_img = stage.transform(local_X_img, *args)
             else:
                 local_X_img = X["lr"]
 
             # Process tabular
             for stage in self.stages[:-2]:
+                local_X_tab = pd.DataFrame(local_X_tab)
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.transform(local_X_tab)
 
             local_X = {IMAGE_KEY: local_X_tab, TABULAR_KEY: local_X_img}
@@ -302,11 +303,11 @@ def _generate_predict(multimodal_type) -> Callable:
 
             # Process Image and Tabular separately
             for stage in self.stages[:-1]:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_img = pd.DataFrame(local_X_img)
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.transform(local_X_tab)
                 elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                    local_X_img = pd.DataFrame(local_X_img)
                     local_X_img = stage.transform(local_X_img)
 
             local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
@@ -387,16 +388,16 @@ def _generate_predict_proba(multimodal_type) -> Callable:
             if X.get("lr", None) is None:
                 # Process images
                 for stage in self.stages[:-2]:
+                    local_X_img = pd.DataFrame(local_X_img)
                     if stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                        local_X_img = pd.DataFrame(local_X_img)
                         local_X_img = stage.transform(local_X_img, *args)
             else:
                 local_X_img = X["lr"]
 
             # Process tabular
             for stage in self.stages[:-2]:
+                local_X_tab = pd.DataFrame(local_X_tab)
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.transform(local_X_tab)
 
             local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
@@ -426,11 +427,11 @@ def _generate_predict_proba(multimodal_type) -> Callable:
             local_X_img = X[IMAGE_KEY].copy()
 
             for stage in self.stages[:-1]:
+                local_X_tab = pd.DataFrame(local_X_tab)
+                local_X_img = pd.DataFrame(local_X_img)
                 if stage.modality_type() == TABULAR_KEY and not local_X_tab.empty:
-                    local_X_tab = pd.DataFrame(local_X_tab)
                     local_X_tab = stage.transform(local_X_tab)
                 elif stage.modality_type() == IMAGE_KEY and not local_X_img.empty:
-                    local_X_img = pd.DataFrame(local_X_img)
                     local_X_img = stage.transform(local_X_img)
 
             local_X = {TABULAR_KEY: local_X_tab, IMAGE_KEY: local_X_img}
