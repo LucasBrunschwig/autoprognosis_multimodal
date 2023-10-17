@@ -181,7 +181,7 @@ class classifier_metrics:
 @validate_arguments(config=dict(arbitrary_types_allowed=True))
 def evaluate_estimator(
     estimator: Any,
-    X: Union[pd.DataFrame, np.ndarray],
+    X: Union[pd.DataFrame, np.ndarray, dict],
     Y: Union[pd.Series, np.ndarray, List],
     n_folds: int = 3,
     seed: int = 0,
