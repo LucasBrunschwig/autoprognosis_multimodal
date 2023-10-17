@@ -8,6 +8,7 @@ Author: Lucas Brunschwig (lucas.brunschwig@gmail.com)
 # stdlib
 from datetime import datetime
 import os
+import sys
 
 # third party
 from loader import DataLoader
@@ -17,14 +18,17 @@ import psutil
 import autoprognosis.logger as logger
 from autoprognosis.studies.image_classifiers import ImageClassifierStudy
 
-os.environ["N_LEARNER_JOBS"] = "3"
+logger.add(sink=sys.stdout, level="INFO")
+
+os.environ["N_LEARNER_JOBS"] = "1"
 os.environ["N_OPT_JOBS"] = "1"
 
 if __name__ == "__main__":
 
-    logger.debug("Loading Images")
+    sample = True
+    group_stratification = False  # use without sampling
 
-    n = 300
+    logger.debug("Loading Images")
 
     logger.info(
         f"GB available before loading data: {psutil.virtual_memory().available/1073741824:.2f}"
@@ -35,14 +39,23 @@ if __name__ == "__main__":
         data_src_="PAD-UFES",
         format_="PIL",
     )
+    df_train, df_test = DL.load_dataset(sample=sample)
 
-    df_train, df_test = DL.load_dataset(sample=True)
-    df_train = df_train[["image", "label"]]
-
-    logger.info("Image Loaded")
     logger.info(
         f"GB available after loading data: {psutil.virtual_memory().available/1073741824:.2f}"
     )
+
+    if group_stratification:
+        group = ["_".join(patient.split("_")[0:2]) for patient in list(df_train.index)]
+        df_train["patient"] = group
+
+    df_train.reset_index(drop=True, inplace=True)
+    df_train = df_train[["image", "label"]]
+    df_test.reset_index(drop=True, inplace=True)
+    df_test = df_test[["image", "label"]]
+
+    # Study Name
+    study_name = f"tabular_classifier_{datetime.now().strftime('%Y-%m-%H')}"
 
     # Study Name
     study_name = f"image_classifier_{datetime.now().strftime('%Y-%m-%H')}"
@@ -51,11 +64,11 @@ if __name__ == "__main__":
         dataset=df_train,  # pandas DataFrame
         target="label",  # the label column in the dataset
         sample_for_search=False,  # no Sampling
-        classifiers=["vision_transformer"],
-        n_folds_cv=5,
-        num_iter=10,
+        classifiers=["cnn", "cnn_fine_tune"],
+        n_folds_cv=3,
+        num_iter=1,
         timeout=36000,
-        num_study_iter=10,
+        num_study_iter=1,
     )
 
     model = study.fit()
