@@ -216,9 +216,15 @@ class GradCAMPlugin(ExplainerPlugin):
             raise RuntimeError("invalid task type")
 
         self.task_type = task_type
-        self.feature_names = list(
-            images if images is not None else pd.DataFrame(X).columns
-        )
+        if images is not None:
+            self.feature_names = list(images)
+        elif isinstance(X, dict):
+            if not X.get(IMAGE_KEY, None):
+                raise RuntimeError("Multimodal X does not contain images")
+            self.feature_names = list(pd.DataFrame(X).columns)
+        else:
+            self.feature_names = list(pd.DataFrame(X[IMAGE_KEY]).columns)
+
         super().__init__(self.feature_names)
 
         self.estimator = estimator
