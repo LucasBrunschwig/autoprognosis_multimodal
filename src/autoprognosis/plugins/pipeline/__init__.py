@@ -145,8 +145,8 @@ class PipelineMeta(type):
         raise NotImplementedError("not implemented")
 
 
-def Pipeline(plugins_str: List[str], multimodal_type=None, data_type="tabular") -> Any:
-    plugins = group(plugins_str, data_type=data_type)
+def Pipeline(plugins_str: List[str], multimodal_type=None) -> Any:
+    plugins = group(plugins_str)
 
     name = "_".join(p.name() for p in plugins)
 
