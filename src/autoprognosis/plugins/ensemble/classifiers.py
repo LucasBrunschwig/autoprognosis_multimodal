@@ -17,15 +17,16 @@ from autoprognosis.plugins.explainers import Explainers
 from autoprognosis.plugins.imputers import Imputers
 from autoprognosis.plugins.pipeline import Pipeline, PipelineMeta
 from autoprognosis.plugins.prediction.classifiers import Classifiers
-from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
+from autoprognosis.utils.default_modalities import (
+    IMAGE_KEY,
+    MULTIMODAL_KEY,
+    TABULAR_KEY,
+)
 from autoprognosis.utils.parallel import n_opt_jobs
 import autoprognosis.utils.serialization as serialization
 from autoprognosis.utils.tester import classifier_metrics
 
 dispatcher = Parallel(max_nbytes=None, backend="loky", n_jobs=n_opt_jobs())
-
-# TODO: improve
-IMAGE_EXPLAINERS = ["grad_cam"]
 
 
 class BaseEnsemble(BaseEstimator, metaclass=ABCMeta):
@@ -137,8 +138,7 @@ class WeightedEnsemble(BaseEnsemble):
             return self.models[k].fit(X, Y)
 
         log.debug("Fitting the WeightedEnsemble")
-        # TMP LUCAS
-        # self.models = dispatcher(delayed(fit_model)(k) for k in range(len(self.models)))
+
         for k, model in enumerate(self.models):
             self.models[k] = fit_model(k)
 
@@ -146,23 +146,23 @@ class WeightedEnsemble(BaseEnsemble):
             return self
 
         self.explainers = {}
-        for model in self.models:
-            modality_model = model.modality_type()
-            for exp in self.explainer_plugins:
-                if (modality_model == IMAGE_KEY and exp in IMAGE_EXPLAINERS) or (
-                    modality_model == TABULAR_KEY and exp not in IMAGE_EXPLAINERS
-                ):
-                    log.debug("Fitting the explainer for the WeightedEnsemble")
-                    exp_model = Explainers().get(
-                        exp,
-                        model,
-                        X[modality_model],
-                        Y,
-                        n_epoch=self.explanations_nepoch,
-                        prefit=True,
-                    )
-                    self.explainers[exp] = exp_model
+        for exp in self.explainer_plugins:
+            explainer_type = Explainers().explainer_type(exp)
+            if explainer_type == TABULAR_KEY:
+                x = X[TABULAR_KEY]
+            elif explainer_type == IMAGE_KEY:
+                x = X[IMAGE_KEY]
+            else:
+                x = X
 
+            self.explainers[exp] = Explainers().get(
+                exp,
+                copy.deepcopy(self),
+                x,
+                Y,
+                n_epoch=self.explanations_nepoch,
+                prefit=True,
+            )
         return self
 
     def fit_unimodal(self, X: pd.DataFrame, Y: pd.DataFrame) -> "WeightedEnsemble":
@@ -222,69 +222,43 @@ class WeightedEnsemble(BaseEnsemble):
 
         return pd.DataFrame(pred_ens)
 
-    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
-        for exp in self.explainers:
-            self.explainers[exp].plot(X, class_names=class_names)
-
-    def explain_plot_multimodal(
-        self,
-        X: pd.DataFrame,
-        y: pd.DataFrame,
-        target_layer: str = None,
-        class_names: list = None,
-        *args: Any,
-    ):
-        if self.explainers is None:
-            raise ValueError("Interpretability is not enabled for this ensemble")
-
-        for exp in self.explainers:
-            try:
-                if self.explainers[exp].modality_type() == IMAGE_KEY:
-                    self.explainers[exp].plot(
-                        X[IMAGE_KEY],
-                        y,
-                        target_layer=target_layer,
-                        class_names=class_names,
-                    )
-                elif self.explainers[exp].modality_type() == TABULAR_KEY:
-                    self.explainers[exp].plot(X[TABULAR_KEY], class_names=class_names)
-
-            except BaseException as e:
-                log.error(f"explainer {exp} failed: {e} ")
-
-    def explain_multimodal(
-        self, X: pd.DataFrame, y: pd.DataFrame, target_layer: str = None
-    ):
-        if self.explainers is None:
-            raise ValueError("Interpretability is not enabled for this ensemble")
-
-        results = {TABULAR_KEY: {}, IMAGE_KEY: {}}
-        for exp in self.explainers:
-            try:
-                if self.explainers[exp].modality_type() == TABULAR_KEY:
-                    result = self.explainers[exp].explain(X[IMAGE_KEY], y, target_layer)
-                    results[IMAGE_KEY][exp] = result
-                elif self.explainers[exp].modality_type() == TABULAR_KEY:
-                    result = self.explainers[exp].explain(X[TABULAR_KEY])
-                    results[TABULAR_KEY][exp] = result
-
-            except BaseException as e:
-                log.error(f"explainer {exp} failed: {e} ")
-
-        return results
-
-    def explain(self, X: pd.DataFrame, *args: Any) -> pd.DataFrame:
+    def explain(self, X: pd.DataFrame, *args: Any) -> dict:
         if self.explainers is None:
             raise ValueError("Interpretability is not enabled for this ensemble")
 
         results = {}
-        for exp in self.explainers:
-            try:
-                results[exp] = self.explainers[exp].explain(X)
-            except BaseException as e:
-                log.error(f"explainer {exp} failed: {e} ")
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    results[exp] = self.explainers[exp].explain(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    results[exp] = self.explainers[exp].explain(X)
+        else:
+            for exp in self.explainers:
+                self.explainers[exp].explain(X)
 
         return results
+
+    def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    self.explainers[exp].plot(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    self.explainers[exp].plot(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    self.explainers[exp].plot(X)
+
+        for exp in self.explainers:
+            self.explainers[exp].plot(X, class_names=class_names)
 
     def name(self) -> str:
         ensemble_name = []
@@ -510,10 +484,20 @@ class StackingEnsemble(BaseEnsemble):
 
         self.explainers = {}
         for exp in self.explainer_plugins:
+            explainer_type = Explainers().explainer_type(exp)
+            if explainer_type == TABULAR_KEY:
+                x = X[TABULAR_KEY]
+            elif explainer_type == IMAGE_KEY:
+                x = X[IMAGE_KEY]
+            else:
+                x = X
+
+            # To Discuss which tabular explainers are compatible with multimodal models
+
             self.explainers[exp] = Explainers().get(
                 exp,
                 copy.deepcopy(self),
-                X,
+                x,
                 Y,
                 n_epoch=self.explanations_nepoch,
                 prefit=True,
@@ -531,12 +515,36 @@ class StackingEnsemble(BaseEnsemble):
             raise ValueError("Interpretability is not enabled for this ensemble")
 
         results = {}
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    results[exp] = self.explainers[exp].explain(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    results[exp] = self.explainers[exp].explain(X)
+        else:
+            for exp in self.explainers:
+                self.explainers[exp].explain(X)
 
-        for exp in self.explainers:
-            results[exp] = self.explainers[exp].explain(X)
         return results
 
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    self.explainers[exp].plot(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    self.explainers[exp].plot(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    self.explainers[exp].plot(X)
+
         for exp in self.explainers:
             self.explainers[exp].plot(X, class_names=class_names)
 
@@ -624,12 +632,20 @@ class AggregatingEnsemble(BaseEnsemble):
 
         self.explainers = {}
 
-        # TODO: make multimodal works with explainers
+        self.explainers = {}
         for exp in self.explainer_plugins:
+            explainer_type = Explainers().explainer_type(exp)
+            if explainer_type == TABULAR_KEY:
+                x = X[TABULAR_KEY]
+            elif explainer_type == IMAGE_KEY:
+                x = X[IMAGE_KEY]
+            else:
+                x = X
+
             self.explainers[exp] = Explainers().get(
                 exp,
                 copy.deepcopy(self),
-                X,
+                x,
                 Y,
                 n_epoch=self.explanations_nepoch,
                 prefit=True,
@@ -647,12 +663,36 @@ class AggregatingEnsemble(BaseEnsemble):
             raise ValueError("Interpretability is not enabled for this ensemble")
 
         results = {}
-        for exp in self.explainers:
-            results[exp] = self.explainers[exp].explain(X)
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    results[exp] = self.explainers[exp].explain(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    results[exp] = self.explainers[exp].explain(X)
+        else:
+            for exp in self.explainers:
+                self.explainers[exp].explain(X)
 
         return results
 
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
+        if isinstance(X, dict):
+            for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
+                data_type = (
+                    Explainers().list_available_path()[plugin_name].split("/")[-2]
+                )
+                if data_type == IMAGE_KEY:
+                    self.explainers[exp].plot(X[IMAGE_KEY])
+                elif data_type == TABULAR_KEY:
+                    self.explainers[exp].plot(X[TABULAR_KEY])
+                elif data_type == MULTIMODAL_KEY:
+                    self.explainers[exp].plot(X)
+
         for exp in self.explainers:
             self.explainers[exp].plot(X, class_names=class_names)
 

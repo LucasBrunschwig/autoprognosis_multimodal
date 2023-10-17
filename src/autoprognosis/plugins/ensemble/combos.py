@@ -427,6 +427,9 @@ class Stacking(BaseAggregator):
     base_estimators: list or numpy array (n_estimators,)
         A list of base classifiers.
 
+    meta_clf:
+        the classifier used for meta learning
+
     n_folds : int, optional (default=2)
         The number of splits of the training sample.
 
@@ -501,7 +504,7 @@ class Stacking(BaseAggregator):
             warnings.warn("Stacking does not support pre_fitted option.")
 
     def fit(self, X, y):
-        """Overloading of fit method for multimodal and unimodal data type"""
+        """Overloading the fit method for multimodal and unimodal data type"""
         if isinstance(X, dict):
             return self.fit_multimodal(X, y)
         elif isinstance(X, pd.DataFrame):
@@ -512,7 +515,7 @@ class Stacking(BaseAggregator):
 
         Parameters
         ----------
-        X : dict of numpy array of shape (n_samples, n_features)
+        X_modalities : dict of numpy array of shape (n_samples, n_features)
 
         y : numpy array of shape (n_samples,), optional (default=None)
             The ground truth of the input samples (labels).
@@ -523,14 +526,10 @@ class Stacking(BaseAggregator):
         y = self.target_encoder.transform(y)
         self._set_n_classes(y)
 
+        # Iterate through each modality
         for mod_, X in X_modalities.items():
             for col in X.columns:
-                if (
-                    X[col].dtype.name not in ["object", "category"]
-                    or not X[col]
-                    .apply(lambda x: isinstance(x, (str, int, float)))
-                    .sum()
-                ):
+                if X[col].dtype.name not in ["object", "category"] or mod_ == IMAGE_KEY:
                     continue
 
                 values = list(X[col].unique())
@@ -541,7 +540,7 @@ class Stacking(BaseAggregator):
                 self._backup_encoders[col] = encoder
 
             if mod_ == TABULAR_KEY:
-                # Validate inputs X and y
+                # Validate inputs X and y for tabular data
                 X, y = check_X_y(X, y, force_all_finite=False)
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
 
@@ -551,7 +550,12 @@ class Stacking(BaseAggregator):
             n_samples = X.shape[0]
 
         # initialize matrix for storing newly generated features
-        new_features = np.zeros([n_samples, self.n_base_estimators_])
+        if self.use_proba and self._classes > 2:
+            new_features = np.zeros(
+                [n_samples, self.n_base_estimators_ * self._classes]
+            )
+        else:
+            new_features = np.zeros([n_samples, self.n_base_estimators_])
 
         # build CV datasets
         X_new_modalities = {}
@@ -601,7 +605,14 @@ class Stacking(BaseAggregator):
 
                 # generate the new features on the pseudo test set
                 if self.use_proba:
-                    new_features[test_idx, i] = clf.predict_proba(X_test)[:, 1]
+                    if self._classes > 2:
+                        new_features[
+                            test_idx,
+                            i * self._classes : i * self._classes + self._classes,
+                        ] = clf.predict_proba(X_test)
+                    else:
+                        new_features[test_idx, i] = clf.predict_proba(X_test)[:, 1]
+
                 else:
                     new_features[test_idx, i] = clf.predict(X_test).squeeze()
 
@@ -611,8 +622,6 @@ class Stacking(BaseAggregator):
         self.meta_clf.fit(new_features, y_new_comb)
         self.fitted_ = True
 
-        # train all base classifiers on the full train dataset
-        # iterate over all base classifiers
         for i, clf in enumerate(self.base_estimators):
             clf.fit(X_new_modalities, y_new_modalities[TABULAR_KEY])
 
@@ -660,7 +669,12 @@ class Stacking(BaseAggregator):
         n_samples = X.shape[0]
 
         # initialize matrix for storing newly generated features
-        new_features = np.zeros([n_samples, self.n_base_estimators_])
+        if self.use_proba and self._classes > 2:
+            new_features = np.zeros(
+                [n_samples, self.n_base_estimators_ * self._classes]
+            )
+        else:
+            new_features = np.zeros([n_samples, self.n_base_estimators_])
 
         # build CV datasets
         X_new, y_new, index_lists = split_datasets(
@@ -691,13 +705,15 @@ class Stacking(BaseAggregator):
 
                 # generate the new features on the pseudo test set
                 if self.use_proba:
-                    new_features[test_idx, i] = clf.predict_proba(pd.DataFrame(X_test))[
-                        :, 1
-                    ]
+                    if self._classes > 2:
+                        new_features[
+                            test_idx,
+                            i * self._classes : i * self._classes + self._classes,
+                        ] = clf.predict_proba(X_test)
+                    else:
+                        new_features[test_idx, i] = clf.predict_proba(X_test)[:, 1]
                 else:
-                    new_features[test_idx, i] = clf.predict(
-                        pd.DataFrame(X_test)
-                    ).squeeze()
+                    new_features[test_idx, i] = clf.predict(X_test).squeeze()
 
         # build the new dataset for training
         if self.keep_original:
@@ -740,14 +756,24 @@ class Stacking(BaseAggregator):
         n_samples = X_modalities[list(X_modalities.keys())[0]].shape[0]
 
         # initialize matrix for storing newly generated features
-        new_features = np.zeros([n_samples, self.n_base_estimators_])
+        if self.use_proba and self._classes > 2:
+            new_features = np.zeros(
+                [n_samples, self.n_base_estimators_ * self._classes]
+            )
+        else:
+            new_features = np.zeros([n_samples, self.n_base_estimators_])
 
-        # build the new features for unknown samples
         # iterate over all base classifiers
         for i, clf in enumerate(self.base_estimators):
             # generate the new features on the test set
             if self.use_proba:
-                new_features[:, i] = clf.predict_proba(X_modalities)[:, 1]
+                if self._classes > 2:
+                    new_features[
+                        :, i * self._classes : self._classes + i * self._classes
+                    ] = clf.predict_proba(X_modalities)
+
+                else:
+                    new_features[:, i] = clf.predict_proba(X_modalities)[:, 1]
             else:
                 new_features[:, i] = clf.predict(X_modalities).squeeze()
 
@@ -783,14 +809,26 @@ class Stacking(BaseAggregator):
         n_samples = X.shape[0]
 
         # initialize matrix for storing newly generated features
-        new_features = np.zeros([n_samples, self.n_base_estimators_])
+        if self.use_proba and self._classes > 2:
+            new_features = np.zeros(
+                [n_samples, self.n_base_estimators_ * self._classes]
+            )
+
+        else:
+            new_features = np.zeros([n_samples, self.n_base_estimators_])
 
         # build the new features for unknown samples
         # iterate over all base classifiers
         for i, clf in enumerate(self.base_estimators):
-            # generate the new features on the test set
+            # generate the new features on the pseudo test set
             if self.use_proba:
-                new_features[:, i] = clf.predict_proba(X)[:, 1]
+                if self._classes > 2:
+                    new_features[
+                        :, i * self._classes : self._classes + i * self._classes
+                    ] = clf.predict_proba(X)
+
+                else:
+                    new_features[:, i] = clf.predict_proba(X)[:, 1]
             else:
                 new_features[:, i] = clf.predict(X).squeeze()
 
@@ -974,13 +1012,7 @@ class SimpleClassifierAggregator(BaseAggregator):
 
         for mod_, X in X_modalities.items():
             for col in X.columns:
-                if (
-                    X[col].dtype.name not in ["object", "category"]
-                    or not X[col]
-                    .apply(lambda x: isinstance(x, (str, int, float)))
-                    .sum()
-                ):
-
+                if X[col].dtype.name not in ["object", "category"] or mod_ == IMAGE_KEY:
                     continue
 
                 values = list(X[col].unique())
@@ -1020,20 +1052,27 @@ class SimpleClassifierAggregator(BaseAggregator):
     def predict_multimodal(self, X_modalities):
 
         for mod_, X in X_modalities.items():
-            for col in self._backup_encoders:
-                eval_data = X[col][X[col].notna()]
-                inf_values = [
-                    x if x in self._backup_encoders[col].classes_ else "unknown"
-                    for x in eval_data
-                ]
+            if mod_ == TABULAR_KEY:
+                for col in self._backup_encoders:
+                    eval_data = X[col][X[col].notna()]
+                    inf_values = [
+                        x if x in self._backup_encoders[col].classes_ else "unknown"
+                        for x in eval_data
+                    ]
 
-                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                    inf_values
-                )
+                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                        inf_values
+                    )
 
-                X_modalities[mod_] = check_array(X, force_all_finite=False)
+                    X_modalities[mod_] = check_array(X, force_all_finite=False)
 
-            all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
+        all_scores = np.zeros(
+            [
+                X_modalities[next(iter(X_modalities.keys()))].shape[0],
+                self._classes,
+                self.n_base_estimators_,
+            ]
+        )
 
         for i, clf in enumerate(self.base_estimators):
             if clf.fitted_ is not True and self.pre_fitted is False:
@@ -1114,7 +1153,7 @@ class SimpleClassifierAggregator(BaseAggregator):
 
         Parameters
         ----------
-        X : dict containing dataframe (n_samples, n_features)
+        X_modalities : dict containing dataframe (n_samples, n_features)
             The input modality samples.
 
         Returns
@@ -1125,22 +1164,28 @@ class SimpleClassifierAggregator(BaseAggregator):
         """
 
         for mod_, X in X_modalities.items():
-            for col in self._backup_encoders:
-                eval_data = X[col][X[col].notna()]
-                inf_values = [
-                    x if x in self._backup_encoders[col].classes_ else "unknown"
-                    for x in eval_data
-                ]
-
-                X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
-                    inf_values
-                )
             if mod_ == TABULAR_KEY:
+                for col in self._backup_encoders:
+                    eval_data = X[col][X[col].notna()]
+                    inf_values = [
+                        x if x in self._backup_encoders[col].classes_ else "unknown"
+                        for x in eval_data
+                    ]
+
+                    X.loc[X[col].notna(), col] = self._backup_encoders[col].transform(
+                        inf_values
+                    )
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
             elif mod_ == IMAGE_KEY:
                 X_modalities[mod_] = X.to_numpy()
 
-            all_scores = np.zeros([X.shape[0], self._classes, self.n_base_estimators_])
+        all_scores = np.zeros(
+            [
+                X_modalities[next(iter(X_modalities.keys()))].shape[0],
+                self._classes,
+                self.n_base_estimators_,
+            ]
+        )
 
         for i in range(self.n_base_estimators_):
             clf = self.base_estimators[i]
