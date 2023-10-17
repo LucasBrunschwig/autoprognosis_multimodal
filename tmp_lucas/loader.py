@@ -241,7 +241,28 @@ class DataLoader:
 
         # Transform df into suitable numeric values
         if not raw:
-            if pacheco:
+
+            if sample:
+
+                categorical_features = [
+                    "region",
+                    "itch",
+                    "grew",
+                    "hurt",
+                    "changed",
+                    "bleed",
+                    "elevation",
+                ]
+
+                df = df[categorical_features + ["image", "label"]]
+                for column in categorical_features:
+                    tmp = pd.get_dummies(df[column], prefix=column)
+                    if column + "_UNK" in tmp.columns:
+                        tmp.drop([column + "_UNK"], axis=1, inplace=True)
+                    df.drop(column, axis=1, inplace=True)
+                    df = df.join(tmp)
+
+            elif pacheco:
                 categorical_var = [
                     "smoke",
                     "drink",
