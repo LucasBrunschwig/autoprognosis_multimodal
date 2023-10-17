@@ -46,8 +46,7 @@ class PipelineSelector:
         classifier_category: str
             task type: "classifier" or "risk_estimation"
         multimodal_type: str,
-            type of multimodal fusion, None if unimodal
-        data_type: str,
+            type of multimodal fusion, None if uni-modal
 
     """
 
