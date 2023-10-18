@@ -91,11 +91,16 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
 
     Example:
-        >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_net='AlexNet')
-        >>> from sklearn.datasets import load_iris
-        >>> # Load data
-        >>> plugin.fit_transform(X, y) # returns the probabilities for each class
+         >>> from autoprognosis.plugins.preprocessors import Preprocessors
+         >>> plugin = Preprocessors(category="image_reduction").get("cnn")
+         >>> from sklearn.datasets import load_digits
+         >>> from PIL import Image
+         >>> import numpy as np
+         >>> # load data
+         >>> X, y = load_digits(return_X_y=True, as_frame=True)
+         >>> # Transform X into PIL Images
+         >>> X["image"] = X.apply(lambda row: Image.fromarray(np.stack([(row.to_numpy().reshape((8, 8))).astype(np.uint8)]*3, axis=-1)), axis=1)
+         >>> plugin.fit_transform(X[["image"]], y)
     """
 
     def __init__(
@@ -283,7 +288,7 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             init_method=self.init_method,
         )
 
-        self.model.train(X, y)
+        self.model.train_(X, y)
 
         return self
 

@@ -67,7 +67,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         the non-linearity in the additional layers
     latent_representation: int
         dimension of latent representation
-    lr: float
+    lr: int
         learning rate for optimizer. step_size equivalent in the JAX version.
     n_unfrozen_layers:
         the number of layer to unfreeze
@@ -267,7 +267,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
             replace_classifier=self.replace_classifier,
         )
 
-        self.model.train(X, y)
+        self.model.train_(X, y)
 
         return self
 
