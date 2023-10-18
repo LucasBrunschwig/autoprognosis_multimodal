@@ -331,18 +331,10 @@ class ConvNetPredefinedFineTune(nn.Module):
         # Select the feature extraction part of the model
         if isinstance(self.model, torch.nn.Sequential):
             feature_extractor = self.model
-        elif hasattr(self.model, "features"):  # For most architectures
+        elif hasattr(self.model, "features"):
             feature_extractor = self.model.features
         elif hasattr(self.model, "layer4"):  # For ResNet
             feature_extractor = self.model.layer4
-        elif hasattr(self.model, "classifier") and hasattr(
-            self.model, "features"
-        ):  # For MobileNet
-            feature_extractor = self.model.features
-        elif hasattr(self.model, "features") and hasattr(
-            self.model, "classifier"
-        ):  # For DenseNet
-            feature_extractor = self.model.features
         else:
             raise ValueError("Unsupported architecture")
 
