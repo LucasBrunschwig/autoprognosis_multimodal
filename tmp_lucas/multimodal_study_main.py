@@ -71,7 +71,7 @@ if __name__ == "__main__":
         sample_for_search=False,
         # Different Models for different type of fusion
         intermediate_classifiers=["metablock", "intermediate_conv_net"],
-        tabular_classifiers=["logistic_regression", "rando_forest"],
+        tabular_classifiers=["logistic_regression", "random_forest"],
         image_classifiers=["cnn_fine_tune", "cnn"],
         # For early fusion
         image_dimensionality_reduction=["cnn_fine_tune", "cnn_imagenet"],
