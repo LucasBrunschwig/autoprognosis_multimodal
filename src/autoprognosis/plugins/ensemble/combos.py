@@ -543,9 +543,10 @@ class Stacking(BaseAggregator):
                 # Validate inputs X and y for tabular data
                 X, y = check_X_y(X, y, force_all_finite=False)
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
-
             elif mod_ == IMAGE_KEY:
                 X_modalities[mod_] = X.to_numpy()
+            else:
+                raise RuntimeError("Unknown Modality Type")
 
             n_samples = X.shape[0]
 
@@ -643,7 +644,9 @@ class Stacking(BaseAggregator):
         for col in X.columns:
             if (
                 X[col].dtype.name not in ["object", "category"]
-                or not X[col].apply(lambda x: isinstance(x, (str, int, float))).sum()
+                or not X[col]
+                .apply(lambda x: isinstance(x, (str, int, float, bool)))
+                .sum()
             ):
                 continue
 
@@ -661,8 +664,10 @@ class Stacking(BaseAggregator):
         if self.base_estimators[0].modality_type() == TABULAR_KEY:
             X, y = check_X_y(X, y, force_all_finite=False)
             X = check_array(X, force_all_finite=False)
-        else:
+        elif self.base_estimators[0].modality_type() == IMAGE_KEY:
             X = X.to_numpy()
+        else:
+            raise RuntimeError("Unknown model type")
 
         self._set_n_classes(y)
 
@@ -1027,6 +1032,8 @@ class SimpleClassifierAggregator(BaseAggregator):
                 # Validate inputs X and y
                 X, y = check_X_y(X, y, force_all_finite=False)
                 X_modalities[mod_] = check_array(X, force_all_finite=False)
+            else:
+                raise RuntimeError("Unknown modality type")
 
         if self.pre_fitted:
             return
