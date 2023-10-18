@@ -59,7 +59,7 @@ NONLIN = {
     "leaky_relu": nn.LeakyReLU,
     "selu": nn.SELU,
 }
-LR = {
+Learning_Rates = {
     0: [1e-4, 1e-5],
     1: [1e-4, 1e-4],
     2: [1e-5, 1e-6],
@@ -117,7 +117,7 @@ class ConvNetPredefinedFineTune(nn.Module):
 
     def __init__(
         self,
-        model_name: str,
+        conv_name: str,
         n_classes: Optional[int],
         non_linear: str,
         transformation: transforms.Compose,
@@ -154,7 +154,7 @@ class ConvNetPredefinedFineTune(nn.Module):
         self.weighted_cross_entropy = weighted_cross_entropy
 
         # Model Architectures
-        self.model_name = model_name.lower()
+        self.model_name = conv_name.lower()
         self.latent_representation = (
             latent_representation  # latent representation in early fusion
         )
@@ -403,7 +403,6 @@ class ConvNetPredefinedFineTune(nn.Module):
 
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
-        test_size = min(test_size, 300)
         train_size = len(dataset) - test_size
 
         train_dataset, test_dataset = torch.utils.data.random_split(
@@ -586,14 +585,14 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         non_linear: str = "relu",
         replace_classifier: bool = False,
         # Data Augmentation
-        data_augmentation: Union[str, transforms.Compose] = "simple_strategy",
+        data_augmentation: Union[str, transforms.Compose] = "",
         # Training
         lr: int = 3,
         n_unfrozen_layers: int = 2,
         weighted_cross_entropy: bool = False,
         weight_decay: float = 1e-4,
         n_iter: int = 1000,
-        batch_size: int = 100,
+        batch_size: int = 128,
         n_iter_print: int = 10,
         patience: int = 5,
         n_iter_min: int = 10,
@@ -618,7 +617,7 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         self.n_additional_layers = n_additional_layers
 
         # Training Parameters
-        self.lr = LR[lr]
+        self.lr = Learning_Rates[lr]
         self.n_unfrozen_layer = n_unfrozen_layers
         self.weighted_cross_entropy = weighted_cross_entropy
         self.weight_decay = weight_decay
@@ -689,24 +688,24 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefinedFineTune(
-            model_name=self.conv_name,
+            conv_name=self.conv_name,
             n_classes=n_classes,
-            n_additional_layers=self.n_additional_layers,
-            n_unfrozen_layer=self.n_unfrozen_layer,
-            lr=self.lr,
             non_linear=self.non_linear,
-            n_iter=self.n_iter,
-            n_iter_min=self.n_iter_min,
-            n_iter_print=self.n_iter_print,
-            early_stopping=self.early_stopping,
-            patience=self.patience,
-            batch_size=self.batch_size,
-            weight_decay=self.weight_decay,
             transformation=self.data_augmentation,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            n_iter=self.n_iter,
+            weight_decay=self.weight_decay,
+            early_stopping=self.early_stopping,
+            n_iter_print=self.n_iter_print,
+            n_iter_min=self.n_iter_min,
+            patience=self.patience,
             preprocess=self.preprocess,
+            n_unfrozen_layer=self.n_unfrozen_layer,
+            n_additional_layers=self.n_additional_layers,
             clipping_value=self.clipping_value,
-            replace_classifier=self.replace_classifier,
             weighted_cross_entropy=self.weighted_cross_entropy,
+            replace_classifier=self.replace_classifier,
         )
 
         self.model.train_(X, y)
@@ -802,6 +801,9 @@ class CNNFineTunePlugin(base.ClassifierPlugin):
 
     def get_conv_name(self):
         return self.conv_name
+
+    def eval(self):
+        self.model.eval()
 
     def save(self) -> bytes:
         return save_model(self)

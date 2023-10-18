@@ -11,8 +11,8 @@ from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.explorers.core.selector as selector
 import autoprognosis.plugins.core.params as params
 from autoprognosis.plugins.prediction.classifiers.image.plugin_cnn_fine_tune import (
-    LR,
     ConvNetPredefinedFineTune,
+    Learning_Rates,
 )
 import autoprognosis.plugins.preprocessors.base as base
 from autoprognosis.plugins.utils.custom_dataset import (
@@ -58,38 +58,75 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
     Parameters
     ----------
     conv_name: str,
-        Name of the predefined convolutional neural networks
+        the predefined architecture
+    n_additional_layer (int):
+        the number of added layer to the predefined CNN for transfer learning
+    replace_classifier (bool):
+        replace the classifier instead of adding layers on top of the classifiers
+     non_linear (str):
+        the non-linearity in the additional layers
+    latent_representation: int
+        dimension of latent representation
+    lr: float
+        learning rate for optimizer. step_size equivalent in the JAX version.
+    n_unfrozen_layers:
+        the number of layer to unfreeze
+    weightec_cross_entropy (bool):
+        use weighted cross entropy during training
+    weight_decay: float
+        l2 (ridge) penalty for the weights.
+    n_iter: int
+        Maximum number of iterations.
+    batch_size: int
+        Batch size
+    n_iter_print: int
+        Number of iterations after which to print updates and check the validation loss.
+    patience: int
+        Number of iterations to wait before early stopping after decrease in validation loss
+    n_iter_min: int
+        Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
     random_state: int, default 0
         Random seed
 
-
-    Example:
-        >>> from autoprognosis.plugins.prediction import Predictions
-        >>> plugin = Predictions(category="preprocessors").get("predefined_cnn", conv_name='AlexNet')
-        >>> from sklearn.datasets import load_iris
-        >>> # Load data
-        >>> plugin.fit_transform(X, y) # returns the probabilities for each class
+    # Example:
+         >>> from autoprognosis.plugins.preprocessors import Preprocessors
+         >>> plugin = Preprocessors(category="image_reduction").get("cnn_fine_tune")
+         >>> from sklearn.datasets import load_digits
+         >>> from PIL import Image
+         >>> import numpy as np
+         >>> # load data
+         >>> X, y = load_digits(return_X_y=True, as_frame=True)
+         >>> # Transform X into PIL Images
+         >>> X["image"] = X.apply(lambda row: Image.fromarray(np.stack([(row.to_numpy().reshape((8, 8))).astype(np.uint8)]*3, axis=-1)), axis=1)
+         >>> plugin.fit_transform(X[["image"]], y)
     """
 
     def __init__(
         self,
+        # Architecture
         conv_name: str = "AlexNet",
-        nonlin: str = "relu",
-        lr: int = 3,
-        batch_size: int = 128,
-        data_augmentation: Union[str, transforms.Compose, None] = "",
+        n_additional_layers: int = 2,
+        non_linear: str = "relu",
         replace_classifier: bool = False,
-        weighted_cross_entropy: bool = False,
+        latent_representation=100,
+        # Data Augmentation
+        data_augmentation: Union[str, transforms.Compose, None] = "",
+        # Training
+        lr: int = 3,
         n_unfrozen_layer: int = 2,
-        n_iter: int = 1,
-        n_iter_min: int = 10,
+        weighted_cross_entropy: bool = False,
+        weight_decay: float = 1e-3,
+        n_iter: int = 1000,
+        batch_size: int = 128,
         n_iter_print: int = 10,
         patience: int = 5,
+        n_iter_min: int = 10,
         early_stopping: bool = True,
-        weight_decay: float = 1e-3,
-        n_additional_layers: int = 3,
         clipping_value: int = 1,
-        latent_representation=100,
         random_state: int = 0,
         **kwargs: Any,
     ) -> None:
@@ -99,13 +136,13 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
         # Model Architecture
         self.conv_name = conv_name.lower()
-        self.non_lin = nonlin
+        self.non_lin = non_linear
         self.n_additional_layers = n_additional_layers
         self.latent_representation = latent_representation
         self.classifier_removed = False
         self.replace_classifier = replace_classifier
         # Model Fitting
-        self.lr = LR[lr]
+        self.lr = Learning_Rates[lr]
         self.batch_size = batch_size
         self.n_iter = n_iter
         self.n_iter_min = n_iter_min
@@ -146,7 +183,7 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
     @staticmethod
     def hyperparameter_space(*args: Any, **kwargs: Any) -> List[params.Params]:
         """Hyperparameter Optimization Space"""
-        hp_space = [params.Categorical("latent_representation", [100])]
+        hp_space = [params.Categorical("latent_representation", [50, 100, 300])]
 
         if not selector.LR_SEARCH:
             hp_space.extend(CNNFeaturesFineTunePlugin.hyperparameter_lr_space())
@@ -210,24 +247,24 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefinedFineTune(
-            model_name=self.conv_name,
+            conv_name=self.conv_name,
             n_classes=self.n_classes,
-            n_additional_layers=self.n_additional_layers,
-            n_unfrozen_layer=self.n_unfrozen_layer,
-            lr=self.lr,
             non_linear=self.non_lin,
-            n_iter=self.n_iter,
-            n_iter_min=self.n_iter_min,
-            n_iter_print=self.n_iter_print,
-            early_stopping=self.early_stopping,
-            patience=self.patience,
-            batch_size=self.batch_size,
-            weight_decay=self.weight_decay,
             transformation=self.data_augmentation,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            n_iter=self.n_iter,
+            weight_decay=self.weight_decay,
+            early_stopping=self.early_stopping,
+            n_iter_print=self.n_iter_print,
+            n_iter_min=self.n_iter_min,
+            patience=self.patience,
             preprocess=self.preprocess,
-            replace_classifier=self.replace_classifier,
+            n_unfrozen_layer=self.n_unfrozen_layer,
+            n_additional_layers=self.n_additional_layers,
             latent_representation=self.latent_representation,
             weighted_cross_entropy=self.weighted_cross_entropy,
+            replace_classifier=self.replace_classifier,
         )
 
         self.model.train(X, y)
@@ -238,8 +275,8 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
+        self.model.eval()
         with torch.no_grad():
-            self.model.model.eval()
             results = np.empty((0, self.n_classes))
             test_dataset = TestImageDataset(X, preprocess=self.preprocess)
             test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
@@ -260,8 +297,9 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
         if isinstance(X, np.ndarray):
             X = pd.DataFrame(X)
         self.model.to(DEVICE)
+        self.model.eval()
+
         with torch.no_grad():
-            self.model.model.eval()
             results = np.empty(
                 (
                     0,

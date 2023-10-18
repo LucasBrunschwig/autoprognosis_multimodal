@@ -48,8 +48,44 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     Parameters
     ----------
-    conv_net: str,
-        Name of the predefined convolutional neural networks
+    conv_name (str):,
+        the predefined architecture
+    init_method (str):,
+        change the weights of the network with the selected initialization method
+    n_additional_layer (int):
+        the number of added layer to the predefined CNN for transfer learning
+    non_linear (str):
+        non-linearities in additional layers
+    replace_classifier (bool):
+        replace the classifier instead of adding layers on top of the classifiers
+    latent_representation (int):
+        dimension of latent representation
+    normalisation: str,
+        normalisation method name (channel-wise, pixel-wise)
+    size (int):,
+        size of the resized image during normalisation
+    data_augmentation (str):
+        data augmentation strategy applied on-the-fly to images during training
+    lr: float
+        learning rate for optimizer. step_size equivalent in the JAX version.
+    weightec_cross_entropy (bool):
+        use weighted cross entropy during training
+    weight_decay: float
+        l2 (ridge) penalty for the weights.
+    n_iter: int
+        Maximum number of iterations.
+    batch_size: int
+        Batch size
+    n_iter_print: int
+        Number of iterations after which to print updates and check the validation loss.
+    patience: int
+        Number of iterations to wait before early stopping after decrease in validation loss
+    n_iter_min: int
+        Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
     random_state: int, default 0
         Random seed
 
@@ -64,25 +100,28 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
 
     def __init__(
         self,
+        # Architecture
         conv_name: str = "alexnet",
-        normalisation: bool = "channel-wise",
-        non_linear: str = "relu",
+        init_method: str = "",
+        n_additional_layers: int = 2,
         replace_classifier: bool = False,
+        non_linear: str = "relu",
         latent_representation: int = 100,
+        # Preprocessing and Data Augmentation
+        normalisation: bool = "channel-wise",
         size: int = 256,
+        data_augmentation: Union[str, transforms.Compose] = None,
+        # Training
         lr: float = 1e-3,
+        weighted_cross_entropy: bool = False,
         weight_decay: float = 1e-4,
-        n_iter: int = 1,
+        n_iter: int = 1000,
         batch_size: int = 100,
         n_iter_print: int = 10,
-        data_augmentation: Union[str, transforms.Compose] = None,
-        weighted_cross_entropy: bool = False,
-        n_additional_layers: int = 2,
         patience: int = 10,
         n_iter_min: int = 10,
         early_stopping: bool = True,
         clipping_value: int = 0,
-        init_method: str = "",
         random_state: int = 0,
         **kwargs: Any,
     ) -> None:
@@ -223,25 +262,25 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
         self.preprocess = self.image_preprocess()
 
         self.model = ConvNetPredefined(
-            model_name=self.conv_name,
+            conv_name=self.conv_name,
             n_classes=self.n_classes,
-            n_additional_layers=self.n_additional_layers,
-            lr=self.lr,
             non_linear=self.non_linear,
-            n_iter=self.n_iter,
-            n_iter_min=self.n_iter_min,
-            n_iter_print=self.n_iter_print,
-            early_stopping=self.early_stopping,
-            patience=self.patience,
-            batch_size=self.batch_size,
-            weight_decay=self.weight_decay,
             transformation=self.data_augmentation,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            n_iter=self.n_iter,
+            weight_decay=self.weight_decay,
+            early_stopping=self.early_stopping,
+            n_iter_print=self.n_iter_print,
+            n_iter_min=self.n_iter_min,
+            patience=self.patience,
             preprocess=self.preprocess,
+            n_additional_layers=self.n_additional_layers,
             clipping_value=self.clipping_value,
-            replace_classifier=self.replace_classifier,
-            weighted_cross_entropy=self.weighted_cross_entropy,
-            init_method=self.init_method,
             latent_representation=self.latent_representation,
+            weighted_cross_entropy=self.weighted_cross_entropy,
+            replace_classifier=self.replace_classifier,
+            init_method=self.init_method,
         )
 
         self.model.train(X, y)

@@ -126,7 +126,7 @@ class ConvNetPredefined(nn.Module):
 
     def __init__(
         self,
-        model_name: str,
+        conv_name: str,
         n_classes: Optional[int],
         non_linear: str,
         transformation: transforms.Compose,
@@ -163,7 +163,7 @@ class ConvNetPredefined(nn.Module):
         self.weighted_cross_entropy = weighted_cross_entropy
 
         # Model Architectures
-        self.model_name = model_name.lower()
+        self.model_name = conv_name.lower()
         self.latent_representation = (
             latent_representation  # latent representation in early fusion
         )
@@ -635,23 +635,23 @@ class CNNPlugin(base.ClassifierPlugin):
         y = torch.from_numpy(np.asarray(y))
 
         self.model = ConvNetPredefined(
-            model_name=self.conv_name,
+            conv_name=self.conv_name,
             n_classes=self.n_classes,
-            n_additional_layers=self.n_additional_layers,
-            lr=self.lr,
             non_linear=self.non_linear,
-            n_iter=self.n_iter,
-            n_iter_min=self.n_iter_min,
-            n_iter_print=self.n_iter_print,
-            early_stopping=self.early_stopping,
-            patience=self.patience,
-            batch_size=self.batch_size,
-            weight_decay=self.weight_decay,
             transformation=self.data_augmentation,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            n_iter=self.n_iter,
+            weight_decay=self.weight_decay,
+            early_stopping=self.early_stopping,
+            n_iter_print=self.n_iter_print,
+            n_iter_min=self.n_iter_min,
+            patience=self.patience,
             preprocess=self.preprocess,
+            n_additional_layers=self.n_additional_layers,
             clipping_value=self.clipping_value,
-            replace_classifier=self.replace_classifier,
             weighted_cross_entropy=self.weighted_cross_entropy,
+            replace_classifier=self.replace_classifier,
             init_method=self.init_method,
         )
 
