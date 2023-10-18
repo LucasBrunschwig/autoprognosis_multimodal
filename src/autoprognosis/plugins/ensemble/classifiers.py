@@ -230,9 +230,7 @@ class WeightedEnsemble(BaseEnsemble):
         results = {}
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
@@ -248,9 +246,7 @@ class WeightedEnsemble(BaseEnsemble):
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     self.explainers[exp].plot(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
@@ -493,8 +489,6 @@ class StackingEnsemble(BaseEnsemble):
             else:
                 x = X
 
-            # To Discuss which tabular explainers are compatible with multimodal models
-
             self.explainers[exp] = Explainers().get(
                 exp,
                 copy.deepcopy(self),
@@ -518,9 +512,7 @@ class StackingEnsemble(BaseEnsemble):
         results = {}
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
@@ -536,9 +528,7 @@ class StackingEnsemble(BaseEnsemble):
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     self.explainers[exp].plot(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
@@ -666,9 +656,7 @@ class AggregatingEnsemble(BaseEnsemble):
         results = {}
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     results[exp] = self.explainers[exp].explain(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
@@ -684,9 +672,7 @@ class AggregatingEnsemble(BaseEnsemble):
     def explain_plot(self, X: pd.DataFrame, class_names, *args: Any):
         if isinstance(X, dict):
             for exp, plugin_name in zip(self.explainers, self.explainer_plugins):
-                data_type = (
-                    Explainers().list_available_path()[plugin_name].split("/")[-2]
-                )
+                data_type = Explainers().explainer_type(plugin_name)
                 if data_type == IMAGE_KEY:
                     self.explainers[exp].plot(X[IMAGE_KEY])
                 elif data_type == TABULAR_KEY:
