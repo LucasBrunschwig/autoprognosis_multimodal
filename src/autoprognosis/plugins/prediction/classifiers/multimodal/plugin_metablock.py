@@ -487,7 +487,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         weighted_cross_entropy: bool = False,
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        n_iter: int = 1,
+        n_iter: int = 1000,
         batch_size: int = 64,
         n_iter_print: int = 1,
         n_iter_min: int = 10,
