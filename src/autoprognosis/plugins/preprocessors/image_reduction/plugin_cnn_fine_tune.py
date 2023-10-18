@@ -240,7 +240,9 @@ class CNNFeaturesFineTunePlugin(base.PreprocessorPlugin):
 
         y = args[0]
 
-        if isinstance(X, np.ndarray):
+        if not isinstance(y, pd.Series):
+            y = pd.Series(y)
+        if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
 
         self.n_classes = len(y.value_counts())
