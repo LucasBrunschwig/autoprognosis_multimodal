@@ -25,8 +25,8 @@ os.environ["N_OPT_JOBS"] = "1"
 
 if __name__ == "__main__":
 
-    sample = True
-    group_stratification = False  # use without sampling
+    sample = False
+    group_stratification = True  # use without sampling
 
     logger.debug("Loading Images")
 
@@ -61,11 +61,12 @@ if __name__ == "__main__":
     study_name = f"image_classifier_{datetime.now().strftime('%Y-%m-%H')}"
     study = ImageClassifierStudy(
         study_name=study_name,
+        predefined_cnn=["resnet34"],
         dataset=df_train,  # pandas DataFrame
         target="label",  # the label column in the dataset
         sample_for_search=False,  # no Sampling
         classifiers=["cnn", "cnn_fine_tune"],
-        n_folds_cv=3,
+        n_folds_cv=5,
         num_iter=1,
         timeout=36000,
         num_study_iter=1,
