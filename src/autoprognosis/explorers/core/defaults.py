@@ -24,7 +24,7 @@ default_classifiers_names = [
 
 default_image_classsifiers_names = ["cnn", "cnn_fine_tune"]
 
-default_multimodal_names = ["intermediate_conv_net"]
+default_intermediate_names = ["intermediate_conv_net", "metablock"]
 
 default_regressors_names = [
     "random_forest_regressor",
@@ -39,8 +39,6 @@ default_image_dimensionality_reduction = [
     "cnn",
     "cnn_fine_tune",
     "cnn_imagenet",
-    "simsiam",
-    "pca_image",
 ]
 default_fusion = ["concatenate"]
 
