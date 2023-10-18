@@ -96,6 +96,7 @@ class ImageClassifierStudy(Study):
         ensemble_size: int
             Maximum number of models to include in the ensemble
     Example:
+        TODO: Change that
         >>> from sklearn.datasets import load_breast_cancer
         >>>
         >>> from autoprognosis.studies.classifiers import ClassifierStudy
@@ -125,7 +126,7 @@ class ImageClassifierStudy(Study):
         dataset: pd.DataFrame,
         target: str,
         preprocess_images: bool = True,
-        predefined_cnn: list = ["resnet34"],
+        predefined_cnn: list = [],
         num_iter: int = 20,
         num_study_iter: int = 5,
         num_ensemble_iter: int = 15,
@@ -150,6 +151,9 @@ class ImageClassifierStudy(Study):
 
         self.hooks = hooks
         dataset = pd.DataFrame(dataset)
+
+        if dataset[dataset.columns[0]].isna().sum() > 0:
+            raise RuntimeError("This framework does not allow for missing images")
 
         if nan_placeholder is not None:
             dataset = dataset.replace(nan_placeholder, np.nan)
@@ -197,7 +201,7 @@ class ImageClassifierStudy(Study):
         self.internal_name = dataframe_hash(
             dataset[dataset.columns.difference(["image"])]
         )
-        dataset.drop("hash_image", axis=1, inplace=True)
+        dataset.drop(columns=["hash_image"], inplace=True)
 
         self.study_name = study_name if study_name is not None else self.internal_name
 
