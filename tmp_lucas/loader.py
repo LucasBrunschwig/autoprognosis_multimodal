@@ -64,6 +64,7 @@ def read_folder(
     img_format: str = "PIL",
     full_size: bool = False,
     size: int = 400,
+    sample: bool = False,
 ) -> dict:
     """Read zipped images where the filename corresponds to the id.
 
@@ -81,7 +82,9 @@ def read_folder(
     images = {}
     files = os.listdir(dirpath)
     try:
-        for img_name in files:
+        for i, img_name in enumerate(files):
+            if sample and i > 1000:
+                return images
             if img_name.endswith(".png"):
                 img_ = Image.open(os.path.join(dirpath, img_name))
                 img_ = img_.convert("RGB")
@@ -199,12 +202,9 @@ class DataLoader:
         metadata_df = pd.read_csv(self.PATH / "metadata.csv")
 
         # Load Images as dictionary
-        if sample:
-            images_dict = read_folder(
-                self.PATH / "imgs_part_1", self.format, full_size, size
-            )
-        else:
-            images_dict = read_folder(self.PATH / "imgs", self.format, full_size, size)
+        images_dict = read_folder(
+            self.PATH / "imgs", self.format, full_size, size, sample
+        )
 
         images_df = pd.DataFrame.from_dict(
             images_dict, orient="index", columns=["image"], dtype=object
