@@ -15,6 +15,7 @@ from sklearn.preprocessing import LabelEncoder
 # autoprognosis absolute
 import autoprognosis.logger as log
 import autoprognosis.plugins.utils.cast as cast
+from autoprognosis.utils.default_modalities import IMAGE_KEY
 
 # autoprognosis relative
 from .params import Params
@@ -160,7 +161,9 @@ class Plugin(metaclass=ABCMeta):
         for col in X.columns:
             if (
                 X[col].dtype.name not in ["object", "category"]
-                or not X[col].apply(lambda x: isinstance(x, (str, int, float))).sum()
+                or not X[col]
+                .apply(lambda x: isinstance(x, (str, int, float, bool)))
+                .sum()  # does not contain
             ):
                 continue
             values = list(X[col].unique())
@@ -205,7 +208,8 @@ class Plugin(metaclass=ABCMeta):
             log.debug(f"Training {self.fqdn()}, input shape = {X.shape}")
         else:
             for mod_, x_ in X.items():
-                X[mod_] = self._preprocess_training_data(x_)
+                if mod_ != IMAGE_KEY:
+                    X[mod_] = self._preprocess_training_data(x_)
                 log.debug(f"Training {self.fqdn()}, {mod_} input shape = {x_.shape}")
         self._fit(X, *args, **kwargs)
         if not isinstance(X, dict):
@@ -238,7 +242,8 @@ class Plugin(metaclass=ABCMeta):
             log.debug(f"Transforming using {self.fqdn()}, input shape = {X.shape}")
         else:
             for mod_, x_ in X.items():
-                X[mod_] = self._preprocess_inference_data(x_)
+                if mod_ != IMAGE_KEY:
+                    X[mod_] = self._preprocess_inference_data(x_)
                 log.debug(
                     f"Transforming using {self.fqdn()}, {mod_} input shape = {x_.shape}"
                 )
@@ -262,7 +267,8 @@ class Plugin(metaclass=ABCMeta):
             log.debug(f"Predicting using {self.fqdn()}, input shape = {X.shape}")
         else:
             for mod_, x_ in X.items():
-                X[mod_] = self._preprocess_inference_data(x_)
+                if mod_ != IMAGE_KEY:
+                    X[mod_] = self._preprocess_inference_data(x_)
                 log.debug(
                     f"Predicting using {self.fqdn()}, {mod_} input shape = {x_.shape}"
                 )
