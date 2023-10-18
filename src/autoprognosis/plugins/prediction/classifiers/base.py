@@ -9,6 +9,7 @@ import autoprognosis.logger as log
 import autoprognosis.plugins.core.base_plugin as plugin
 import autoprognosis.plugins.prediction.base as prediction_base
 import autoprognosis.plugins.utils.cast as cast
+from autoprognosis.utils.default_modalities import IMAGE_KEY
 from autoprognosis.utils.tester import classifier_metrics
 
 
@@ -41,7 +42,8 @@ class ClassifierPlugin(prediction_base.PredictionPlugin):
 
         elif isinstance(X, dict):
             for mod_, df in X.items():
-                X[mod_] = self._preprocess_training_data(df)
+                if mod_ != IMAGE_KEY:
+                    X[mod_] = self._preprocess_training_data(df)
                 log.debug(
                     f"Training using {self.fqdn()}, {mod_}, input shape = {df.shape}"
                 )
