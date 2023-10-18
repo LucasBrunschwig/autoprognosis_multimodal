@@ -19,6 +19,7 @@ from autoprognosis.explorers.core.defaults import (
     default_image_classsifiers_names,
     default_image_dimensionality_reduction,
     default_image_processing,
+    default_intermediate_names,
 )
 from autoprognosis.explorers.core.optimizer import EnsembleOptimizer
 from autoprognosis.hooks import DefaultHooks, Hooks
@@ -47,6 +48,8 @@ class MultimodalEnsembleSeeker:
     Args:
         study_name: str.
             Study ID, used for caching keys.
+        multimodal_type: str,
+            type of multimodal fusion
         num_iter: int.
             Maximum Number of optimization trials. This is the limit of trials for each base estimator in the "classifiers" list, used in combination with the "timeout" parameter. For each estimator, the search will end after "num_iter" trials or "timeout" seconds.
         num_ensemble_iter: int.
@@ -104,7 +107,7 @@ class MultimodalEnsembleSeeker:
             Plugin search pool to use in the pipeline for optimal early modality fusion.
             Available retrieved using `Preprocessors(category="fusion").list_available()`
                 - 'concatenate'
-        classifiers: list.
+        tabular_classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers(category="tabular").list_available()`:
 
@@ -136,6 +139,11 @@ class MultimodalEnsembleSeeker:
              Available plugins, retrieved using `Classifiers(category="image").list_available()`:
                 - 'cnn'
                 - 'cnn_fine_tune'
+        intermediate_classifiers: list.
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["cnn"].
+             Available plugins, retrieved using `Classifiers(category="multimodal").list_available()`:
+                - 'intermediate_conv_net'
+                - 'metablock'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -161,30 +169,45 @@ class MultimodalEnsembleSeeker:
     def __init__(
         self,
         study_name: str,
+        multimodal_type: str = "early_fusion",
         num_iter: int = 100,
         num_ensemble_iter: int = 100,
         timeout: Optional[int] = 360,
         n_folds_cv: int = 5,
         ensemble_size: int = 3,
         metric: str = "aucroc",
-        multimodal_type: str = "early_fusion",
+        # Preprocessing
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         preprocess_images: bool = True,
         image_processing: List[str] = default_image_processing,
+        # Early Fusion
         image_dimensionality_reduction: List[
             str
         ] = default_image_dimensionality_reduction,
         fusion: List[str] = default_fusion,
-        classifiers: List[str] = default_classifiers_names,
+        # Models
+        tabular_classifiers: List[str] = default_classifiers_names,
         image_classifiers: List[str] = default_image_classsifiers_names,
+        intermediate_classifiers: List[str] = default_intermediate_names,
         imputers: List[str] = [],
         hooks: Hooks = DefaultHooks(),
         optimizer_type: str = "bayesian",
         random_state: int = 0,
         multimodal_key: dict = None,
     ) -> None:
-        ensemble_size = min(ensemble_size, len(classifiers))
+
+        if multimodal_type == "late_fusion":
+            ensemble_size = min(
+                ensemble_size, len(tabular_classifiers) + len(image_classifiers)
+            )
+            classifiers = tabular_classifiers
+        elif multimodal_type == "early_fusion":
+            ensemble_size = min(ensemble_size, len(tabular_classifiers))
+            classifiers = tabular_classifiers
+        else:
+            ensemble_size = min(ensemble_size, len(intermediate_classifiers))
+            classifiers = intermediate_classifiers
 
         self.num_iter = num_ensemble_iter
         self.timeout = timeout
@@ -231,7 +254,6 @@ class MultimodalEnsembleSeeker:
                 timeout=timeout,
                 preprocess_images=preprocess_images,
                 image_processing=image_processing,
-                image_dimensionality_reduction=[],
                 classifiers=image_classifiers,
                 hooks=hooks,
                 optimizer_type=optimizer_type,
@@ -422,13 +444,13 @@ class MultimodalEnsembleSeeker:
         ensembles: list = []
 
         try:
-            if best_models[0].modality_type() == TABULAR_KEY:
-                meta_clf = best_models[0]
-            else:
-                meta_clf = None
+            meta_clf = None
+            for model in best_models:
+                if model.modality_type() == TABULAR_KEY:
+                    meta_clf = model
 
             stacking_ensemble = StackingEnsemble(
-                best_models, meta_model=meta_clf, use_proba=True
+                best_models, meta_model=meta_clf, use_proba=True, keep_original=False
             )
             stacking_ens_score = evaluate_multimodal_estimator(
                 stacking_ensemble,

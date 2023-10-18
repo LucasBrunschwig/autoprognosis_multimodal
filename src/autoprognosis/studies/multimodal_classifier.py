@@ -18,7 +18,7 @@ from autoprognosis.explorers.core.defaults import (
     default_image_classsifiers_names,
     default_image_dimensionality_reduction,
     default_image_processing,
-    default_multimodal_names,
+    default_intermediate_names,
 )
 from autoprognosis.explorers.core.selector import predefined_args
 from autoprognosis.explorers.multimodal_classifiers_combos import (
@@ -54,10 +54,6 @@ class MultimodalStudy(Study):
             The target column in the dataset.
         multimodal_type: str.
             Which type of fusion [early, intermediate, late]
-        preprocess_images: bool.
-            Specify if you require image preprocessing optimization
-        predefined_cnn: list[str].
-            Optional: specify which predefined architectures the pipeline will optimize.
         num_iter: int.
             Maximum Number of optimization trials. This is the limit of trials for each base estimator in the "classifiers" list, used in combination with the "timeout" parameter. For each estimator, the search will end after "num_iter" trials or "timeout" seconds.
         num_study_iter: int.
@@ -78,6 +74,10 @@ class MultimodalStudy(Study):
                 - "kappa", "kappa_quadratic":  computes Cohen’s kappa, a score that expresses the level of agreement between two annotators on a classification problem.
         study_name: str.
             The name of the study, to be used in the caches.
+        data_augmentation_strategy: list of transformation,
+            custom data augementation transformation
+        preprocess_images: bool.
+            Specify if you require image preprocessing optimization
         feature_scaling: list.
             Plugin search pool to use in the pipeline for scaling. Defaults to : ['maxabs_scaler', 'scaler', 'feature_normalizer', 'normal_transform', 'uniform_transform', 'nop', 'minmax_scaler']
             Available plugins, retrieved using `Preprocessors(category="feature_scaling").list_available()`:
@@ -103,7 +103,9 @@ class MultimodalStudy(Study):
             Available retrieved using `Preprocessors(category="image_processing").list_available()`
                 1. 'resizer'
                 2. 'normalizer'
-        image_processing: list.
+        predefined_cnn: list[str].
+            Optional: specify which predefined architectures the pipeline will optimize.
+        image_dimensionality_reduction: list.
             Plugin search pool to use in the pipeline for optimal dimensionality reduction.
             Available retrieved using `Preprocessors(category="image_reduction").list_available()`
                 - 'cnn'
@@ -114,7 +116,7 @@ class MultimodalStudy(Study):
             Plugin search pool to use in the pipeline for optimal early modality fusion.
             Available retrieved using `Preprocessors(category="fusion").list_available()`
                 - 'concatenate'
-        classifiers: list.
+        tabular_classifiers: list.
             Plugin search pool to use in the pipeline for prediction. Defaults to ["random_forest", "xgboost", "logistic_regression", "catboost"].
             Available plugins, retrieved using `Classifiers().list_available()`:
                 - 'adaboost'
@@ -145,6 +147,10 @@ class MultimodalStudy(Study):
                 - 'cnn'
                 - 'cnn_fine_tune'
                 - 'vision_transformer'
+        intermediate_classifiers: list.
+            Plugin search pool to use in the pipeline for prediction. Defaults to ["intermediate_conv_net"].
+                - 'intermediate_conv_net'
+                - 'metablock'
         imputers: list.
             Plugin search pool to use in the pipeline for imputation. Defaults to ["mean", "ice", "missforest", "hyperimpute"].
             Available plugins, retrieved using `Imputers().list_available()`:
@@ -210,25 +216,27 @@ class MultimodalStudy(Study):
         image: str,
         target: str,
         multimodal_type: str,
-        preprocess_images: bool = True,
-        predefined_cnn: list = [],
-        data_augmentation_strategy: list = [],
         num_iter: int = 20,
         num_study_iter: int = 10,
         num_ensemble_iter: int = 15,
         timeout: Optional[int] = 3600,
         metric: str = "aucroc",
         study_name: Optional[str] = None,
+        # Preprocessing
+        data_augmentation_strategy: list = [],
+        preprocess_images: bool = True,
         feature_scaling: List[str] = default_feature_scaling_names,
         feature_selection: List[str] = default_feature_selection_names,
         image_processing: List[str] = default_image_processing,
-        image_dimensionality_reduction: List[
-            str
-        ] = default_image_dimensionality_reduction,
+        # Multimodal Fusion
+        predefined_cnn: List[str] = [],
+        image_dimensionality_reduction: List[str] = [],
         fusion: List[str] = [],
-        classifiers: List[str] = [],
-        image_classifiers: List[str] = [],
+        tabular_classifiers: List[str] = default_classifiers_names,
+        image_classifiers: List[str] = default_image_classsifiers_names,
+        intermediate_classifiers: List[str] = default_intermediate_names,
         imputers: List[str] = ["ice"],
+        # Miscellaneous
         workspace: Path = Path("tmp"),
         hooks: Hooks = DefaultHooks(),
         score_threshold: float = SCORE_THRESHOLD,
@@ -261,17 +269,18 @@ class MultimodalStudy(Study):
         if not preprocess_images:
             image_processing = []
 
-        # Define plugins search pools according to type of fusion
+        # In early fusion, define image dimensionality reduction and fusion
         if multimodal_type == "early_fusion":
             if not image_dimensionality_reduction:
                 image_dimensionality_reduction = default_image_dimensionality_reduction
                 log.warning(
-                    "Image dimensionality plugins seach pool set to default. (early fusion)"
+                    "Image dimensionality plugins search pool set to default. (early fusion)"
                 )
             if not fusion:
                 fusion = default_fusion
                 log.warning("Fusion plugins search pool set to default. (early fusion)")
 
+        # In others, remove image dimensionality reduction and fusion
         if multimodal_type != "early_fusion":
             if fusion:
                 fusion = []
@@ -283,13 +292,24 @@ class MultimodalStudy(Study):
                 log.warning(
                     "Image dimensionality reduction plugins search pool ignored. (only required for early fusion)"
                 )
-        if not classifiers:
-            if multimodal_type in ["early_fusion", "late_fusion"]:
-                classifiers = default_classifiers_names
-            elif multimodal_type == "intermediate_fusion":
-                classifiers = default_multimodal_names
-        if multimodal_type == "late_fusion" and not image_classifiers:
-            image_classifiers = default_image_classsifiers_names
+
+        if multimodal_type == "late_fusion":
+            if not tabular_classifiers:
+                tabular_classifiers = default_classifiers_names
+                log.warning("Using default tabular classifiers for late fusion")
+            if not image_classifiers:
+                image_classifiers = default_image_classsifiers_names
+                log.warning("Using default image classifiers for late fusion")
+
+        elif multimodal_type == "early_fusion":
+            if not tabular_classifiers:
+                tabular_classifiers = default_classifiers_names
+                log.warning("Using default tabular classifiers for early fusion")
+
+        elif multimodal_type == "intermediate_fusion":
+            if not intermediate_classifiers:
+                intermediate_classifiers = default_intermediate_names
+                log.warning("Using default classifiers for intermediate fusion")
 
         # Specify a subset of architecture
         if predefined_cnn:
@@ -315,11 +335,19 @@ class MultimodalStudy(Study):
         # Build multimodal dictionary
         self.multimodal_key = {}
         non_tabular_column = []
-        if image is not None:
-            if not isinstance(image, list):
-                image = [image]
-            non_tabular_column.extend(image)
-            self.multimodal_key[IMAGE_KEY] = image
+
+        if image is None:
+            raise RuntimeError("Provide the column(s) corresponding to images")
+
+        if not isinstance(image, list):
+            image = [image]
+
+        for img_ in image:
+            if dataset[img_].isna().sum() > 0:
+                raise RuntimeError("This framework does not allow for unknown images")
+
+        non_tabular_column.extend(image)
+        self.multimodal_key[IMAGE_KEY] = image
         if group_id is not None:
             non_tabular_column.extend([group_id])
 
@@ -395,7 +423,8 @@ class MultimodalStudy(Study):
             image_dimensionality_reduction=image_dimensionality_reduction,
             imputers=imputers,
             fusion=fusion,
-            classifiers=classifiers,
+            intermediate_classifiers=intermediate_classifiers,
+            tabular_classifiers=tabular_classifiers,
             image_classifiers=image_classifiers,
             hooks=self.hooks,
             random_state=self.random_state,
@@ -484,10 +513,6 @@ class MultimodalStudy(Study):
                 eval_metrics[metric] = metrics["raw"][metric][0]
                 eval_metrics[f"{metric}_str"] = metrics["str"][metric]
 
-            # TMP LUCAS
-            for metric, score_ in metrics["str"].items():
-                print(f"{metric} {score_}")
-
             self.hooks.heartbeat(
                 topic="classification_study",
                 subtopic="candidate",
@@ -521,7 +546,7 @@ class MultimodalStudy(Study):
             best_score = metrics["raw"][self.metric][0]
             best_model = current_model
 
-            log.error(
+            log.info(
                 f"Best ensemble so far: {best_model.name()} with score {metrics['raw'][self.metric]}"
             )
 
@@ -535,7 +560,7 @@ class MultimodalStudy(Study):
             )
             return None
 
-        return best_model, metrics
+        return best_model
 
     def fit(self) -> Any:
         """Run the study and train the model. The call returns the fitted model."""
