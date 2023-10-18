@@ -9,7 +9,7 @@ import pandas as pd
 # autoprognosis absolute
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.base_plugin as plugin
-from autoprognosis.utils.default_modalities import TABULAR_KEY
+from autoprognosis.utils.default_modalities import IMAGE_KEY, TABULAR_KEY
 
 
 class PredictionPlugin(plugin.Plugin):
@@ -55,7 +55,8 @@ class PredictionPlugin(plugin.Plugin):
 
         if isinstance(X, dict):
             for mod_, df in X.items():
-                X[mod_] = self._preprocess_inference_data(df)
+                if mod_ != IMAGE_KEY:
+                    X[mod_] = self._preprocess_inference_data(df)
                 log.debug(
                     f"Predicting using {self.fqdn()}, {mod_}, input shape = {X[mod_].shape}"
                 )
