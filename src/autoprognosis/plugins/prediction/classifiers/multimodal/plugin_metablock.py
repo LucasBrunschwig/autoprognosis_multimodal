@@ -13,6 +13,9 @@ from autoprognosis.explorers.core.selector import predefined_args
 import autoprognosis.logger as log
 import autoprognosis.plugins.core.params as params
 import autoprognosis.plugins.prediction.classifiers.base as base
+from autoprognosis.plugins.prediction.classifiers.tabular.plugin_neural_nets import (
+    NONLIN,
+)
 from autoprognosis.plugins.utils.custom_dataset import (
     TestMultimodalDataset,
     TrainingMultimodalDataset,
@@ -51,10 +54,21 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class MetaBlock(nn.Module):
     """
-    Metadata Processing Block (MetaBlock), gated mechanism for each feature maps
+    Metadata Processing Block (MetaBlock), gated mechanism for feature maps
     """
 
     def __init__(self, V, U):
+        """
+        Build the f_b and g_b function. The metadata space is transformed into a feature map space that will be used
+        for a weighted multiplication of the feature maps.
+
+        Parameters:
+        -----------
+        V: int,
+            the number of feature maps
+        U: int
+            the number of metadata
+        """
         super(MetaBlock, self).__init__()
         self.fb = nn.Sequential(nn.Linear(U, V), nn.BatchNorm1d(V))
         self.gb = nn.Sequential(nn.Linear(U, V), nn.BatchNorm1d(V))
@@ -81,34 +95,38 @@ class MetaBlockArchitecture(nn.Module):
         data augmentation transformations
     preprocess:
         image preprocessing
+    non_linear: str
+        non-linearities in the new classifier
     n_reducer_neurons: int
         number of hidden neurons in classifier
     n_reducer_layer: int
         number of hidden layers in classifier
+    batch_norm: bool,
+        add batch normalization layer
     freeze_conv: bool,
         freeze the convolutional layer of the network
     dropout: float,
-        .
-    n_iter_print: int
-        .
-    n_iter_min: int
-        .
-    patience: int
-        .
-    n_iter: int
-        .
+        droupout probability in dropout layers
+    weighted_cross_entropy: bool,
+        use weighted cross-entropy as a loss
     lr: float,
-        .
+        learning rate
     weight_decay: float
-        .
-    clipping_value: int
-        .
-    batch_norm: bool,
-        .
-    early_stopping: bool
-        .
-    batch_size: int,
-        .
+        l2 (ridge) penalty for the weights.
+    n_iter: int
+        Maximum number of iterations.
+    batch_size: int
+        Batch size
+    n_iter_print: int
+        Number of iterations after which to print updates and check the validation loss.
+    patience: int
+        Number of iterations to wait before early stopping after decrease in validation loss
+    n_iter_min: int
+        Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
 
     """
 
@@ -116,24 +134,25 @@ class MetaBlockArchitecture(nn.Module):
         self,
         n_classes: int,
         n_metadata: int,
-        conv_name: str,
-        transform: transforms.Compose,
         preprocess,
+        conv_name: str = "alexnet",
+        transform: transforms.Compose = None,
+        non_linear: str = "relu",
         n_reducer_neurons: int = 256,
         n_reducer_layer: int = 1,
-        freeze_conv=False,
+        batch_norm: bool = False,
+        freeze_conv: bool = False,
         dropout: float = 0.5,
         weighted_cross_entropy: bool = False,
+        lr: float = 1e-4,
+        weight_decay: float = 1e-3,
+        n_iter: int = 1000,
+        batch_size: int = 100,
         n_iter_print: int = 10,
         n_iter_min: int = 10,
         patience: int = 10,
-        n_iter: int = 1000,
-        lr: float = 1e-4,
-        weight_decay: float = 1e-3,
         clipping_value: int = 1,
-        batch_norm: bool = False,
         early_stopping: bool = True,
-        batch_size: int = 100,
     ):
 
         super(MetaBlockArchitecture, self).__init__()
@@ -149,6 +168,7 @@ class MetaBlockArchitecture(nn.Module):
         self.n_reducer_neurons = n_reducer_neurons
         self.n_reducer_layer = n_reducer_layer
         self.dropout = dropout
+        NL = NONLIN[non_linear]
 
         # Training
         self.batch_norm = batch_norm
@@ -167,8 +187,13 @@ class MetaBlockArchitecture(nn.Module):
         self.n_iter_min = n_iter_min
         self.n_iter_print = n_iter_print
 
-        self.n_feat_map, self.n_feat_map_size = self.feature_maps_size()
-        self.feat_size = self.n_feat_map_size**2 * self.n_feat_map
+        (
+            self.n_feat_map,
+            self.n_feat_map_size,
+        ) = self.feature_maps_size()  # number of feature maps and size
+        self.feat_size = (
+            self.n_feat_map_size**2 * self.n_feat_map
+        )  # size of combined feature maps flattened
 
         self.combination = MetaBlock(self.n_feat_map, n_metadata)
 
@@ -179,18 +204,17 @@ class MetaBlockArchitecture(nn.Module):
 
         # Feature reducer base
         if n_reducer_layer > 0:
-            additional_layers = [
-                nn.Linear(self.feat_size, n_reducer_neurons),
-                nn.BatchNorm1d(n_reducer_neurons),
-                nn.ReLU(),
-                nn.Dropout(p=dropout),
-            ]
+            additional_layers = [nn.Linear(self.feat_size, n_reducer_neurons)]
+            if batch_norm:
+                additional_layers.append(nn.BatchNorm1d(n_reducer_neurons))
+            additional_layers.extend([NL(), nn.Dropout(p=dropout)])
             for i in range(n_reducer_layer - 1):
                 additional_layers.append(
                     nn.Linear(n_reducer_neurons, n_reducer_neurons // 2)
                 )
-                additional_layers.append(nn.BatchNorm1d(n_reducer_neurons // 2))
-                additional_layers.append(nn.ReLU())
+                if batch_norm:
+                    additional_layers.append(nn.BatchNorm1d(n_reducer_neurons // 2))
+                additional_layers.append(NL())
                 additional_layers.append(nn.Dropout(p=dropout))
                 n_reducer_neurons = n_reducer_neurons // 2
 
@@ -221,10 +245,14 @@ class MetaBlockArchitecture(nn.Module):
                 weight_decay=weight_decay,
             )
 
-    def feature_maps_size(self):
+    def feature_maps_size(self) -> list:
+        """
+        Returns the number of feature maps and their dimensions
+        """
+
         dummy_input = torch.randn(1, 3, 224, 224)  # random input
         output = self.features(dummy_input).detach().cpu()
-        return output.shape[1], output.shape[2]  # the size of feature maps
+        return [output.shape[1], output.shape[2]]  # the size of feature maps
 
     def forward(self, meta_data, img):
         x = self.features(img)
@@ -237,7 +265,7 @@ class MetaBlockArchitecture(nn.Module):
             x = self.reducer_block(x)  # feature reducer block
         return self.classifier(x)
 
-    def train(
+    def train_(
         self, X_tab: torch.Tensor, X_img: pd.DataFrame, y: torch.Tensor
     ) -> "MetaBlockArchitecture":
 
@@ -265,7 +293,7 @@ class MetaBlockArchitecture(nn.Module):
         val_loss_best = 999999
         patience = 0
 
-        self.train_()
+        self.train()
 
         if self.weighted_cross_entropy:
             label_counts = torch.bincount(y)
@@ -374,13 +402,6 @@ class MetaBlockArchitecture(nn.Module):
         self.combination.zero_grad()
         self.classifier.zero_grad()
 
-    def train_(self):
-        self.features.train()
-        if self.reducer_block:
-            self.reducer_block.train()
-        self.combination.train()
-        self.classifier.train()
-
     def get_image_model(self):
         return self.features
 
@@ -400,42 +421,46 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         ----------
         model: Any,
             existing model
+        conv_name: str,
+            the name of the predefined CNN
+        non_linear: str,
+            non linearitiess in the classifier
         n_reducer_neurons: int
             number of hidden neurons in classifier
         n_reducer_layer: int
             number of hidden layers in classifier
-        conv_name: str,
-            the name of the predefined CNN
-        data_augmenetation: str
+        batch_norm: bool,
+            add batch norm layers
+        dropout: float,
+            dropout probability in dropout layers
+        data_augmentation: str
             data augmentation strategy
         dropout: float,
-            .
-        n_unfrozen_layers: int
-            number of unfrozen layers
-        lr: float,
-            .
-        weight_decay: float
-            .
-        clipping_value: int
-            .
-        batch_norm: bool
-            .
+            dropout probability in dropout layers
+        data_augmentation: str,
+            data augmentation strategy name
+        freeze_conv: bool,
+            freeze the layer of the cnn features
         weighted_cross_entropy: bool,
-            .
-        early_stopping: bool
-            .
-        batch_size: int,
-            .
-        patience: int
-            .
+            use weighted cross-entropy as a loss
+        lr: float,
+            learning rate
+        weight_decay: float
+            l2 (ridge) penalty for the weights.
         n_iter: int
-            .
-        n_iter_min: int
-            .
+            Maximum number of iterations.
+        batch_size: int
+            Batch size
         n_iter_print: int
-            .
-        random_state: int,
-            .
+            Number of iterations after which to print updates and check the validation loss.
+        patience: int
+            Number of iterations to wait before early stopping after decrease in validation loss
+        n_iter_min: int
+            Minimum number of iterations to go through before starting early stopping
+        early_stopping (bool):
+            stopping when the metric did not improve for multiple iterations (max = patience)
+        clipping_value (int):
+            clipping parameters value during training
 
     Example:
         >>> from autoprognosis.plugins.prediction import Predictions
@@ -449,25 +474,26 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         self,
         model: Any = None,
         # Network Architecture
-        n_reducer_layer: int = 1,
-        n_reducer_neurons: int = 1024,
         conv_name: str = "alexnet",
-        # Training
-        data_augmentation: str = "",
+        non_linear: str = "relu",
+        n_reducer_neurons: int = 1024,
+        n_reducer_layer: int = 1,
+        batch_norm: bool = True,
         dropout: float = 0.5,
-        n_unfrozen_layers: int = 3,
+        # Data Augmentation:
+        data_augmentation: str = "",
+        # Training
+        freeze_conv: bool = True,
+        weighted_cross_entropy: bool = False,
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
-        clipping_value: int = 1,
-        batch_norm: bool = True,
-        weighted_cross_entropy: bool = False,
-        early_stopping: bool = True,
+        n_iter: int = 1,
         batch_size: int = 64,
-        patience: int = 5,
-        n_iter: int = 1000,
-        n_iter_min: int = 10,
-        # Miscellaneous
         n_iter_print: int = 1,
+        n_iter_min: int = 10,
+        patience: int = 5,
+        clipping_value: int = 1,
+        early_stopping: bool = True,
         random_state: int = 0,
         **kwargs: Any,
     ) -> None:
@@ -479,20 +505,19 @@ class MetaBlockPlugin(base.ClassifierPlugin):
         self.n_reducer_neurons = n_reducer_neurons
         self.n_reducer_layer = n_reducer_layer
         self.conv_name = conv_name.lower()
+        self.non_linear = non_linear
 
         # Training
         self.lr = lr
         self.weight_decay = weight_decay
+        self.freeze_conv = freeze_conv
         self.dropout = dropout
         self.clipping_value = clipping_value
         self.conv_name = conv_name.lower()
         self.batch_size = batch_size
         self.batch_norm = batch_norm
         self.early_stopping = early_stopping
-        self.n_unfrozen_layers = n_unfrozen_layers
         self.weighted_cross_entropy = weighted_cross_entropy
-
-        # Miscellaneous
         self.n_iter_print = n_iter_print
         self.patience = patience
         self.n_iter = n_iter
@@ -540,6 +565,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
             params.Categorical("lr", [1e-4, 1e-5, 1e-6]),
             params.Categorical("weight_decay", [1e-3, 1e-4, 1e-5]),
             params.Categorical("dropout", [0.0, 0.1, 0.2, 0.4]),
+            params.Categorical("freeze_conv", [True, False]),
             # Data Augmentation
             params.Categorical("data_augmentation", data_augmentation_strategies),
         ]
@@ -548,6 +574,8 @@ class MetaBlockPlugin(base.ClassifierPlugin):
 
         X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY]))
         X_img = X[IMAGE_KEY]
+        if isinstance(X_img, np.ndarray):
+            X_img = pd.DataFrame(X_img)
 
         y = args[0]
         self.n_classes = len(np.unique(y))
@@ -561,7 +589,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
             preprocess=self.preprocess,
             n_reducer_layer=self.n_reducer_layer,
             n_reducer_neurons=self.n_reducer_neurons,
-            freeze_conv=False,
+            freeze_conv=self.freeze_conv,
             lr=self.lr,
             weight_decay=self.weight_decay,
             dropout=self.dropout,
@@ -576,7 +604,7 @@ class MetaBlockPlugin(base.ClassifierPlugin):
             weighted_cross_entropy=self.weighted_cross_entropy,
         )
 
-        self.model.train(X_tab, X_img, y)
+        self.model.train_(X_tab, X_img, y)
 
         return self
 
