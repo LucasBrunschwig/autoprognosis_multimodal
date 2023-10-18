@@ -26,7 +26,10 @@ class Predictions:
 
     def model_type(self, name: str) -> str:
         root = self._plugins.list_available_path()[name]
-        return root.split("/")[-2]
+        if "\\" in root:
+            return root.split("\\")[-2]
+        else:
+            return root.split("/")[-2]
 
     def add(self, name: str, cls: Type) -> "Predictions":
         self._plugins.add(name, cls)
