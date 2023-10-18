@@ -239,7 +239,9 @@ class ImageEnsembleSeeker:
         ensembles: list = []
 
         try:
-            stacking_ensemble = StackingEnsemble(best_models, keep_original=False)
+            stacking_ensemble = StackingEnsemble(
+                best_models, keep_original=False, use_proba=True
+            )
             stacking_ens_score = evaluate_estimator(
                 stacking_ensemble, X, Y, self.n_folds_cv, group_ids=group_ids
             )["raw"][self.metric][0]
