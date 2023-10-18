@@ -805,7 +805,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         n_iter_print: int = 1,
         patience: int = 5,
         n_iter_min: int = 10,
-        n_iter: int = 1000,
+        n_iter: int = 1,
         batch_norm: bool = True,
         early_stopping: bool = True,
         pretrain_image_model: bool = False,
@@ -821,7 +821,6 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         self.n_tab_layer = n_tab_layer
         self.n_img_layer = n_img_layer
         self.n_img_out = n_img_out
-        self.n_tab_hidden = n_tab_hidden
         self.n_tab_hidden = n_tab_hidden
         self.tab_reduction_ratio = tab_reduction_ratio
         self.n_cls_layer = n_cls_layers
@@ -911,7 +910,6 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
             n_tab_out = X_tab.shape[1]
 
         # TODO cutoff for the number of X_tab ? -> force n_tab_layer = 0 if
-
         self.model = ConvIntermediateNet(
             n_classes=self.n_classes,
             n_tab_in=X_tab.shape[1],
