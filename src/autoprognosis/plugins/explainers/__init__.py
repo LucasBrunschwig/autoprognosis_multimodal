@@ -32,7 +32,11 @@ class Explainers(PluginLoader):
     def explainer_type(self, name):
         path_ = self.list_available_path()
         if path_.get(name, None):
-            return path_[name].split("/")[-2]
+            if "\\" in path_:
+                return path_[name].split("\\")[-2]
+            elif "/" in path_:
+                return path_[name].split("/")[-2]
+
         else:
             raise RuntimeError(f"Plugin {name} does not exist")
 
