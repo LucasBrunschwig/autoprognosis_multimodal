@@ -257,6 +257,12 @@ class CNNFeaturesPlugin(base.PreprocessorPlugin):
             raise RuntimeError("Please provide the labels for training")
 
         y = args[0]
+
+        if not isinstance(y, pd.Series):
+            y = pd.Series(y)
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+
         self.n_classes = len(y.value_counts())
         y = torch.from_numpy(np.asarray(y))
 
