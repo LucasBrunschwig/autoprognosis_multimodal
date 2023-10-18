@@ -82,34 +82,37 @@ class ConvIntermediateNet(nn.Module):
         number of layer in the classifier sub-model
     n_cls_hidden: int,
         number of hidden neurons in layers of the classifier sub-model
+    replace_classifier: bool,
+        replace the classifier with new layers or add them on top of it
     n_unfrozen_layer: int,
         number of unfrozen layer in the image model
     nonlin: str
         non-linear function in hidden layers
+    dropout: float,
+        dropout rate
+    batch_norm: bool,
+        add batch normalization layer
+    weighted_cross_entropy: bool,
+        use weighted cross-entropy as a loss
     lr: float,
         learning rate
     weight_decay: float
-        .
-    n_iter: int,
-        .
-    batch_size: int,
-        .
-    n_iter_print: int,
-        .
-    patience: int,
-        .
-    n_iter_min: int,
-        .
-    dropout: float,
-        .
-    clipping_value: int,
-        .
-    batch_norm: bool,
-        .
-    early_stopping: bool,
-        .
-    replace_classifier: bool,
-        .
+        l2 (ridge) penalty for the weights.
+    n_iter: int
+        Maximum number of iterations.
+    batch_size: int
+        Batch size
+    n_iter_print: int
+        Number of iterations after which to print updates and check the validation loss.
+    patience: int
+        Number of iterations to wait before early stopping after decrease in validation loss
+    n_iter_min: int
+        Minimum number of iterations to go through before starting early stopping
+    early_stopping (bool):
+        stopping when the metric did not improve for multiple iterations (max = patience)
+    clipping_value (int):
+        clipping parameters value during training
+
 
     """
 
@@ -127,8 +130,12 @@ class ConvIntermediateNet(nn.Module):
         n_tab_hidden: int = 50,
         n_cls_layer: int = 2,
         n_cls_hidden: int = 100,
+        replace_classifier: bool = False,
         n_unfrozen_layer: int = 2,
         nonlin: str = "relu",
+        dropout: float = 0.4,
+        batch_norm: bool = False,
+        weighted_cross_entropy: bool = False,
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
         n_iter: int = 2,
@@ -136,11 +143,8 @@ class ConvIntermediateNet(nn.Module):
         n_iter_print: int = 10,
         patience: int = 10,
         n_iter_min: int = 100,
-        dropout: float = 0.4,
         clipping_value: int = 1,
-        batch_norm: bool = False,
         early_stopping: bool = True,
-        replace_classifier: bool = False,
     ) -> None:
         super(ConvIntermediateNet, self).__init__()
 
@@ -163,6 +167,7 @@ class ConvIntermediateNet(nn.Module):
         self.early_stopping = early_stopping
         self.transform = transform
         self.lr = lr
+        self.weighted_cross_entropy = weighted_cross_entropy
 
         params = []
 
@@ -257,7 +262,8 @@ class ConvIntermediateNet(nn.Module):
 
         # Unfroze specified layer
         n_unfrozen_layer = self.unfreeze_last_n_layers_classifier(self.n_unfrozen_layer)
-        self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
+        if n_unfrozen_layer > 0:
+            self.unfreeze_last_n_layers_convolutional(n_unfrozen_layer)
 
         n_features_in = self.extract_n_features_in()
 
@@ -290,7 +296,10 @@ class ConvIntermediateNet(nn.Module):
 
         name_match = None
         if hasattr(self.image_model, "fc"):
-            if isinstance(self.image_model.fc, torch.nn.Sequential):
+            if (
+                isinstance(self.image_model.fc, torch.nn.Sequential)
+                and not self.replace_classifier
+            ):
                 self.image_model.fc[-1] = nn.Sequential(*additional_layers)
                 name_match = "fc." + str(len(self.image_model.fc) - 1)
             else:
@@ -298,12 +307,15 @@ class ConvIntermediateNet(nn.Module):
                 name_match = "fc"
 
         elif hasattr(self.image_model, "classifier"):
-            if self.replace_classifier:
-                self.image_model.classifier = nn.Sequential(*additional_layers)
-                name_match = "classifier"
-            else:
+            if (
+                isinstance(self.image_model.classifier, torch.nn.Sequential)
+                and not self.replace_classifier
+            ):
                 self.image_model.classifier[-1] = nn.Sequential(*additional_layers)
                 name_match = "classifier." + str(len(self.image_model.classifier) - 1)
+            else:
+                self.image_model.classifier = nn.Sequential(*additional_layers)
+                name_match = "classifier"
 
         if name_match is None:
             raise ValueError("Unsupported Architecture")
@@ -320,7 +332,7 @@ class ConvIntermediateNet(nn.Module):
                 for layer in module:
                     if isinstance(layer, torch.nn.modules.linear.Linear):
                         n_features_in = layer.in_features
-                        if replace_classifier_:
+                        if replace_classifier_:  # return the first linear layer size
                             break
             elif isinstance(module, torch.nn.modules.linear.Linear):
                 n_features_in = module.in_features
@@ -338,10 +350,37 @@ class ConvIntermediateNet(nn.Module):
 
         return get_in_features_from_classifier(classifier, self.replace_classifier)
 
+    def extract_n_features_out(self):
+        """Extract the size of the input features to define the additional layers."""
+
+        def get_out_features_from_classifier(module):
+            """Helper function to find the first or last linear input size of the classifier"""
+            n_features_in = None
+            if isinstance(module, torch.nn.Sequential):
+                for layer in module:
+                    if isinstance(layer, torch.nn.modules.linear.Linear):
+                        n_features_in = layer.out_features
+
+            elif isinstance(module, torch.nn.modules.linear.Linear):
+                n_features_in = module.out_features
+            else:
+                raise ValueError(f"Unknown Classifier Architecture {self.model_name}")
+
+            return n_features_in
+
+        if hasattr(self.image_model, "fc"):
+            classifier = self.image_model.fc
+        elif hasattr(self.image_model, "classifier"):
+            classifier = self.image_model.classifier
+        else:
+            raise ValueError(f"Unknown Classifier Module Name: {self.model_name}")
+
+        return get_out_features_from_classifier(classifier)
+
     def build_classifier_sub_model(self):
         """Build the classifier sub model network"""
 
-        if self.n_layers_hidden > 0:
+        if self.n_cls_hidden > 0:
             if self.batch_norm:
                 layers = [
                     nn.Linear(self.n_unit_in, self.n_cls_hidden),
@@ -387,30 +426,15 @@ class ConvIntermediateNet(nn.Module):
     def add_classification_layer(self, n_classes: int):
         """Add a classification layer to the image model for pretraining"""
 
-        out = None
-        if hasattr(self.image_model, "fc"):
-            if isinstance(self.image_model.fc, nn.Sequential):
-                out = self.image_model.fc[-1].out_features
-            else:
-                out = self.image_model.fc.out_features
+        n_features_out = self.extract_n_features_out()
 
-        elif hasattr(self.image_model, "classifier"):
-            if isinstance(self.image_model.classifier, torch.nn.Sequential):
-                if isinstance(self.image_model.classifier[-1], torch.nn.Sequential):
-                    out = self.image_model.classifier[-1][-1].out_features
-                else:
-                    out = self.image_model.classifier[-1].out_features
-            elif isinstance(self.image_model.classifier, torch.nn.Linear):
-                out = self.image_model.classifier.out_features
-            else:
-                raise ValueError("Unknown architecture")
-
-        self.image_model.classification = nn.Linear(out, n_classes)
+        self.image_model.classification = nn.Linear(n_features_out, n_classes)
         self.image_model.classification.to(DEVICE)
 
     def remove_classification_layer(self):
         """Remove the image model classification layer for whole model training"""
         if hasattr(self.image_model, "classification"):
+            self.image_model.classification.cpu()
             del self.image_model.classification
 
     def forward_image(self, X_img: torch.Tensor):
@@ -463,7 +487,7 @@ class ConvIntermediateNet(nn.Module):
         else:
             loss = nn.CrossEntropyLoss()
 
-        self.train_()
+        self.train()
         n_iter = min(self.n_iter, 50)
         for i in range(n_iter):
             train_loss = []
@@ -537,7 +561,7 @@ class ConvIntermediateNet(nn.Module):
 
         return self
 
-    def train(
+    def train_(
         self, X_tab: torch.Tensor, X_img: pd.DataFrame, y: torch.Tensor
     ) -> "ConvIntermediateNet":
 
@@ -577,7 +601,7 @@ class ConvIntermediateNet(nn.Module):
         else:
             loss = nn.CrossEntropyLoss()
 
-        self.train_()
+        self.train()
         for i in range(self.n_iter):
             train_loss = []
 
@@ -725,10 +749,8 @@ class ConvIntermediateNet(nn.Module):
     def get_image_model(self):
         return self.image_model
 
-    def train_(self):
-        self.image_model.train()
-        self.tab_model.train()
-        self.classifier_model.train()
+    def get_tabular_model(self):
+        return self.tab_model
 
 
 class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
@@ -877,6 +899,8 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
         X_tab = torch.from_numpy(np.asarray(X[TABULAR_KEY]))
         X_img = X[IMAGE_KEY]
+        if isinstance(X_img, np.ndarray):
+            X_img = pd.DataFrame(X_img)
 
         y = args[0]
         self.n_classes = len(np.unique(y))
@@ -886,7 +910,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         if self.n_tab_layer == 0:
             n_tab_out = X_tab.shape[1]
 
-        # TODO cutoff for the number of X_tab ? -> force n_tab_layer = 0 if ...
+        # TODO cutoff for the number of X_tab ? -> force n_tab_layer = 0 if
 
         self.model = ConvIntermediateNet(
             n_classes=self.n_classes,
@@ -918,7 +942,7 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
         if self.pretrain_image_model:
             self.model.pretrain_image_model(X_img, y, self.n_classes)
 
-        self.model.train(X_tab, X_img, y)
+        self.model.train_(X_tab, X_img, y)
 
         return self
 
@@ -1012,6 +1036,9 @@ class IntermediateFusionConvNetPlugin(base.ClassifierPlugin):
 
     def get_image_model(self):
         return self.model.get_image_model()
+
+    def get_tabular_model(self):
+        return self.model.get_tabular_model()
 
     def zero_grad(self):
         self.model.zero_grad()
